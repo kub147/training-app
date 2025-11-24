@@ -47,21 +47,6 @@ class StravaClient:
 
         return token
 
-        token = response.json()
-
-        user = UserData.query.first()
-        if not user:
-            user = UserData()
-
-        user.strava_access_token = token['access_token']
-        user.strava_refresh_token = token['refresh_token']
-        user.strava_expires_at = token['expires_at']
-
-        db.session.add(user)
-        db.session.commit()
-
-        return token
-
     def refresh_token(self, user):
         if user.strava_expires_at < time.time():
             response = requests.post('https://www.strava.com/oauth/token', data={

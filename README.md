@@ -1,32 +1,9 @@
-# Training App - Prosty menedżer treningów
+# 🏃‍♂️ Training App + AI Coach
 
-## Instalacja
+Aplikacja webowa do zarządzania treningami, która łączy dane ze **Strava** z inteligencją **Google Gemini**. Oferuje analizę postępów, generowanie planów treningowych i inteligentne sugestie ćwiczeń.
 
-1. Uruchom ten skrypt:
-   chmod +x setup.sh
-   ./setup.sh
-
-2. Zainstaluj zależności:
-   python -m venv venv
-   source venv/bin/activate  # Linux/Mac
-   # lub: venv\Scripts\activate  # Windows
-   pip install -r requirements.txt
-
-3. Skonfiguruj .env:
-   cp .env.example .env
-   # Edytuj .env i dodaj klucze API
-
-4. Uruchom:
-   python app.py
-
-5. Otwórz: http://localhost:5000
-
-## Jak zdobyć klucze API:
-
-Gemini:
-- https://makersuite.google.com/app/apikey
-
-Strava:
-- https://www.strava.com/settings/api
-- Stwórz aplikację
-- Authorization Callback Domain: localhost
+## 🚀 Główne Funkcje
+* **Integracja ze Strava**: Automatyczna synchronizacja biegów, jazdy na rowerze i pływania.
+* **AI Coach**: Generowanie planów treningowych i sugestii "na dziś" przy użyciu modelu Gemini 1.5 Flash.
+* **Timeline & Dashboard**: Nowoczesny widok ostatnich 30 dni z podziałem na typy aktywności.
+* **Dziennik Siłowy**: Możliwość dodawania serii, powtórzeń i ciężaru do treningów siłowych.

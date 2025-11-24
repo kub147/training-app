@@ -2,63 +2,72 @@ import google.generativeai as genai
 import json
 from datetime import datetime
 
+
 class AICoach:
     def __init__(self, api_key):
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
-    
+        # ZMIANA: Używamy nowszego i szybszego modelu
+        self.model = genai.GenerativeModel('gemini-1.5-flash')
+
     def generate_plan(self, goal, target_date, activities):
-        acts = "\n".join([f"- {a.activity_type}: {a.duration//60}min, {a.distance/1000:.1f}km" 
+        # Formatujemy historię aktywności
+        acts = "\n".join([f"- {a.activity_type}: {a.duration // 60}min, {a.distance / 1000:.1f}km"
                           for a in activities[:10]])
-        
-        days = (target_date - datetime.now().date()).days
-        
-        prompt = f"""Stwórz prosty plan treningowy na 7 dni.
-Cel: {goal}
-Dni do celu: {days}
-Ostatnie treningi:
+
+        days_left = (target_date - datetime.now().date()).days
+
+        prompt = f"""Jesteś trenerem personalnym. Stwórz plan treningowy na 7 dni w formacie JSON.
+Cel użytkownika: {goal}
+Dni do celu: {days_left}
+Ostatnie 10 treningów:
 {acts}
 
-Zwróć TYLKO JSON:
+Wymagany format JSON (zwróć TYLKO czysty JSON, bez znaczników markdown ```json):
 {{
   "days": [
-    {{"day": 1, "type": "bieg/silownia/odpoczynek", "opis": "krótki opis"}},
+    {{"day": 1, "type": "bieg/rower/siłownia/odpoczynek", "opis": "szczegóły treningu"}},
     ...
   ]
 }}"""
-        
-        response = self.model.generate_content(prompt)
-        text = response.text
-        
-        start = text.find('{')
-        end = text.rfind('}') + 1
-        if start >= 0 and end > start:
-            return json.loads(text[start:end])
-        return {"days": []}
-    
+
+        try:
+            response = self.model.generate_content(prompt)
+            text = response.text
+
+            # Czyszczenie odpowiedzi z ewentualnych znaczników markdown
+            text = text.replace('```json', '').replace('```', '').strip()
+
+            return json.loads(text)
+        except Exception as e:
+            print(f"Błąd AI: {e}")
+            return {"days": []}
+
     def suggest_workout(self, activity_type, goal, last_activities):
-        acts = "\n".join([f"- {a.activity_type}: {a.duration//60}min" 
+        acts = "\n".join([f"- {a.activity_type}: {a.duration // 60}min"
                           for a in last_activities[:5]])
-        
-        prompt = f"""Zaproponuj trening na dziś.
-Typ: {activity_type}
-Cel: {goal}
+
+        prompt = f"""Jesteś trenerem. Zaproponuj jeden konkretny trening na dziś w formacie JSON.
+Typ treningu: {activity_type}
+Cel użytkownika: {goal}
 Ostatnie treningi:
 {acts}
 
-Zwróć TYLKO JSON:
+Wymagany format JSON (zwróć TYLKO czysty JSON, bez znaczników markdown):
 {{
-  "rozgrzewka": "opis",
-  "glowna_czesc": "opis",
-  "chlodzenie": "opis",
+  "rozgrzewka": "dokładny opis rozgrzewki",
+  "glowna_czesc": "szczegóły głównego zadania",
+  "chlodzenie": "opis wyciszenia",
   "czas": 60
 }}"""
-        
-        response = self.model.generate_content(prompt)
-        text = response.text
-        
-        start = text.find('{')
-        end = text.rfind('}') + 1
-        if start >= 0 and end > start:
-            return json.loads(text[start:end])
-        return {}
+
+        try:
+            response = self.model.generate_content(prompt)
+            text = response.text
+
+            # Czyszczenie odpowiedzi
+            text = text.replace('```json', '').replace('```', '').strip()
+
+            return json.loads(text)
+        except Exception as e:
+            print(f"Błąd AI: {e}")
+            return {}

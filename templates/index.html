@@ -10,12 +10,14 @@
             --card-bg: #ffffff;
             --text: #1d1d1d;
             --gray: #666;
+            --primary: #2c3e50;
+            --accent: #3498db;
 
             /* Kolory Aktywności */
-            --color-run: #00bf63;       /* Zielony dla biegania */
-            --color-ride: #ff5722;      /* Pomarańczowy dla roweru */
-            --color-swim: #00a8cc;      /* Niebieski dla pływania */
-            --color-gym: #8e44ad;       /* Fioletowy dla siłowni */
+            --color-run: #00bf63;
+            --color-ride: #ff5722;
+            --color-swim: #00a8cc;
+            --color-gym: #8e44ad;
             --color-default: #7f8c8d;
         }
 
@@ -44,79 +46,70 @@
         .stat-val { font-size: 20px; font-weight: bold; }
         .stat-lbl { font-size: 12px; color: var(--gray); text-transform: uppercase; }
 
-        /* TIMELINE STYLES */
-        .timeline {
-            position: relative;
-            padding-left: 30px;
+        /* --- AI SECTION --- */
+        .ai-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 40px;
         }
 
-        /* Pionowa linia */
-        .timeline::before {
-            content: '';
-            position: absolute;
-            left: 0; top: 0; bottom: 0;
-            width: 2px;
-            background: #e0e0e0;
-        }
-
-        .date-header {
-            font-size: 14px;
-            font-weight: bold;
-            color: var(--gray);
-            margin: 25px 0 10px -30px; /* Wysunięcie w lewo */
-            background: var(--bg);
-            padding: 5px 10px;
-            display: inline-block;
-        }
-
-        .activity-card {
-            position: relative;
+        .ai-card {
             background: var(--card-bg);
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 15px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.03);
-            display: flex;
-            align-items: center;
-            text-decoration: none;
-            color: inherit;
-            transition: transform 0.2s;
-            border-left: 5px solid var(--color-default); /* Domyślny pasek */
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border-top: 4px solid var(--accent);
         }
 
+        .ai-title { font-weight: bold; margin-bottom: 15px; display: flex; align-items: center; gap: 8px; }
+        .ai-input { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;}
+        .ai-btn { width: 100%; background: var(--accent); color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+        .ai-btn:hover { opacity: 0.9; }
+        .ai-btn:disabled { background: #ccc; cursor: wait; }
+
+        .ai-result {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+            font-size: 14px;
+            line-height: 1.5;
+            display: none; /* Domyślnie ukryte */
+        }
+
+        /* TIMELINE STYLES */
+        .timeline { position: relative; padding-left: 30px; }
+        .timeline::before {
+            content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+            width: 2px; background: #e0e0e0;
+        }
+        .date-header {
+            font-size: 14px; font-weight: bold; color: var(--gray);
+            margin: 25px 0 10px -30px; background: var(--bg);
+            padding: 5px 10px; display: inline-block;
+        }
+        .activity-card {
+            position: relative; background: var(--card-bg); border-radius: 10px;
+            padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+            display: flex; align-items: center; text-decoration: none; color: inherit;
+            transition: transform 0.2s; border-left: 5px solid var(--color-default);
+        }
         .activity-card:hover { transform: translateX(5px); }
-
-        /* Ikona na osi czasu */
         .timeline-dot {
-            position: absolute;
-            left: -39px; /* Pozycjonowanie kropki na linii */
-            width: 16px;
-            height: 16px;
-            border-radius: 50%;
-            background: white;
-            border: 2px solid var(--color-default);
-            z-index: 2;
+            position: absolute; left: -39px; width: 16px; height: 16px;
+            border-radius: 50%; background: white; border: 2px solid var(--color-default); z-index: 2;
         }
-
         .act-icon { font-size: 24px; margin-right: 15px; width: 30px; text-align: center; }
         .act-info { flex: 1; }
         .act-title { font-weight: 600; margin-bottom: 2px; text-transform: capitalize; }
         .act-meta { font-size: 13px; color: var(--gray); }
         .act-value { font-weight: bold; font-family: monospace; font-size: 14px; }
+        .type-run { border-left-color: var(--color-run); } .type-run .timeline-dot { border-color: var(--color-run); background: var(--color-run); }
+        .type-ride { border-left-color: var(--color-ride); } .type-ride .timeline-dot { border-color: var(--color-ride); background: var(--color-ride); }
+        .type-swim { border-left-color: var(--color-swim); } .type-swim .timeline-dot { border-color: var(--color-swim); background: var(--color-swim); }
+        .type-weighttraining { border-left-color: var(--color-gym); } .type-weighttraining .timeline-dot { border-color: var(--color-gym); background: var(--color-gym); }
 
-        /* Warianty kolorystyczne */
-        .type-run { border-left-color: var(--color-run); }
-        .type-run .timeline-dot { border-color: var(--color-run); background: var(--color-run); }
-
-        .type-ride { border-left-color: var(--color-ride); }
-        .type-ride .timeline-dot { border-color: var(--color-ride); background: var(--color-ride); }
-
-        .type-swim { border-left-color: var(--color-swim); }
-        .type-swim .timeline-dot { border-color: var(--color-swim); background: var(--color-swim); }
-
-        .type-weighttraining { border-left-color: var(--color-gym); }
-        .type-weighttraining .timeline-dot { border-color: var(--color-gym); background: var(--color-gym); }
-
+        @media (max-width: 600px) { .ai-section { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
@@ -145,6 +138,27 @@
             </div>
         </div>
 
+        <div class="ai-section">
+            <div class="ai-card">
+                <div class="ai-title">⚡ Szybki Trening</div>
+                <select id="workoutType" class="ai-input">
+                    <option value="bieg">Bieganie</option>
+                    <option value="rower">Rower</option>
+                    <option value="silownia">Siłownia</option>
+                </select>
+                <button onclick="suggestWorkout()" class="ai-btn">Zaproponuj Trening</button>
+                <div id="workoutResult" class="ai-result"></div>
+            </div>
+
+            <div class="ai-card">
+                <div class="ai-title">📋 Plan na Tydzień</div>
+                <input type="text" id="goal" class="ai-input" placeholder="Cel (np. Półmaraton < 2h)" value="{{ user.goal if user.goal else '' }}">
+                <input type="date" id="targetDate" class="ai-input" value="{{ user.target_date if user.target_date else '' }}">
+                <button onclick="createPlan()" class="ai-btn" style="background: #2c3e50;">Generuj Plan</button>
+                <div id="planResult" class="ai-result"></div>
+            </div>
+        </div>
+
         <div class="timeline">
             {% set current_date = namespace(value=None) %}
 
@@ -161,7 +175,6 @@
 
                 <a href="/activity/{{act.id}}" class="activity-card type-{{act.activity_type}}">
                     <div class="timeline-dot"></div>
-
                     <div class="act-icon">
                         {% if act.activity_type == 'run' %}🏃
                         {% elif act.activity_type == 'ride' %}🚴
@@ -169,7 +182,6 @@
                         {% elif act.activity_type == 'weighttraining' %}🏋️
                         {% else %}🏅{% endif %}
                     </div>
-
                     <div class="act-info">
                         <div class="act-title">{{ act.activity_type }}</div>
                         <div class="act-meta">
@@ -177,7 +189,6 @@
                             • {{ (act.duration / 60)|int }} min
                         </div>
                     </div>
-
                     <div class="act-value">
                         {% if act.distance > 0 %}
                             {{ (act.distance / 1000)|round(2) }} km
@@ -194,10 +205,66 @@
 
     <script>
     async function sync() {
-        const btn = document.querySelector('button');
+        const btn = document.querySelector('header .btn');
         btn.innerText = '...';
         await fetch('/strava/sync');
         location.reload();
+    }
+
+    async function suggestWorkout() {
+        const resultDiv = document.getElementById('workoutResult');
+        const btn = document.querySelector('.ai-card button');
+
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = 'Thinking... 🤖';
+        btn.disabled = true;
+
+        const type = document.getElementById('workoutType').value;
+        const res = await fetch('/workout/suggest?type=' + type);
+        const data = await res.json();
+
+        if (data.rozgrzewka) {
+            resultDiv.innerHTML = `
+                <b>Rozgrzewka:</b> ${data.rozgrzewka}<br><br>
+                <b>Główna część:</b> ${data.glowna_czesc}<br><br>
+                <b>Chłodzenie:</b> ${data.chlodzenie}
+            `;
+        } else {
+            resultDiv.innerHTML = 'Nie udało się wygenerować treningu.';
+        }
+        btn.disabled = false;
+    }
+
+    async function createPlan() {
+        const resultDiv = document.getElementById('planResult');
+        const btn = document.querySelectorAll('.ai-btn')[1]; // Drugi przycisk
+
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = 'Thinking... 🤖';
+        btn.disabled = true;
+
+        const goal = document.getElementById('goal').value;
+        const targetDate = document.getElementById('targetDate').value;
+
+        const res = await fetch('/plan/create', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({goal, target_date: targetDate})
+        });
+
+        const data = await res.json();
+
+        if (data.days && data.days.length > 0) {
+            let html = '<ul style="padding-left: 20px; margin: 0;">';
+            data.days.forEach(d => {
+                html += `<li style="margin-bottom: 5px;"><b>Dzień ${d.day} (${d.type}):</b> ${d.opis}</li>`;
+            });
+            html += '</ul>';
+            resultDiv.innerHTML = html;
+        } else {
+            resultDiv.innerHTML = 'Błąd generowania planu.';
+        }
+        btn.disabled = false;
     }
     </script>
 </body>
