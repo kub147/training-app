@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Szczegóły aktywności</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial; margin: 20px; max-width: 600px; }
+        .card { border: 1px solid #ccc; padding: 15px; margin: 10px 0; }
+        input { padding: 8px; margin: 5px; width: 80px; }
+        button { padding: 10px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Aktywność</h1>
+    
+    <div class="card">
+        <p><b>Typ:</b> {{activity.activity_type}}</p>
+        <p><b>Data:</b> {{activity.start_time}}</p>
+        <p><b>Czas:</b> {{activity.duration//60}} min</p>
+        <p><b>Dystans:</b> {{(activity.distance/1000)|round(1)}} km</p>
+        {% if activity.avg_hr %}
+        <p><b>Średnie tętno:</b> {{activity.avg_hr}}</p>
+        {% endif %}
+    </div>
+    
+    {% if activity.activity_type == 'weighttraining' %}
+    <div class="card">
+        <h3>Ćwiczenia siłowe</h3>
+        <div id="exercises">
+            {% for ex in activity.exercises %}
+            <p>{{ex.name}}: {{ex.sets}}x{{ex.reps}} @ {{ex.weight}}kg</p>
+            {% endfor %}
+        </div>
+        
+        <h4>Dodaj ćwiczenie</h4>
+        <input type="text" id="exName" placeholder="Nazwa">
+        <input type="number" id="exSets" placeholder="Serie">
+        <input type="number" id="exReps" placeholder="Powtórzenia">
+        <input type="number" id="exWeight" placeholder="Ciężar (kg)">
+        <button onclick="addExercise()">Dodaj</button>
+    </div>
+    {% endif %}
+    
+    <a href="/"><button>Powrót</button></a>
+    
+    <script>
+    async function addExercise() {
+        const name = document.getElementById('exName').value;
+        const sets = parseInt(document.getElementById('exSets').value);
+        const reps = parseInt(document.getElementById('exReps').value);
+        const weight = parseFloat(document.getElementById('exWeight').value);
+        
+        await fetch('/activity/{{activity.id}}/exercises', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                exercises: [{name, sets, reps, weight}]
+            })
+        });
+        
+        location.reload();
+    }
+    </script>
+</body>
+</html>

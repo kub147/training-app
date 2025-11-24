@@ -1,0 +1,19 @@
+# 1. Najważniejsze - Twoje klucze i sekrety
+.env
+
+# 2. Wirtualne środowiska (widzę, że masz dwa: .venv i venv)
+.venv/
+venv/
+ENV/
+
+# 3. Pliki Pythona (pliki skompilowane, niepotrzebne w repozytorium)
+__pycache__/
+*.py[cod]
+
+# 4. Baza danych (folder instance i pliki .db)
+instance/
+*.db
+*.sqlite3
+
+# 5. Pliki systemowe (np. z Maca)
+.DS_Store

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Training App</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial; margin: 20px; max-width: 800px; }
+        .card { border: 1px solid #ccc; padding: 15px; margin: 10px 0; }
+        button { padding: 10px; margin: 5px; cursor: pointer; }
+        input, select { padding: 8px; margin: 5px 0; width: 100%; }
+        .activity { background: #f5f5f5; padding: 10px; margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <h1>Training App</h1>
+    
+    {% if not user or not user.strava_access_token %}
+    <div class="card">
+        <h3>Połącz ze Strava</h3>
+        <a href="/strava/connect"><button>Połącz Strava</button></a>
+    </div>
+    {% else %}
+    <div class="card">
+        <h3>Strava połączona ✓</h3>
+        <button onclick="sync()">Synchronizuj aktywności</button>
+    </div>
+    {% endif %}
+    
+    <div class="card">
+        <h3>Stwórz plan</h3>
+        <input type="text" id="goal" placeholder="Cel, np: Półmaraton za 3 miesiące">
+        <input type="date" id="targetDate">
+        <button onclick="createPlan()">Generuj plan</button>
+        <div id="planResult"></div>
+    </div>
+    
+    <div class="card">
+        <h3>Sugestia treningu na dziś</h3>
+        <select id="workoutType">
+            <option value="bieg">Bieg</option>
+            <option value="silownia">Siłownia</option>
+        </select>
+        <button onclick="suggestWorkout()">Zaproponuj trening</button>
+        <div id="workoutResult"></div>
+    </div>
+    
+    <div class="card">
+        <h3>Ostatnie aktywności</h3>
+        {% for act in activities %}
+        <div class="activity">
+            <a href="/activity/{{act.id}}">
+                {{act.activity_type}} - {{act.start_time.strftime('%Y-%m-%d')}} 
+                - {{act.duration//60}}min - {{(act.distance/1000)|round(1)}}km
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <script>
+    async function sync() {
+        const res = await fetch('/strava/sync');
+        const data = await res.json();
+        alert('Zsynchronizowano: ' + data.synced + ' aktywności');
+        location.reload();
+    }
+    
+    async function createPlan() {
+        const goal = document.getElementById('goal').value;
+        const targetDate = document.getElementById('targetDate').value;
+        
+        const res = await fetch('/plan/create', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({goal, target_date: targetDate + 'T00:00:00'})
+        });
+        
+        const plan = await res.json();
+        let html = '<h4>Plan:</h4>';
+        plan.days.forEach(d => {
+            html += `<p>Dzień ${d.day}: ${d.type} - ${d.opis}</p>`;
+        });
+        document.getElementById('planResult').innerHTML = html;
+    }
+    
+    async function suggestWorkout() {
+        const type = document.getElementById('workoutType').value;
+        const res = await fetch('/workout/suggest?type=' + type);
+        const workout = await res.json();
+        
+        let html = '<h4>Trening:</h4>';
+        html += '<p><b>Rozgrzewka:</b> ' + workout.rozgrzewka + '</p>';
+        html += '<p><b>Główna część:</b> ' + workout.glowna_czesc + '</p>';
+        html += '<p><b>Chłodzenie:</b> ' + workout.chlodzenie + '</p>';
+        html += '<p><b>Czas:</b> ' + workout.czas + ' min</p>';
+        document.getElementById('workoutResult').innerHTML = html;
+    }
+    </script>
+</body>
+</html>
