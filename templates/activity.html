@@ -1,55 +1,296 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Szczegóły aktywności</title>
+    <title>Szczegóły Aktywności</title>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { font-family: Arial; margin: 20px; max-width: 600px; }
-        .card { border: 1px solid #ccc; padding: 15px; margin: 10px 0; }
-        input { padding: 8px; margin: 5px; width: 80px; }
-        button { padding: 10px; cursor: pointer; }
+        :root {
+            --bg: #f0f2f5;
+            --card-bg: #ffffff;
+            --text: #1d1d1d;
+            --gray: #666;
+            --border: #e0e0e0;
+
+            /* Kolory z Timeline */
+            --color-run: #00bf63;
+            --color-ride: #ff5722;
+            --color-swim: #00a8cc;
+            --color-gym: #8e44ad;
+            --color-default: #7f8c8d;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container { max-width: 800px; margin: 0 auto; }
+
+        /* Header Navigation */
+        .nav-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .back-btn {
+            background: white;
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 8px 16px;
+            border-radius: 20px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: 0.2s;
+        }
+        .back-btn:hover { background: #f9f9f9; }
+
+        /* Main Activity Card */
+        .main-card {
+            background: var(--card-bg);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            padding: 30px;
+            color: white;
+            position: relative;
+        }
+
+        /* Dynamiczne kolory nagłówka */
+        .header-run { background: linear-gradient(135deg, var(--color-run), #00a855); }
+        .header-ride { background: linear-gradient(135deg, var(--color-ride), #e64a19); }
+        .header-swim { background: linear-gradient(135deg, var(--color-swim), #0097b8); }
+        .header-weighttraining { background: linear-gradient(135deg, var(--color-gym), #7d3c98); }
+        .header-default { background: var(--color-default); }
+
+        .activity-icon { font-size: 48px; margin-bottom: 10px; display: block; }
+        .activity-title { font-size: 32px; margin: 0; font-weight: 800; text-transform: capitalize; }
+        .activity-date { opacity: 0.9; font-size: 16px; margin-top: 5px; }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 20px;
+            padding: 25px;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: var(--gray);
+            letter-spacing: 0.5px;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .stat-unit { font-size: 14px; font-weight: 400; color: var(--gray); }
+
+        /* Sekcja Siłowni */
+        .gym-section {
+            background: var(--card-bg);
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            margin-top: 20px;
+        }
+
+        .section-title { margin: 0 0 20px 0; font-size: 20px; }
+
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; color: var(--gray); font-size: 12px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+        td { padding: 12px 0; border-bottom: 1px solid #f0f0f0; font-weight: 500; }
+        tr:last-child td { border-bottom: none; }
+
+        /* Formularz dodawania */
+        .add-form {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr auto;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .form-input {
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .add-btn {
+            background: var(--text);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .add-btn:hover { opacity: 0.9; }
+
+        @media (max-width: 600px) {
+            .add-form { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
-    <h1>Aktywność</h1>
-    
-    <div class="card">
-        <p><b>Typ:</b> {{activity.activity_type}}</p>
-        <p><b>Data:</b> {{activity.start_time}}</p>
-        <p><b>Czas:</b> {{activity.duration//60}} min</p>
-        <p><b>Dystans:</b> {{(activity.distance/1000)|round(1)}} km</p>
-        {% if activity.avg_hr %}
-        <p><b>Średnie tętno:</b> {{activity.avg_hr}}</p>
-        {% endif %}
-    </div>
-    
-    {% if activity.activity_type == 'weighttraining' %}
-    <div class="card">
-        <h3>Ćwiczenia siłowe</h3>
-        <div id="exercises">
-            {% for ex in activity.exercises %}
-            <p>{{ex.name}}: {{ex.sets}}x{{ex.reps}} @ {{ex.weight}}kg</p>
-            {% endfor %}
+    <div class="container">
+        <div class="nav-header">
+            <a href="/" class="back-btn">← Wróć do listy</a>
+            <a href="https://www.strava.com/activities/{{activity.strava_id}}" target="_blank" class="back-btn" style="color: #fc4c02; border-color: #fc4c02;">
+                Zobacz na Strava ↗
+            </a>
         </div>
-        
-        <h4>Dodaj ćwiczenie</h4>
-        <input type="text" id="exName" placeholder="Nazwa">
-        <input type="number" id="exSets" placeholder="Serie">
-        <input type="number" id="exReps" placeholder="Powtórzenia">
-        <input type="number" id="exWeight" placeholder="Ciężar (kg)">
-        <button onclick="addExercise()">Dodaj</button>
+
+        <div class="main-card">
+            <div class="card-header header-{{activity.activity_type}} {% if activity.activity_type not in ['run','ride','swim','weighttraining'] %}header-default{% endif %}">
+                <span class="activity-icon">
+                    {% if activity.activity_type == 'run' %}🏃
+                    {% elif activity.activity_type == 'ride' %}🚴
+                    {% elif activity.activity_type == 'swim' %}🏊
+                    {% elif activity.activity_type == 'weighttraining' %}🏋️
+                    {% else %}🏅{% endif %}
+                </span>
+                <h1 class="activity-title">{{ activity.activity_type }}</h1>
+                <div class="activity-date">{{ activity.start_time.strftime('%A, %d %B %Y') }} • {{ activity.start_time.strftime('%H:%M') }}</div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-label">Czas trwania</div>
+                    <div class="stat-value">
+                        {{ activity.duration // 60 }}<span class="stat-unit">m</span>
+                        {{ activity.duration % 60 }}<span class="stat-unit">s</span>
+                    </div>
+                </div>
+
+                <div class="stat-item">
+                    <div class="stat-label">Dystans</div>
+                    <div class="stat-value">
+                        {{ (activity.distance / 1000)|round(2) }}<span class="stat-unit">km</span>
+                    </div>
+                </div>
+
+                {% if activity.avg_hr %}
+                <div class="stat-item">
+                    <div class="stat-label">Śr. Tętno</div>
+                    <div class="stat-value">
+                        {{ activity.avg_hr }}<span class="stat-unit">bpm</span>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if activity.activity_type == 'run' and activity.distance > 0 %}
+                    <div class="stat-item">
+                        <div class="stat-label">Śr. Tempo</div>
+                        <div class="stat-value">
+                            {% set pace_decimal = (activity.duration / 60) / (activity.distance / 1000) %}
+                            {% set pace_min = pace_decimal|int %}
+                            {% set pace_sec = ((pace_decimal - pace_min) * 60)|int %}
+                            {{ pace_min }}:{{ "%02d" % pace_sec }}<span class="stat-unit">/km</span>
+                        </div>
+                    </div>
+                {% elif activity.activity_type == 'ride' and activity.duration > 0 %}
+                    <div class="stat-item">
+                        <div class="stat-label">Śr. Prędkość</div>
+                        <div class="stat-value">
+                            {{ ((activity.distance / 1000) / (activity.duration / 3600))|round(1) }}<span class="stat-unit">km/h</span>
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if activity.activity_type == 'weighttraining' %}
+        <div class="gym-section">
+            <h3 class="section-title">Dziennik ćwiczeń</h3>
+
+            {% if activity.exercises %}
+            <table>
+                <thead>
+                    <tr>
+                        <th width="40%">Ćwiczenie</th>
+                        <th>Serie</th>
+                        <th>Powt.</th>
+                        <th>Ciężar</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ex in activity.exercises %}
+                    <tr>
+                        <td>{{ ex.name }}</td>
+                        <td>{{ ex.sets }}</td>
+                        <td>{{ ex.reps }}</td>
+                        <td>{{ ex.weight }} kg</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+                <p style="color: var(--gray); font-style: italic;">Brak dodanych ćwiczeń.</p>
+            {% endif %}
+
+            <div class="add-form">
+                <input type="text" id="exName" class="form-input" placeholder="Nazwa ćwiczenia">
+                <input type="number" id="exSets" class="form-input" placeholder="Serie">
+                <input type="number" id="exReps" class="form-input" placeholder="Powt.">
+                <input type="number" id="exWeight" class="form-input" placeholder="kg">
+                <button onclick="addExercise()" class="add-btn">+</button>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if activity.notes %}
+        <div class="gym-section">
+            <h3 class="section-title">Notatki</h3>
+            <p>{{ activity.notes }}</p>
+        </div>
+        {% endif %}
+
     </div>
-    {% endif %}
-    
-    <a href="/"><button>Powrót</button></a>
-    
+
     <script>
     async function addExercise() {
         const name = document.getElementById('exName').value;
         const sets = parseInt(document.getElementById('exSets').value);
         const reps = parseInt(document.getElementById('exReps').value);
         const weight = parseFloat(document.getElementById('exWeight').value);
-        
+
+        if(!name || !sets || !reps) {
+            alert("Uzupełnij nazwę, serie i powtórzenia");
+            return;
+        }
+
+        const btn = document.querySelector('.add-btn');
+        btn.innerText = '...';
+
         await fetch('/activity/{{activity.id}}/exercises', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -57,7 +298,7 @@
                 exercises: [{name, sets, reps, weight}]
             })
         });
-        
+
         location.reload();
     }
     </script>
