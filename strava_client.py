@@ -14,7 +14,7 @@ class StravaClient:
         return (f'https://www.strava.com/oauth/authorize?'
                 f'client_id={self.client_id}&'
                 f'response_type=code&'
-                f'redirect_uri=http://127.0.0.1:5000/strava/callback&'
+                f'redirect_uri=http://127.0.0.1:5001/strava/callback&'
                 f'scope=activity:read_all')
 
     def exchange_code(self, code):

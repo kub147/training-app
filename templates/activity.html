@@ -143,6 +143,41 @@
             border-radius: 8px;
             font-size: 14px;
         }
+        /* Nowe style dla inputów w tabeli */
+        .edit-input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid transparent; /* Domyślnie brak ramki */
+            border-radius: 6px;
+            background: #f8f9fa;
+            font-size: 14px;
+            text-align: center;
+            transition: 0.2s;
+            box-sizing: border-box; /* Ważne, żeby input nie wystawał */
+        }
+
+        .edit-input:focus {
+            background: #fff;
+            border-color: var(--accent, #3498db);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+
+        /* Efekt sukcesu przy zapisie */
+        .saved {
+            border-color: #00bf63 !important;
+            background-color: #e8f5e9 !important;
+        }
+
+        .del-btn {
+            background: none;
+            border: none;
+            color: #e74c3c;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 0 10px;
+        }
+        .del-btn:hover { color: #c0392b; }
 
         .add-btn {
             background: var(--text);
@@ -230,31 +265,89 @@
 
         {% if activity.activity_type == 'weighttraining' %}
         <div class="gym-section">
-            <h3 class="section-title">Dziennik ćwiczeń</h3>
+            <h3 class="section-title">📝 Twoje odczucia i notatki</h3>
+            <p style="color: #666; font-size: 13px; margin-bottom: 10px;">
+                Opisz jak Ci poszło, jak się czułeś. To pomoże AI w przyszłości.
+            </p>
+            <form action="/activity/{{activity.id}}/update_notes" method="POST">
+                <textarea name="notes" style="width: 100%; height: 80px; padding: 10px; border: 1px solid #e0e0e0; border-radius: 8px; font-family: inherit; box-sizing: border-box;">{{ activity.notes or '' }}</textarea>
+                <div style="text-align: right; margin-top: 5px;">
+                    <button type="submit" class="add-btn" style="font-size: 12px; padding: 6px 12px;">Zapisz opis</button>
+                </div>
+            </form>
+        </div>
+
+        {% if activity.activity_type == 'weighttraining' %}
+        <div class="gym-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3 class="section-title" style="margin: 0;">Dziennik ćwiczeń</h3>
+
+                {% if plans %}
+                <form action="/activity/{{activity.id}}/apply_plan" method="POST" style="display: flex; gap: 5px;">
+                    <select name="plan_id" style="padding: 5px; border-radius: 5px; border: 1px solid #ddd;">
+                        <option value="" disabled selected>Wybierz plan...</option>
+                        {% for p in plans %}
+                        <option value="{{p.id}}">{{p.name}}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="add-btn" style="background: var(--accent); font-size: 12px;">Wczytaj</button>
+                </form>
+                {% endif %}
+            </div>
 
             {% if activity.exercises %}
             <table>
                 <thead>
                     <tr>
-                        <th width="40%">Ćwiczenie</th>
-                        <th>Serie</th>
-                        <th>Powt.</th>
-                        <th>Ciężar</th>
+                        <th width="35%">Ćwiczenie</th>
+                        <th width="15%">Serie</th>
+                        <th width="15%">Powt.</th>
+                        <th width="20%">kg</th>
+                        <th width="15%"></th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for ex in activity.exercises %}
                     <tr>
-                        <td>{{ ex.name }}</td>
-                        <td>{{ ex.sets }}</td>
-                        <td>{{ ex.reps }}</td>
-                        <td>{{ ex.weight }} kg</td>
+                        <td style="vertical-align: middle;">
+                            <span style="font-weight: 500;">{{ ex.name }}</span>
+                        </td>
+
+                        <td>
+                            <input type="number"
+                                   class="edit-input"
+                                   value="{{ ex.sets }}"
+                                   onblur="updateEx({{ ex.id }}, 'sets', this)">
+                        </td>
+
+                        <td>
+                            <input type="number"
+                                   class="edit-input"
+                                   value="{{ ex.reps }}"
+                                   onblur="updateEx({{ ex.id }}, 'reps', this)">
+                        </td>
+
+                        <td>
+                            <input type="text"
+                                   class="edit-input"
+                                   value="{{ ex.weight }}"
+                                   placeholder="0"
+                                   onblur="updateEx({{ ex.id }}, 'weight', this)">
+                        </td>
+
+                        <td style="text-align: right;">
+                            <form action="/exercise/{{ex.id}}/delete" method="POST" style="display:inline;">
+                                <button type="submit" class="del-btn" title="Usuń">&times;</button>
+                            </form>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
             {% else %}
-                <p style="color: var(--gray); font-style: italic;">Brak dodanych ćwiczeń.</p>
+                <div style="text-align: center; padding: 20px; background: #f9f9f9; border-radius: 8px; color: #666;">
+                    Wybierz plan powyżej lub dodaj ćwiczenia ręcznie poniżej.
+                </div>
             {% endif %}
 
             <div class="add-form">
@@ -264,6 +357,8 @@
                 <input type="number" id="exWeight" class="form-input" placeholder="kg">
                 <button onclick="addExercise()" class="add-btn">+</button>
             </div>
+        </div>
+        {% endif %}
         </div>
         {% endif %}
 
@@ -277,6 +372,35 @@
     </div>
 
     <script>
+    // Funkcja Auto-Save
+    async function updateEx(id, field, inputElement) {
+        const val = inputElement.value;
+
+        // Wizualny efekt "zapisywania" (lekkie przyciemnienie)
+        inputElement.style.opacity = '0.7';
+
+        try {
+            const response = await fetch(`/exercise/${id}/update`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ [field]: val }) // Np. { "weight": "100" }
+            });
+
+            if (response.ok) {
+                // Efekt sukcesu (zielona ramka na chwilę)
+                inputElement.classList.add('saved');
+                setTimeout(() => inputElement.classList.remove('saved'), 1000);
+            } else {
+                // Błąd
+                inputElement.style.borderColor = 'red';
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Błąd połączenia z serwerem");
+        } finally {
+            inputElement.style.opacity = '1';
+        }
+    }
     async function addExercise() {
         const name = document.getElementById('exName').value;
         const sets = parseInt(document.getElementById('exSets').value);

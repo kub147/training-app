@@ -115,6 +115,7 @@
 <body>
     <div class="container">
         <header>
+            <a href="/plans" class="btn" style="background: #fff; color: #333; border: 1px solid #ccc; margin-right: 10px;">Edytuj Plany</a>
             <h1>📅 Ostatnie 30 dni</h1>
             {% if not user or not user.strava_access_token %}
                 <a href="/strava/connect" class="btn">Połącz Strava</a>

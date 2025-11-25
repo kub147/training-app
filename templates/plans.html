@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Zarządzanie Planami</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #f0f2f5; max-width: 800px; margin: 0 auto; }
+        .card { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        h1, h3 { margin-top: 0; }
+        input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin-right: 5px; }
+        button { padding: 8px 15px; background: #2c3e50; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        ul { list-style: none; padding: 0; }
+        li { padding: 5px 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
+        .nav { margin-bottom: 20px; }
+        a { text-decoration: none; color: #333; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="/">← Wróć do Dashboardu</a>
+    </div>
+
+    <h1>💪 Twoje Plany Treningowe</h1>
+
+    <div class="card">
+        <form action="/plans/add" method="POST">
+            <input type="text" name="name" placeholder="Nazwa planu (np. Split A)" required>
+            <button type="submit">Utwórz Plan</button>
+        </form>
+    </div>
+
+    {% for plan in plans %}
+    <div class="card">
+        <h3>{{ plan.name }}</h3>
+
+        <ul>
+            {% for ex in plan.exercises %}
+            <li>
+                <span>{{ ex.name }}</span>
+                <span style="color: #666; font-size: 0.9em;">{{ ex.default_sets }}x{{ ex.default_reps }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+
+        <form action="/plans/{{plan.id}}/add_exercise" method="POST" style="margin-top: 15px; background: #f9f9f9; padding: 10px; border-radius: 5px;">
+            <input type="text" name="name" placeholder="Ćwiczenie" required style="width: 40%;">
+            <input type="number" name="sets" placeholder="Serie" style="width: 15%;">
+            <input type="number" name="reps" placeholder="Powt." style="width: 15%;">
+            <button type="submit">+</button>
+        </form>
+    </div>
+    {% endfor %}
+</body>
+</html>
