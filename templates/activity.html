@@ -74,6 +74,7 @@
         .header-ride { background: linear-gradient(135deg, var(--color-ride), #e64a19); }
         .header-swim { background: linear-gradient(135deg, var(--color-swim), #0097b8); }
         .header-weighttraining { background: linear-gradient(135deg, var(--color-gym), #7d3c98); }
+        .header-workout { background: linear-gradient(135deg, var(--color-gym), #7d3c98); } /* Dodane dla workout */
         .header-default { background: var(--color-default); }
 
         .activity-icon { font-size: 48px; margin-bottom: 10px; display: block; }
@@ -143,6 +144,7 @@
             border-radius: 8px;
             font-size: 14px;
         }
+
         /* Nowe style dla inputów w tabeli */
         .edit-input {
             width: 100%;
@@ -153,7 +155,7 @@
             font-size: 14px;
             text-align: center;
             transition: 0.2s;
-            box-sizing: border-box; /* Ważne, żeby input nie wystawał */
+            box-sizing: border-box;
         }
 
         .edit-input:focus {
@@ -205,12 +207,12 @@
         </div>
 
         <div class="main-card">
-            <div class="card-header header-{{activity.activity_type}} {% if activity.activity_type not in ['run','ride','swim','weighttraining'] %}header-default{% endif %}">
+            <div class="card-header header-{{activity.activity_type}} {% if activity.activity_type not in ['run','ride','swim','weighttraining', 'workout'] %}header-default{% endif %}">
                 <span class="activity-icon">
                     {% if activity.activity_type == 'run' %}🏃
                     {% elif activity.activity_type == 'ride' %}🚴
                     {% elif activity.activity_type == 'swim' %}🏊
-                    {% elif activity.activity_type == 'weighttraining' %}🏋️
+                    {% elif activity.activity_type in ['weighttraining', 'workout'] %}🏋️
                     {% else %}🏅{% endif %}
                 </span>
                 <h1 class="activity-title">{{ activity.activity_type }}</h1>
@@ -263,7 +265,6 @@
             </div>
         </div>
 
-        {% if activity.activity_type == 'weighttraining' %}
         <div class="gym-section">
             <h3 class="section-title">📝 Twoje odczucia i notatki</h3>
             <p style="color: #666; font-size: 13px; margin-bottom: 10px;">
@@ -277,20 +278,22 @@
             </form>
         </div>
 
-        {% if activity.activity_type == 'weighttraining' %}
+        {% if activity.activity_type in ['weighttraining', 'workout'] %}
         <div class="gym-section">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h3 class="section-title" style="margin: 0;">Dziennik ćwiczeń</h3>
 
                 {% if plans %}
                 <form action="/activity/{{activity.id}}/apply_plan" method="POST" style="display: flex; gap: 5px;">
-                    <select name="plan_id" style="padding: 5px; border-radius: 5px; border: 1px solid #ddd;">
-                        <option value="" disabled selected>Wybierz plan...</option>
+                    <select name="plan_id"
+                            onchange="this.form.submit()"
+                            style="padding: 8px; border-radius: 5px; border: 1px solid #ddd; background-color: #f8f9fa; cursor: pointer; font-weight: 500;">
+                        <option value="" disabled selected>📂 Wybierz plan, aby wczytać...</option>
                         {% for p in plans %}
                         <option value="{{p.id}}">{{p.name}}</option>
                         {% endfor %}
                     </select>
-                    <button type="submit" class="add-btn" style="background: var(--accent); font-size: 12px;">Wczytaj</button>
+                    <noscript><button type="submit" class="add-btn">Wczytaj</button></noscript>
                 </form>
                 {% endif %}
             </div>
@@ -359,15 +362,6 @@
             </div>
         </div>
         {% endif %}
-        </div>
-        {% endif %}
-
-        {% if activity.notes %}
-        <div class="gym-section">
-            <h3 class="section-title">Notatki</h3>
-            <p>{{ activity.notes }}</p>
-        </div>
-        {% endif %}
 
     </div>
 
@@ -401,6 +395,7 @@
             inputElement.style.opacity = '1';
         }
     }
+
     async function addExercise() {
         const name = document.getElementById('exName').value;
         const sets = parseInt(document.getElementById('exSets').value);

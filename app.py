@@ -121,12 +121,21 @@ def apply_plan_to_activity(id):
 
         # Kopiujemy ćwiczenia z szablonu do aktualnego treningu
         for template_ex in plan.exercises:
+            # --- NOWOŚĆ: Szukamy ostatniego użytego ciężaru dla tego ćwiczenia ---
+            last_entry = Exercise.query.join(Activity).filter(
+                Exercise.name == template_ex.name
+            ).order_by(Activity.start_time.desc()).first()
+
+            # Jeśli znaleziono historię, bierzemy wagę, jeśli nie -> 0
+            current_weight = last_entry.weight if last_entry else 0
+            # -------------------------------------------------------------------
+
             new_ex = Exercise(
                 activity_id=activity.id,
                 name=template_ex.name,
                 sets=template_ex.default_sets,
                 reps=template_ex.default_reps,
-                weight=0  # Użytkownik uzupełni wagę sam w edycji
+                weight=current_weight  # <--- Wstawiamy znalezioną wagę
             )
             db.session.add(new_ex)
 

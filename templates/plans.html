@@ -2,52 +2,208 @@
 <html>
 <head>
     <title>Zarządzanie Planami</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { font-family: sans-serif; padding: 20px; background: #f0f2f5; max-width: 800px; margin: 0 auto; }
-        .card { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        h1, h3 { margin-top: 0; }
-        input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin-right: 5px; }
-        button { padding: 8px 15px; background: #2c3e50; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        ul { list-style: none; padding: 0; }
-        li { padding: 5px 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
-        .nav { margin-bottom: 20px; }
-        a { text-decoration: none; color: #333; font-weight: bold; }
+        :root {
+            --bg: #f0f2f5;
+            --card-bg: #ffffff;
+            --text: #1d1d1d;
+            --gray: #666;
+            --primary: #2c3e50;
+            --accent: #3498db;
+            --green: #00bf63;
+            --border: #e0e0e0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 15px; /* Mniejszy padding na start */
+        }
+
+        .container { max-width: 800px; margin: 0 auto; }
+
+        /* Header Navigation */
+        .nav-header {
+            margin-bottom: 25px;
+        }
+        .back-btn {
+            background: white;
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 10px 16px; /* Większy padding dla dotyku */
+            border-radius: 20px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        h1 { margin: 0 0 20px 0; font-size: 24px; }
+        h3 { margin: 0 0 15px 0; font-size: 18px; color: var(--primary); }
+
+        /* Karty */
+        .card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 16px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        /* Listy ćwiczeń */
+        ul { list-style: none; padding: 0; margin: 0; }
+        li {
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        li:last-child { border-bottom: none; }
+
+        .ex-name { font-weight: 500; }
+        .ex-details { color: var(--gray); font-size: 0.9em; background: #f5f5f5; padding: 2px 8px; border-radius: 4px; }
+
+        /* Formularze */
+        input {
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            box-sizing: border-box; /* Ważne dla responsywności */
+            background: #fcfcfc;
+        }
+        input:focus { outline: none; border-color: var(--accent); background: #fff; }
+
+        button {
+            padding: 12px 20px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.9; }
+
+        /* Formularz tworzenia planu */
+        .create-plan-form {
+            display: flex;
+            gap: 10px;
+        }
+        .create-plan-form input { flex: 1; }
+
+        /* Formularz dodawania ćwiczenia (Desktop) */
+        .add-ex-form {
+            margin-top: 15px;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 12px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .add-ex-form input[name="name"] { flex: 2; }
+        .add-ex-form input[name="sets"],
+        .add-ex-form input[name="reps"] { flex: 1; text-align: center; }
+        .add-ex-form button {
+            background: var(--green);
+            min-width: 44px; /* Minimalna szerokość dla palca */
+            font-size: 18px;
+            padding: 0;
+            height: 42px;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        /* --- RESPONSYWNOŚĆ (MOBILE) --- */
+        @media (max-width: 600px) {
+            body { padding: 10px; }
+
+            /* Formularz tworzenia planu w kolumnie */
+            .create-plan-form {
+                flex-direction: column;
+            }
+            .create-plan-form button { width: 100%; }
+
+            /* Formularz dodawania ćwiczenia w kolumnie */
+            .add-ex-form {
+                display: grid;
+                grid-template-columns: 1fr 1fr; /* Dwie kolumny dla serii/powt */
+                grid-template-areas:
+                    "name name"
+                    "sets reps"
+                    "btn btn";
+                gap: 10px;
+            }
+
+            .add-ex-form input[name="name"] { grid-area: name; }
+            .add-ex-form input[name="sets"] { grid-area: sets; }
+            .add-ex-form input[name="reps"] { grid-area: reps; }
+            .add-ex-form button {
+                grid-area: btn;
+                width: 100%;
+                height: 44px;
+                font-size: 14px;
+            }
+            /* Zmieniamy "+" na tekst "Dodaj ćwiczenie" na mobilkach dla czytelności */
+            .add-ex-form button::after { content: "Dodaj ćwiczenie"; }
+            .add-ex-form button { font-size: 14px; }
+        }
     </style>
 </head>
 <body>
-    <div class="nav">
-        <a href="/">← Wróć do Dashboardu</a>
+    <div class="container">
+        <div class="nav-header">
+            <a href="/" class="back-btn">← Wróć do Dashboardu</a>
+        </div>
+
+        <h1>💪 Twoje Plany</h1>
+
+        <div class="card">
+            <h3>Utwórz nowy plan</h3>
+            <form action="/plans/add" method="POST" class="create-plan-form">
+                <input type="text" name="name" placeholder="Nazwa planu (np. Split A - Klatka)" required>
+                <button type="submit">Utwórz</button>
+            </form>
+        </div>
+
+        {% for plan in plans %}
+        <div class="card">
+            <h3>{{ plan.name }}</h3>
+
+            {% if plan.exercises %}
+            <ul>
+                {% for ex in plan.exercises %}
+                <li>
+                    <span class="ex-name">{{ ex.name }}</span>
+                    <span class="ex-details">{{ ex.default_sets }} x {{ ex.default_reps }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+                <p style="color: #999; font-size: 13px; text-align: center; margin: 10px 0;">Brak ćwiczeń w tym planie.</p>
+            {% endif %}
+
+            <form action="/plans/{{plan.id}}/add_exercise" method="POST" class="add-ex-form">
+                <input type="text" name="name" placeholder="Nazwa ćwiczenia" required>
+                <input type="number" name="sets" placeholder="Serie">
+                <input type="number" name="reps" placeholder="Powt.">
+                <button type="submit">+</button>
+            </form>
+        </div>
+        {% endfor %}
+
+        <div style="text-align: center; color: #999; font-size: 12px; margin-top: 30px;">
+            Wybierz plan w szczegółach treningu, aby załadować te ćwiczenia.
+        </div>
     </div>
-
-    <h1>💪 Twoje Plany Treningowe</h1>
-
-    <div class="card">
-        <form action="/plans/add" method="POST">
-            <input type="text" name="name" placeholder="Nazwa planu (np. Split A)" required>
-            <button type="submit">Utwórz Plan</button>
-        </form>
-    </div>
-
-    {% for plan in plans %}
-    <div class="card">
-        <h3>{{ plan.name }}</h3>
-
-        <ul>
-            {% for ex in plan.exercises %}
-            <li>
-                <span>{{ ex.name }}</span>
-                <span style="color: #666; font-size: 0.9em;">{{ ex.default_sets }}x{{ ex.default_reps }}</span>
-            </li>
-            {% endfor %}
-        </ul>
-
-        <form action="/plans/{{plan.id}}/add_exercise" method="POST" style="margin-top: 15px; background: #f9f9f9; padding: 10px; border-radius: 5px;">
-            <input type="text" name="name" placeholder="Ćwiczenie" required style="width: 40%;">
-            <input type="number" name="sets" placeholder="Serie" style="width: 15%;">
-            <input type="number" name="reps" placeholder="Powt." style="width: 15%;">
-            <button type="submit">+</button>
-        </form>
-    </div>
-    {% endfor %}
 </body>
 </html>
