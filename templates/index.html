@@ -4,6 +4,7 @@
     <title>Timeline Treningowy</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
             --bg: #f0f2f5;
@@ -31,28 +32,82 @@
 
         .container { max-width: 900px; margin: 0 auto; }
 
-        /* Header & Stats */
-        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        /* Header */
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         h1 { margin: 0; font-size: 24px; }
         .btn { background: #333; color: white; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer; text-decoration: none; font-size: 14px;}
+        .btn-outline { background: transparent; border: 1px solid #ccc; color: #333; }
 
-        .stats-bar {
-            display: flex; gap: 20px; margin-bottom: 40px;
-            background: var(--card-bg); padding: 15px; border-radius: 12px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            justify-content: space-around;
+        /* --- NOWE STATYSTYKI --- */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
         }
-        .stat-box { text-align: center; }
-        .stat-val { font-size: 20px; font-weight: bold; }
-        .stat-lbl { font-size: 12px; color: var(--gray); text-transform: uppercase; }
 
-        /* --- NOWA SEKCJA AI (CZAT + PLAN) --- */
+        .stat-card {
+            background: var(--card-bg);
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            text-align: center;
+            border-top: 3px solid transparent;
+        }
+
+        .stat-card.run { border-color: var(--color-run); }
+        .stat-card.swim { border-color: var(--color-swim); }
+        .stat-card.gym { border-color: var(--color-gym); }
+        .stat-card.ride { border-color: var(--color-ride); }
+
+        .stat-icon { font-size: 24px; margin-bottom: 5px; display: block; }
+        .stat-val { font-size: 22px; font-weight: 800; color: var(--text); }
+        .stat-sub { font-size: 13px; color: var(--gray); margin-top: 2px; }
+        .stat-label { font-size: 11px; text-transform: uppercase; color: #999; letter-spacing: 0.5px; margin-top: 5px;}
+
+        /* --- WYKRESY --- */
+        .charts-container {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .chart-card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            position: relative;
+        }
+
+        .chart-title { font-weight: bold; font-size: 16px; margin-bottom: 15px; color: var(--primary); }
+
+        /* Goal Progress Bar */
+        .goal-container { text-align: center; padding: 10px; }
+        .goal-circle {
+            position: relative;
+            width: 150px;
+            height: 150px;
+            margin: 0 auto;
+        }
+        .goal-text {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+        .goal-big { font-size: 32px; font-weight: 800; color: var(--color-run); line-height: 1; }
+        .goal-small { font-size: 12px; color: var(--gray); }
+
+
+        /* --- SEKCJA AI --- */
         .ai-dashboard {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 20px;
             margin-bottom: 40px;
-            height: 500px; /* Stała wysokość sekcji */
+            height: 500px;
         }
 
         .ai-panel {
@@ -62,7 +117,7 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.05);
             display: flex;
             flex-direction: column;
-            overflow: hidden; /* Żeby scroll nie wychodził */
+            overflow: hidden;
         }
 
         .panel-header {
@@ -83,116 +138,52 @@
             overflow-y: auto;
             margin-bottom: 15px;
             padding-right: 5px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
+            display: flex; flex-direction: column; gap: 10px;
         }
 
-        .msg {
-            padding: 10px 14px;
-            border-radius: 12px;
-            font-size: 14px;
-            line-height: 1.4;
-            max-width: 85%;
-        }
-        .msg-user {
-            background: #e3f2fd;
-            color: #0d47a1;
-            align-self: flex-end;
-            border-bottom-right-radius: 2px;
-        }
-        .msg-ai {
-            background: #f5f5f5;
-            color: #333;
-            align-self: flex-start;
-            border-bottom-left-radius: 2px;
-        }
+        .msg { padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.4; max-width: 85%; }
+        .msg-user { background: #e3f2fd; color: #0d47a1; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .msg-ai { background: #f5f5f5; color: #333; align-self: flex-start; border-bottom-left-radius: 2px; }
 
-        .chat-input-area {
-            display: flex;
-            gap: 10px;
-        }
-        .chat-input {
-            flex: 1;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            font-family: inherit;
-        }
-        .send-btn {
-            background: var(--accent);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            padding: 0 20px;
-            cursor: pointer;
-            font-weight: bold;
-        }
+        .chat-input-area { display: flex; gap: 10px; }
+        .chat-input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-family: inherit; }
+        .send-btn { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 0 20px; cursor: pointer; font-weight: bold; }
 
         /* PLAN STYLES */
-        #plan-content {
-            flex: 1;
-            overflow-y: auto;
-            font-size: 14px;
-            line-height: 1.6;
-        }
-        /* Style dla treści generowanych przez AI w planie */
-        #plan-content ul { padding-left: 20px; margin: 10px 0; }
-        #plan-content li { margin-bottom: 5px; }
-        #plan-content b { color: var(--primary); }
+        #plan-content { flex: 1; overflow-y: auto; font-size: 14px; line-height: 1.6; color: #333; }
+        .refresh-btn { font-size: 12px; background: #eee; border: none; padding: 5px 10px; border-radius: 10px; cursor: pointer; }
 
-        .refresh-btn {
-            font-size: 12px;
-            background: #eee;
-            border: none;
-            padding: 5px 10px;
-            border-radius: 10px;
-            cursor: pointer;
-        }
-
-
-        /* TIMELINE STYLES (Bez zmian) */
+        /* TIMELINE STYLES */
         .timeline { position: relative; padding-left: 30px; }
-        .timeline::before {
-            content: ''; position: absolute; left: 0; top: 0; bottom: 0;
-            width: 2px; background: #e0e0e0;
-        }
-        .date-header {
-            font-size: 14px; font-weight: bold; color: var(--gray);
-            margin: 25px 0 10px -30px; background: var(--bg);
-            padding: 5px 10px; display: inline-block;
-        }
-        .activity-card {
-            position: relative; background: var(--card-bg); border-radius: 10px;
-            padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.03);
-            display: flex; align-items: center; text-decoration: none; color: inherit;
-            transition: transform 0.2s; border-left: 5px solid var(--color-default);
-        }
+        .timeline::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: #e0e0e0; }
+        .date-header { font-size: 14px; font-weight: bold; color: var(--gray); margin: 25px 0 10px -30px; background: var(--bg); padding: 5px 10px; display: inline-block; }
+        .activity-card { position: relative; background: var(--card-bg); border-radius: 10px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.03); display: flex; align-items: center; text-decoration: none; color: inherit; transition: transform 0.2s; border-left: 5px solid var(--color-default); }
         .activity-card:hover { transform: translateX(5px); }
-        .timeline-dot {
-            position: absolute; left: -39px; width: 16px; height: 16px;
-            border-radius: 50%; background: white; border: 2px solid var(--color-default); z-index: 2;
-        }
+        .timeline-dot { position: absolute; left: -39px; width: 16px; height: 16px; border-radius: 50%; background: white; border: 2px solid var(--color-default); z-index: 2; }
         .act-icon { font-size: 24px; margin-right: 15px; width: 30px; text-align: center; }
         .act-info { flex: 1; }
         .act-title { font-weight: 600; margin-bottom: 2px; text-transform: capitalize; }
         .act-meta { font-size: 13px; color: var(--gray); }
         .act-value { font-weight: bold; font-family: monospace; font-size: 14px; }
+
         .type-run { border-left-color: var(--color-run); } .type-run .timeline-dot { border-color: var(--color-run); background: var(--color-run); }
         .type-ride { border-left-color: var(--color-ride); } .type-ride .timeline-dot { border-color: var(--color-ride); background: var(--color-ride); }
         .type-swim { border-left-color: var(--color-swim); } .type-swim .timeline-dot { border-color: var(--color-swim); background: var(--color-swim); }
         .type-weighttraining { border-left-color: var(--color-gym); } .type-weighttraining .timeline-dot { border-color: var(--color-gym); background: var(--color-gym); }
 
+        .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+
         @media (max-width: 700px) {
             .ai-dashboard { grid-template-columns: 1fr; height: auto; }
             .ai-panel { height: 400px; }
+            .charts-container { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <a href="/plans" class="btn" style="background: #fff; color: #333; border: 1px solid #ccc; margin-right: 10px;">Edytuj Plany</a>
+            <a href="/plans" class="btn btn-outline">Edytuj Plany</a>
             <h1>📅 Dashboard</h1>
             {% if not user or not user.strava_access_token %}
                 <a href="/strava/connect" class="btn">Połącz Strava</a>
@@ -201,32 +192,76 @@
             {% endif %}
         </header>
 
-        <div class="stats-bar">
-            <div class="stat-box">
-                <div class="stat-val">{{ stats.count }}</div>
-                <div class="stat-lbl">Treningi</div>
+        <div style="font-weight: bold; margin-bottom: 10px; color: #666;">Statystyki (Ostatnie 7 dni)</div>
+
+        <div class="stats-grid">
+            <div class="stat-card run">
+                <span class="stat-icon">🏃</span>
+                <div class="stat-val">{{ stats.run_count }}</div>
+                <div class="stat-sub">{{ stats.run_dist }} km</div>
+                <div class="stat-label">Bieganie</div>
             </div>
-            <div class="stat-box">
-                <div class="stat-val">{{ stats.distance }} km</div>
-                <div class="stat-lbl">Dystans</div>
+
+            <div class="stat-card swim">
+                <span class="stat-icon">🏊</span>
+                <div class="stat-val">{{ stats.swim_count }}</div>
+                <div class="stat-sub">{{ stats.swim_dist }} km</div>
+                <div class="stat-label">Basen</div>
             </div>
-            <div class="stat-box">
-                <div class="stat-val">{{ stats.hours }} h</div>
-                <div class="stat-lbl">Czas</div>
+
+            <div class="stat-card gym">
+                <span class="stat-icon">🏋️</span>
+                <div class="stat-val">{{ stats.gym_count }}</div>
+                <div class="stat-sub">{{ stats.gym_hours }} h</div>
+                <div class="stat-label">Siłownia</div>
+            </div>
+
+            <div class="stat-card ride">
+                <span class="stat-icon">🚴</span>
+                <div class="stat-val">{{ stats.ride_count }}</div>
+                <div class="stat-sub">{{ stats.ride_dist }} km</div>
+                <div class="stat-label">Rower</div>
+            </div>
+        </div>
+
+        <div class="charts-container">
+            <div class="chart-card">
+                <div class="chart-title">🎯 Cel Biegowy (Tydzień)</div>
+                <div class="goal-container" style="display:flex; align-items:center; justify-content:space-around;">
+                    <div class="goal-circle">
+                        <canvas id="runGoalChart"></canvas>
+                        <div class="goal-text">
+                            <div class="goal-big">{{ stats.run_count }} / 3</div>
+                            <div class="goal-small">TRENINGI</div>
+                        </div>
+                    </div>
+                    <div style="text-align:left; padding-left: 20px;">
+                        <p style="margin:0 0 5px 0;"><b>Cel:</b> 3 treningi</p>
+                        <p style="margin:0 0 5px 0; color:#666;">Wykonano: {{ stats.run_count }}</p>
+                        <p style="margin:0; color: #00bf63; font-weight:bold;">
+                            {% if stats.run_count >= 3 %}Cel osiągnięty! 🎉
+                            {% else %}Zostało: {{ 3 - stats.run_count }}{% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <div class="chart-title">⏱️ Czas Aktywności</div>
+                <div style="height: 150px; position:relative;">
+                    <canvas id="timeChart"></canvas>
+                </div>
             </div>
         </div>
 
         <div class="ai-dashboard">
-
             <div class="ai-panel">
-                <div class="panel-header">
-                    🤖 Czat z Trenerem
-                </div>
+                <div class="panel-header">🤖 Czat z Trenerem</div>
                 <div id="chat-history">
-                    <div class="msg msg-ai">Cześć Jakub! Przeanalizowałem Twoje ostatnie treningi i Twój profil. O co chcesz zapytać?</div>
+                    <div class="msg msg-ai">Cześć Jakub! Jestem gotowy.</div>
                 </div>
                 <div class="chat-input-area">
-                    <input type="text" id="userMsg" class="chat-input" placeholder="Np. Czy mogę jutro biegać?" onkeypress="handleEnter(event)">
+                    <input type="text" id="userMsg" class="chat-input" placeholder="Wpisz pytanie..." onkeypress="handleEnter(event)">
                     <button onclick="sendMessage()" class="send-btn">➤</button>
                 </div>
             </div>
@@ -234,15 +269,20 @@
             <div class="ai-panel">
                 <div class="panel-header">
                     📋 Plan na najbliższe dni
-                    <button onclick="loadPlan()" class="refresh-btn">↻ Odśwież</button>
+                    <button onclick="loadPlan()" class="refresh-btn">⚡ Generuj Plan</button>
                 </div>
                 <div id="plan-content">
-                    <p style="color: #888; text-align: center; margin-top: 50px;">Generuję plan na podstawie Twojej regeneracji i historii...</p>
+                    <p style="color: #888; text-align: center; margin-top: 50px;">
+                        Kliknij <b>"Generuj Plan"</b>, aby pobrać rozpiskę.
+                    </p>
                 </div>
             </div>
-
         </div>
 
+        <div class="section-header">
+            <h2 style="margin:0; font-size: 20px;">Ostatnie Aktywności</h2>
+            <a href="/history" class="btn" style="background: #2c3e50; font-size: 13px;">Wszystkie treningi →</a>
+        </div>
 
         <div class="timeline">
             {% set current_date = namespace(value=None) %}
@@ -282,13 +322,61 @@
                     </div>
                 </a>
             {% else %}
-                <p style="text-align:center; padding: 20px; color: #888;">Brak aktywności w ciągu ostatnich 30 dni.</p>
+                <p style="text-align:center; padding: 20px; color: #888;">Brak aktywności w ostatnich dniach.</p>
             {% endfor %}
         </div>
     </div>
 
     <script>
-    // 1. Synchronizacja Strava
+    // --- KONFIGURACJA WYKRESÓW CHART.JS ---
+
+    // Dane z Pythona przekazane do JS
+    const runCount = {{ stats.run_count }};
+    const runTarget = 3;
+    const remaining = Math.max(0, runTarget - runCount);
+
+    // 1. Wykres Celu (Okrąg)
+    const ctxGoal = document.getElementById('runGoalChart').getContext('2d');
+    new Chart(ctxGoal, {
+        type: 'doughnut',
+        data: {
+            labels: ['Zrobione', 'Do zrobienia'],
+            datasets: [{
+                data: [runCount, remaining],
+                backgroundColor: ['#00bf63', '#eeeeee'],
+                borderWidth: 0,
+                borderRadius: 10
+            }]
+        },
+        options: {
+            cutout: '80%', // Grubość pierścienia
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+            maintainAspectRatio: false
+        }
+    });
+
+    // 2. Wykres Czasu (Rozkład) - opcjonalnie
+    // (Możesz tu dodać dane o czasie z stats.run_hours, gym_hours itd. jeśli je obliczysz,
+    // na razie dam przykładowe oparte na liczbie treningów dla wizualizacji)
+    const ctxTime = document.getElementById('timeChart').getContext('2d');
+    new Chart(ctxTime, {
+        type: 'doughnut',
+        data: {
+            labels: ['Bieg', 'Basen', 'Siłownia', 'Rower'],
+            datasets: [{
+                data: [{{ stats.run_count }}, {{ stats.swim_count }}, {{ stats.gym_count }}, {{ stats.ride_count }}],
+                backgroundColor: ['#00bf63', '#00a8cc', '#8e44ad', '#ff5722'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            plugins: { legend: { position: 'right', labels: { boxWidth: 10, font: {size: 10} } } },
+            maintainAspectRatio: false
+        }
+    });
+
+
+    // --- FUNKCJE APLIKACJI (Sync, Chat, Plan) ---
     async function sync() {
         const btn = document.querySelector('header .btn');
         btn.innerText = '...';
@@ -296,20 +384,16 @@
         location.reload();
     }
 
-    // 2. Obsługa Czatu
     async function sendMessage() {
         const input = document.getElementById('userMsg');
         const history = document.getElementById('chat-history');
         const text = input.value.trim();
-
         if (!text) return;
 
-        // Dodaj wiadomość użytkownika
         history.innerHTML += `<div class="msg msg-user">${text}</div>`;
         input.value = '';
         history.scrollTop = history.scrollHeight;
 
-        // Dodaj "dymek" ładowania
         const loadingId = 'loading-' + Date.now();
         history.innerHTML += `<div id="${loadingId}" class="msg msg-ai">...</div>`;
 
@@ -320,41 +404,27 @@
                 body: JSON.stringify({message: text})
             });
             const data = await res.json();
-
-            // Podmień loading na odpowiedź
             document.getElementById(loadingId).remove();
             history.innerHTML += `<div class="msg msg-ai">${data.response}</div>`;
-
         } catch (e) {
-            document.getElementById(loadingId).innerText = "Błąd połączenia.";
+            document.getElementById(loadingId).innerText = "Błąd.";
         }
         history.scrollTop = history.scrollHeight;
     }
 
-    function handleEnter(e) {
-        if (e.key === 'Enter') sendMessage();
-    }
+    function handleEnter(e) { if (e.key === 'Enter') sendMessage(); }
 
-    // 3. Obsługa Planu
     async function loadPlan() {
         const content = document.getElementById('plan-content');
-        content.innerHTML = '<p style="color: #888; text-align: center; margin-top: 50px;">Analizuję dane i układam plan...</p>';
-
+        content.innerHTML = '<p style="text-align: center; margin-top: 50px;">Analizuję dane... ⏳</p>';
         try {
             const res = await fetch('/api/forecast');
             const data = await res.json();
-            // Gemini zwraca tekst z <br> i <b>, wstawiamy to jako HTML
-            // Zamieniamy \n na <br> jeśli przyszło w formacie tekstowym
-            let html = data.plan.replace(/\n/g, '<br>');
-            content.innerHTML = html;
+            content.innerHTML = data.plan;
         } catch (e) {
-            content.innerHTML = "Błąd generowania planu.";
+            content.innerHTML = "Błąd generowania.";
         }
     }
-
-    // Automatyczne ładowanie planu po wejściu na stronę
-    document.addEventListener('DOMContentLoaded', loadPlan);
-
     </script>
 </body>
 </html>

@@ -2,6 +2,7 @@ import requests
 from models import db, Activity, UserData
 from datetime import datetime
 import time
+import os
 
 
 class StravaClient:
@@ -11,10 +12,12 @@ class StravaClient:
         self.base_url = 'https://www.strava.com/api/v3'
 
     def get_authorization_url(self):
+        base_url = os.environ.get('BASE_URL', 'http://127.0.0.1:5001')
+
         return (f'https://www.strava.com/oauth/authorize?'
                 f'client_id={self.client_id}&'
                 f'response_type=code&'
-                f'redirect_uri=http://127.0.0.1:5001/strava/callback&'
+                f'redirect_uri={base_url}/strava/callback&'
                 f'scope=activity:read_all')
 
     def exchange_code(self, code):

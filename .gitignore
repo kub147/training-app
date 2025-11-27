@@ -17,3 +17,5 @@ instance/
 
 # 5. Pliki systemowe (np. z Maca)
 .DS_Store
+
+user_profile.py

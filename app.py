@@ -4,13 +4,16 @@ import os
 import google.generativeai as genai
 from datetime import datetime, timedelta
 
-# Importujemy modele bazy danych
+# Importy modeli
 from models import db, Activity, Exercise, UserData, WorkoutPlan, PlanExercise
 from config import Config
 from strava_client import StravaClient
 
-# (Możemy pominąć import AICoach z ai_coach.py, bo przenosimy logikę tutaj,
-#  ale zostawiam importy modeli, bo są potrzebne)
+# --- IMPORT DANYCH PRYWATNYCH ---
+try:
+    from user_profile import DATA as USER_PROFILE
+except ImportError:
+    USER_PROFILE = "Brak profilu użytkownika. Utwórz plik user_profile.py."
 
 load_dotenv()
 
@@ -23,137 +26,28 @@ strava = StravaClient(
     app.config['STRAVA_CLIENT_SECRET']
 )
 
-# --- KONFIGURACJA AI (Prosto z Twojego skryptu ask_coach.py) ---
+# Konfiguracja AI
 genai.configure(api_key=os.environ.get('GEMINI_API_KEY'))
-
-# Używamy modelu 1.5-flash (jest szybki i dobry do czatu).
-# Jeśli będziesz miał błąd 404, zmień na 'gemini-pro' lub zaktualizuj bibliotekę.
-model = genai.GenerativeModel('gemini-2.5-pro')
-
-# --- TWÓJ PROFIL UŻYTKOWNIKA ---
-USER_PROFILE = """1. Dane ogólne
-Imię i nazwisko: Jakub Wilk
-Wiek: 20 lat (wiek sprawnościowy wg Garmin 18)
-Płeć: mężczyzna
-Wzrost: 176 cm
-Masa: ~68 kg
-Sprzęt: Garmin Forerunner 55, Asics Gel Pulse 15
-Miejsce treningów: Porto – głównie asfalt, dobra pogoda, preferencja biegania bez deszczu
-Preferowana pora: wieczory
-Tryb życia: elastyczne popołudnia, zmienna liczba kroków (czasem 15–25k/dzień)
-
-2. Parametry fizjologiczne
-HR spoczynkowe: 67 bpm
-HR średnie wysokie: 124 bpm
-Średnia liczba oddechów: 13/min
-Poziom stresu: 32/100
-Szacowane HRmax: ~198 bpm (zmierzone podczas 10 km)
-VO₂max: 55 (Garmin)
-Forma: dobra, wysoka regeneracja, brak przetrenowania
-
-3. Strefy tętna (Garmin / aktualne)
-Z1: 101–120
-Z2: 121–140
-Z3: 141–160
-Z4: 161–180
-Z5: 181–198+
-
-4. Wyniki sportowe
-5 km: ~22:00
-10 km: 52:00 (ostatni start – Porto 2025)
-Prognozy Garmin:
-5 km – 21 min
-10 km – 46 min
-21.1 km – 1:50
-Maraton – 4:10
-Najdłuższy bieg: 16 km
-
-5. Obecny poziom aktywności
-Średni kilometraż tygodniowy: ~9.5–10 km
-Bieganie: 2–3 razy/tydzień
-Siłownia: 2×/tydzień (preferowane oddzielone od biegania)
-Basen: 1–2×/tydzień (ok. 2 km)
-Inne aktywności: surfing, spacery, trekking, mobilność
-Sen: 8–8.5 h
-
-6. Trening siłowy
-Czas: 90 min
-Normy siłowe:
-Wyciskanie: ~45 kg
-Martwy ciąg: ~90 kg
-Przysiad: 40–45 kg
-Cel siłowni: wzmacnianie pod bieganie, ogólna siła, poprawa mobilności
-Preferencja: nie łączyć biegania z siłownią w jeden dzień
-
-7. Styl biegania i preferencje
-Typy ulubione: interwały krótkie (1–3 min), easy run 30–40 min, biegi tempowe, 1× długie wybieganie tygodniowo (do 90 min).
-Problem na początku biegu: trudność w wejściu w stabilne tempo przez 5–10 min
-Nawierzchnia: płasko, asfalt
-Pogoda: unikanie deszczu
-
-8. Ograniczenia i ryzyko kontuzji
-Łatwo spięte: pachwiny, łydki
-Historia: lekkie naderwanie pachwiny 2–3 lata temu (bez aktualnych ograniczeń)
-Brak: przeciwwskazań zdrowotnych
-Zalecenia: systematyczna mobilność + core + praca nad łydkami
-
-9. Najtrudniejsze elementy podczas biegu
-trudność w ustabilizowaniu tempa na początku
-lekki dyskomfort nóg przy starcie biegu
-preferowane spokojne wejście w trening (rozgrzewka 10 min)
-
-10. Cele treningowe
-Cele główne: Poprawa wyników, Zdrowie i brak kontuzji, Regularność i ogólna wydolność
-Cele szczegółowe: zwiększanie kilometrażu (z 10 km -> 20-30 km), półmaraton za 3-4 miesiące, poprawa tempa.
-
-11. Możliwości czasowe
-Bieganie: 30–50 min, 1× dłuższy bieg 75–90 min
-Siłownia: 90 min
-Basen: 45 min
-
-13. Rekomendowany szablon tygodnia
-Tydzień – 3 biegi + 2 siłownie + 1 basen
-Bieg 1: Easy 30–40 min (Z2) + przebieżki
-Bieg 2: Interwały (np. 6×1 min, Z4/Z5)
-Bieg 3: Long Run 60–90 min (Z2)
-Siłownia A: siła ogólna + core
-Siłownia B: pośladki, stabilizacja, mobilność
-Basen: 45 min tlenowo
-Mobilność: 2–3 razy po 10–15 min
-
-15. Uwagi dla algorytmu AI
-Nie łączyć siłowni i biegania w jeden dzień.
-Zawsze 10 min rozgrzewki przed interwałami.
-Pierwsze 5–10 min biegu bardzo spokojnie.
-Stopniowe zwiększanie kilometrażu (+10%/tydzień).
-"""
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 
-def get_data_from_db():
-    """
-    Pobiera dane z bazy (ostatnie 30 dni) i formatuje do tekstu dla AI.
-    """
-    cutoff_date = datetime.now() - timedelta(days=30)
-
-    # Pobieramy aktywności z bazy
+def get_data_from_db(days=30):
+    """Pobiera dane z bazy i formatuje do tekstu dla AI."""
+    cutoff_date = datetime.now() - timedelta(days=days)
     activities = Activity.query.filter(Activity.start_time >= cutoff_date).order_by(Activity.start_time.asc()).all()
 
     if not activities:
-        return "Brak treningów w ostatnich 30 dniach."
+        return "Brak treningów w tym okresie."
 
-    data_text = "OSTATNIE TRENINGI (z bazy danych):\n"
-
+    data_text = "HISTORIA TRENINGÓW:\n"
     for act in activities:
         date_str = act.start_time.strftime('%Y-%m-%d')
-        data_text += f"- Data: {date_str} | Typ: {act.activity_type} | Dystans: {act.distance / 1000:.1f}km | Czas: {act.duration // 60}min\n"
-
+        data_text += f"- {date_str} | {act.activity_type} | {act.distance / 1000:.1f}km | {act.duration // 60}min\n"
         if act.notes:
-            data_text += f"  Notatka użytkownika: {act.notes}\n"
-
+            data_text += f"  Notatka: {act.notes}\n"
         if act.exercises:
             cwiczenia_str = ", ".join([f"{e.name} ({e.sets}x{e.reps}, {e.weight}kg)" for e in act.exercises])
-            data_text += f"  Ćwiczenia: {cwiczenia_str}\n"
-
+            data_text += f"  Siłownia: {cwiczenia_str}\n"
     return data_text
 
 
@@ -162,83 +56,121 @@ def get_data_from_db():
 @app.route('/')
 def index():
     user = UserData.query.first()
-    cutoff_date = datetime.now() - timedelta(days=30)
-    activities = Activity.query.filter(Activity.start_time >= cutoff_date).order_by(Activity.start_time.desc()).all()
 
+    # 1. Statystyki z OSTATNICH 7 DNI
+    cutoff_7d = datetime.now() - timedelta(days=7)
+    acts_7d = Activity.query.filter(Activity.start_time >= cutoff_7d).all()
+
+    # Inicjalizacja liczników
     stats = {
-        'count': len(activities),
-        'distance': round(sum(a.distance for a in activities) / 1000, 1),
-        'hours': round(sum(a.duration for a in activities) / 60 / 60, 1)
+        'count': len(acts_7d),
+        'distance': 0,
+        'hours': 0,
+        # Szczegółowe
+        'run_count': 0, 'run_dist': 0,
+        'swim_count': 0, 'swim_dist': 0,
+        'gym_count': 0, 'gym_time': 0,
+        'ride_count': 0, 'ride_dist': 0
     }
-    return render_template('index.html', user=user, activities=activities, stats=stats)
+
+    # Zliczanie
+    for a in acts_7d:
+        stats['distance'] += a.distance
+        stats['hours'] += a.duration
+
+        if a.activity_type == 'run':
+            stats['run_count'] += 1
+            stats['run_dist'] += a.distance
+        elif a.activity_type == 'swim':
+            stats['swim_count'] += 1
+            stats['swim_dist'] += a.distance
+        elif a.activity_type in ['weighttraining', 'workout']:
+            stats['gym_count'] += 1
+            stats['gym_time'] += a.duration
+        elif a.activity_type == 'ride':
+            stats['ride_count'] += 1
+            stats['ride_dist'] += a.distance
+
+    # Formatowanie (zamiana na km i godziny)
+    stats['distance'] = round(stats['distance'] / 1000, 1)
+    stats['hours'] = round(stats['hours'] / 3600, 1)
+
+    stats['run_dist'] = round(stats['run_dist'] / 1000, 1)
+    stats['swim_dist'] = round(stats['swim_dist'] / 1000, 1)
+    stats['ride_dist'] = round(stats['ride_dist'] / 1000, 1)
+    stats['gym_hours'] = round(stats['gym_time'] / 3600, 1)
+
+    # Timeline (ostatnie 10)
+    recent_activities = Activity.query.order_by(Activity.start_time.desc()).limit(10).all()
+
+    return render_template('index.html', user=user, activities=recent_activities, stats=stats)
+
+@app.route('/history')
+def history():
+    """Nowa strona wyświetlająca WSZYSTKIE treningi"""
+    all_activities = Activity.query.order_by(Activity.start_time.desc()).all()
+    return render_template('all_activities.html', activities=all_activities)
 
 
-# --- NOWE ROUTY AI (CZAT + PLAN) ---
+# --- ROUTY AI ---
 
 @app.route('/api/chat', methods=['POST'])
 def chat_with_coach():
     user_msg = request.json.get('message')
+    db_context = get_data_from_db(days=30)  # Do czatu bierzemy 30 dni historii
 
-    # 1. Pobieramy kontekst z bazy
-    db_context = get_data_from_db()
-
-    # 2. Tworzymy Prompt
     full_prompt = f"""
-    Jesteś doświadczonym trenerem sportowym Jakuba Wilka.
-
+    Jesteś trenerem Jakuba Wilka.
     {USER_PROFILE}
-
     {db_context}
-
-    PYTANIE UŻYTKOWNIKA:
-    {user_msg}
-
-    Odpowiedz krótko i konkretnie. Jeśli pytanie dotyczy planu, sugeruj się moim profilem.
-    Formatuj odpowiedź używając HTML (np. <b>pogrubienie</b>, <br> nowa linia).
+    PYTANIE: {user_msg}
+    Odpowiadaj krótko. Używaj tagów HTML do formatowania (<b>, <br>). Nie używaj Markdown.
     """
-
     try:
         response = model.generate_content(full_prompt)
-        # Zamieniamy \n na <br> dla czytelności w HTML, jeśli model zwrócił czysty tekst
-        formatted_text = response.text.replace('\n', '<br>')
-        return jsonify({'response': formatted_text})
+        # Usuwamy ewentualne znaczniki markdown, jeśli AI je doda
+        clean_text = response.text.replace('```html', '').replace('```', '').replace('**', '')
+        return jsonify({'response': clean_text})
     except Exception as e:
         return jsonify({'response': f"Błąd AI: {str(e)}"})
 
 
 @app.route('/api/forecast', methods=['GET'])
 def generate_forecast():
-    # Generujemy plan na najbliższe 4 dni
-    db_context = get_data_from_db()
+    # Plan na najbliższe 4 dni
+    db_context = get_data_from_db(days=14)
     today = datetime.now().strftime('%Y-%m-%d')
 
     prompt = f"""
-    Jesteś trenerem. Stwórz plan treningowy dla Jakuba na najbliższe 4 dni (zaczynając od dziś: {today}).
-
+    Jesteś trenerem. Stwórz plan dla Jakuba na 4 dni (start: {today}).
     {USER_PROFILE}
-
-    HISTORIA OSTATNICH TRENINGÓW:
     {db_context}
 
-    ZADANIE:
-    Wypisz plan dzień po dniu.
-    - Jeśli wczoraj był mocny trening, daj dziś lżej.
-    - Przestrzegaj zasady: nie łącz siłowni i biegania w jeden dzień.
-    - Używaj pogrubień (<b>) dla dat.
-    - Formatuj jako prostą listę HTML (<ul>, <li>).
+    INSTRUKCJA FORMATOWANIA (BARDZO WAŻNE):
+    1. Nie używaj Markdowna (żadnych **, #, -).
+    2. Używaj TYLKO czystego HTML.
+    3. Daty pogrubiaj tagiem <b>Data</b>.
+    4. Każdy dzień oddziel <br><br>.
+    5. Treść dnia wstawiaj po dwukropku.
+
+    Przykład:
+    <b>Poniedziałek (2023-10-10):</b><br>Bieg spokojny 5km.
     """
 
     try:
         response = model.generate_content(prompt)
-        # Formatowanie
-        formatted_text = response.text.replace('\n', '<br>')
-        return jsonify({'plan': formatted_text})
+        # Dodatkowe czyszczenie, gdyby AI jednak użyło Markdowna
+        text = response.text.replace('```html', '').replace('```', '').replace('**', '')
+        # Zamiana nowych linii na <br> jeśli AI zwróciło plain text
+        if '<br>' not in text:
+            text = text.replace('\n', '<br>')
+
+        return jsonify({'plan': text})
     except Exception as e:
         return jsonify({'plan': "Nie udało się wygenerować planu."})
 
 
-# --- POZOSTAŁE ROUTY (BEZ ZMIAN) ---
-
+# --- POZOSTAŁE ROUTY (Bez zmian) ---
 @app.route('/strava/connect')
 def strava_connect():
     url = strava.get_authorization_url()
@@ -314,18 +246,6 @@ def delete_exercise(ex_id):
     db.session.delete(ex)
     db.session.commit()
     return redirect(f'/activity/{aid}')
-
-
-@app.route('/activity/<int:id>/exercises', methods=['POST'])
-def add_exercise_api(id):
-    data = request.json
-    activity = Activity.query.get_or_404(id)
-    for item in data.get('exercises', []):
-        ex = Exercise(activity_id=activity.id, name=item['name'], sets=item['sets'], reps=item['reps'],
-                      weight=item.get('weight', 0))
-        db.session.add(ex)
-    db.session.commit()
-    return jsonify({'status': 'ok'})
 
 
 @app.route('/plans')
