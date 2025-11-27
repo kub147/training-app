@@ -7,7 +7,7 @@ class AICoach:
     def __init__(self, api_key):
         genai.configure(api_key=api_key)
         # ZMIANA: Używamy nowszego i szybszego modelu
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.model = genai.GenerativeModel('gemini-2.5-pro')
 
     def generate_plan(self, goal, target_date, activities):
         # Formatujemy historię aktywności
