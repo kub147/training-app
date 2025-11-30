@@ -19,3 +19,20 @@ instance/
 .DS_Store
 
 user_profile.py
+
+
+# Baza danych (nie chcemy nadpisywać bazy serwera bazą lokalną)
+*.db
+*.sqlite3
+instance/
+
+# Pliki prywatne i konfiguracyjne
+.env
+user_profile.py
+config.py
+
+# Pliki PyCharma i systemowe
+.idea/
+__pycache__/
+venv/
+.DS_Store

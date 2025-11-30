@@ -1,8 +1,8 @@
 import requests
+import os  # <--- WAŻNE: Dodany import
 from models import db, Activity, UserData
 from datetime import datetime
 import time
-import os
 
 
 class StravaClient:
@@ -12,6 +12,8 @@ class StravaClient:
         self.base_url = 'https://www.strava.com/api/v3'
 
     def get_authorization_url(self):
+        # Pobieramy Twój adres z pliku .env (np. https://jakub.pythonanywhere.com)
+        # Jeśli go nie ma, domyślnie używamy localhost (do pracy na komputerze)
         base_url = os.environ.get('BASE_URL', 'http://127.0.0.1:5001')
 
         return (f'https://www.strava.com/oauth/authorize?'
