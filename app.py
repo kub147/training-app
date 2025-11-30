@@ -4,8 +4,8 @@ import os
 import google.generativeai as genai
 from datetime import datetime, timedelta
 
-# Importy modeli
-from models import db, Activity, Exercise, UserData, WorkoutPlan, PlanExercise
+# Importy modeli (DODANO ChatMessage)
+from models import db, Activity, Exercise, UserData, WorkoutPlan, PlanExercise, ChatMessage
 from config import Config
 from strava_client import StravaClient
 
@@ -28,7 +28,7 @@ strava = StravaClient(
 
 # Konfiguracja AI
 genai.configure(api_key=os.environ.get('GEMINI_API_KEY'))
-model = genai.GenerativeModel('gemini-2.5-flash')
+model = genai.GenerativeModel('gemini-2.5-flash')  # Użyj sprawdzonego modelu (np. 1.5-flash lub pro)
 
 
 def get_data_from_db(days=30):
@@ -42,7 +42,11 @@ def get_data_from_db(days=30):
     data_text = "HISTORIA TRENINGÓW:\n"
     for act in activities:
         date_str = act.start_time.strftime('%Y-%m-%d')
-        data_text += f"- {date_str} | {act.activity_type} | {act.distance / 1000:.1f}km | {act.duration // 60}min\n"
+        # Dodajemy tętno
+        hr_info = f" | Śr. HR: {act.avg_hr} bpm" if act.avg_hr else ""
+
+        data_text += f"- {date_str} | {act.activity_type} | {act.distance / 1000:.1f}km | {act.duration // 60}min{hr_info}\n"
+
         if act.notes:
             data_text += f"  Notatka: {act.notes}\n"
         if act.exercises:
@@ -64,9 +68,7 @@ def index():
     # Inicjalizacja liczników
     stats = {
         'count': len(acts_7d),
-        'distance': 0,
-        'hours': 0,
-        # Szczegółowe
+        'distance': 0, 'hours': 0,
         'run_count': 0, 'run_dist': 0,
         'swim_count': 0, 'swim_dist': 0,
         'gym_count': 0, 'gym_time': 0,
@@ -91,10 +93,9 @@ def index():
             stats['ride_count'] += 1
             stats['ride_dist'] += a.distance
 
-    # Formatowanie (zamiana na km i godziny)
+    # Formatowanie
     stats['distance'] = round(stats['distance'] / 1000, 1)
     stats['hours'] = round(stats['hours'] / 3600, 1)
-
     stats['run_dist'] = round(stats['run_dist'] / 1000, 1)
     stats['swim_dist'] = round(stats['swim_dist'] / 1000, 1)
     stats['ride_dist'] = round(stats['ride_dist'] / 1000, 1)
@@ -105,31 +106,76 @@ def index():
 
     return render_template('index.html', user=user, activities=recent_activities, stats=stats)
 
+
 @app.route('/history')
 def history():
-    """Nowa strona wyświetlająca WSZYSTKIE treningi"""
     all_activities = Activity.query.order_by(Activity.start_time.desc()).all()
     return render_template('all_activities.html', activities=all_activities)
 
 
 # --- ROUTY AI ---
 
+@app.route('/api/chat/history', methods=['GET'])
+def get_chat_history():
+    """Zwraca ostatnie 20 wiadomości, żeby wyświetlić je po odświeżeniu strony"""
+    messages = ChatMessage.query.order_by(ChatMessage.timestamp.asc()).all()
+    # Limitujemy do ostatnich 50, żeby nie zapchać widoku
+    messages = messages[-50:]
+
+    history_data = [{'sender': m.sender, 'content': m.content} for m in messages]
+    return jsonify(history_data)
+
+
 @app.route('/api/chat', methods=['POST'])
 def chat_with_coach():
     user_msg = request.json.get('message')
-    db_context = get_data_from_db(days=30)  # Do czatu bierzemy 30 dni historii
 
+    # 1. Zapisz pytanie użytkownika
+    user_message_db = ChatMessage(sender='user', content=user_msg)
+    db.session.add(user_message_db)
+    db.session.commit()
+
+    # 2. Buduj kontekst (Pamięć rozmowy)
+    # Pobieramy ostatnie 10 wiadomości (wymian zdań), żeby AI znało kontekst
+    recent_messages = ChatMessage.query.order_by(ChatMessage.timestamp.asc()).limit(20).all()
+
+    chat_history_text = "HISTORIA ROZMOWY (Chronologicznie):\n"
+    for m in recent_messages:
+        role = "Zawodnik" if m.sender == 'user' else "Trener"
+        chat_history_text += f"{role}: {m.content}\n"
+
+    # 3. Pobierz dane z bazy
+    db_context = get_data_from_db(days=30)
+
+    # 4. Prompt
     full_prompt = f"""
     Jesteś trenerem Jakuba Wilka.
+
+    PROFIL ZAWODNIKA:
     {USER_PROFILE}
+
+    DANE TRENINGOWE:
     {db_context}
-    PYTANIE: {user_msg}
-    Odpowiadaj krótko. Używaj tagów HTML do formatowania (<b>, <br>). Nie używaj Markdown.
+
+    KONTEKST ROZMOWY:
+    {chat_history_text}
+
+    NOWE PYTANIE ZAWODNIKA:
+    {user_msg}
+
+    Odpowiedz krótko i konkretnie, nawiązując do kontekstu rozmowy jeśli to potrzebne.
+    Używaj HTML do formatowania (<b>, <br>).
     """
+
     try:
         response = model.generate_content(full_prompt)
-        # Usuwamy ewentualne znaczniki markdown, jeśli AI je doda
         clean_text = response.text.replace('```html', '').replace('```', '').replace('**', '')
+
+        # 5. Zapisz odpowiedź AI
+        ai_message_db = ChatMessage(sender='ai', content=clean_text)
+        db.session.add(ai_message_db)
+        db.session.commit()
+
         return jsonify({'response': clean_text})
     except Exception as e:
         return jsonify({'response': f"Błąd AI: {str(e)}"})
@@ -137,7 +183,6 @@ def chat_with_coach():
 
 @app.route('/api/forecast', methods=['GET'])
 def generate_forecast():
-    # Plan na najbliższe 4 dni
     db_context = get_data_from_db(days=14)
     today = datetime.now().strftime('%Y-%m-%d')
 
@@ -146,25 +191,17 @@ def generate_forecast():
     {USER_PROFILE}
     {db_context}
 
-    INSTRUKCJA FORMATOWANIA (BARDZO WAŻNE):
-    1. Nie używaj Markdowna (żadnych **, #, -).
-    2. Używaj TYLKO czystego HTML.
-    3. Daty pogrubiaj tagiem <b>Data</b>.
-    4. Każdy dzień oddziel <br><br>.
-    5. Treść dnia wstawiaj po dwukropku.
-
-    Przykład:
-    <b>Poniedziałek (2023-10-10):</b><br>Bieg spokojny 5km.
+    INSTRUKCJA FORMATOWANIA:
+    1. Nie używaj Markdowna.
+    2. Używaj TYLKO HTML.
+    3. Daty pogrubiaj <b>Data</b>.
+    4. Dni oddziel <br><br>.
     """
 
     try:
         response = model.generate_content(prompt)
-        # Dodatkowe czyszczenie, gdyby AI jednak użyło Markdowna
         text = response.text.replace('```html', '').replace('```', '').replace('**', '')
-        # Zamiana nowych linii na <br> jeśli AI zwróciło plain text
-        if '<br>' not in text:
-            text = text.replace('\n', '<br>')
-
+        if '<br>' not in text: text = text.replace('\n', '<br>')
         return jsonify({'plan': text})
     except Exception as e:
         return jsonify({'plan': "Nie udało się wygenerować planu."})
@@ -248,6 +285,18 @@ def delete_exercise(ex_id):
     return redirect(f'/activity/{aid}')
 
 
+@app.route('/activity/<int:id>/exercises', methods=['POST'])
+def add_exercise_api(id):
+    data = request.json
+    activity = Activity.query.get_or_404(id)
+    for item in data.get('exercises', []):
+        ex = Exercise(activity_id=activity.id, name=item['name'], sets=item['sets'], reps=item['reps'],
+                      weight=item.get('weight', 0))
+        db.session.add(ex)
+    db.session.commit()
+    return jsonify({'status': 'ok'})
+
+
 @app.route('/plans')
 def plans_list():
     plans = WorkoutPlan.query.all()
@@ -275,6 +324,22 @@ def add_plan_exercise(id):
                           plan=plan)
         db.session.add(ex)
         db.session.commit()
+    return redirect('/plans')
+
+
+@app.route('/plans/<int:id>/delete', methods=['POST'])
+def delete_plan(id):
+    plan = WorkoutPlan.query.get_or_404(id)
+    db.session.delete(plan)
+    db.session.commit()
+    return redirect('/plans')
+
+
+@app.route('/plans/exercise/<int:id>/delete', methods=['POST'])
+def delete_plan_exercise(id):
+    ex = PlanExercise.query.get_or_404(id)
+    db.session.delete(ex)
+    db.session.commit()
     return redirect('/plans')
 
 

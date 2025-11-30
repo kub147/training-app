@@ -25,7 +25,7 @@
             background-color: var(--bg);
             color: var(--text);
             margin: 0;
-            padding: 20px;
+            padding: 15px; /* Mniejszy padding na start */
         }
 
         .container { max-width: 800px; margin: 0 auto; }
@@ -74,7 +74,7 @@
         .header-ride { background: linear-gradient(135deg, var(--color-ride), #e64a19); }
         .header-swim { background: linear-gradient(135deg, var(--color-swim), #0097b8); }
         .header-weighttraining { background: linear-gradient(135deg, var(--color-gym), #7d3c98); }
-        .header-workout { background: linear-gradient(135deg, var(--color-gym), #7d3c98); } /* Dodane dla workout */
+        .header-workout { background: linear-gradient(135deg, var(--color-gym), #7d3c98); }
         .header-default { background: var(--color-default); }
 
         .activity-icon { font-size: 48px; margin-bottom: 10px; display: block; }
@@ -119,9 +119,20 @@
             margin-top: 20px;
         }
 
-        .section-title { margin: 0 0 20px 0; font-size: 20px; }
+        /* --- POPRAWKA RESPONSYWNOŚCI NAGŁÓWKA --- */
+        .section-header-mobile {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap; /* To naprawia ucinanie na telefonie */
+            gap: 10px;
+        }
 
-        table { width: 100%; border-collapse: collapse; }
+        .section-title { margin: 0; font-size: 20px; }
+
+        /* Tabela */
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; } /* Fixed layout trzyma ramy */
         th { text-align: left; color: var(--gray); font-size: 12px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
         td { padding: 12px 0; border-bottom: 1px solid #f0f0f0; font-weight: 500; }
         tr:last-child td { border-bottom: none; }
@@ -129,12 +140,12 @@
         /* Formularz dodawania */
         .add-form {
             background: #f8f9fa;
-            padding: 20px;
+            padding: 15px;
             border-radius: 12px;
             margin-top: 20px;
             display: grid;
             grid-template-columns: 2fr 1fr 1fr 1fr auto;
-            gap: 10px;
+            gap: 8px;
             align-items: center;
         }
 
@@ -143,19 +154,25 @@
             border: 1px solid var(--border);
             border-radius: 8px;
             font-size: 14px;
+            width: 100%; box-sizing: border-box;
         }
 
-        /* Nowe style dla inputów w tabeli */
+        /* --- POPRAWKA INPUTÓW TABELI --- */
         .edit-input {
             width: 100%;
-            padding: 8px;
-            border: 1px solid transparent; /* Domyślnie brak ramki */
+            padding: 8px 4px; /* Mniejszy padding boków */
+            border: 1px solid transparent;
             border-radius: 6px;
             background: #f8f9fa;
-            font-size: 14px;
+            font-size: 16px; /* 16px zapobiega zoomowaniu na iPhone */
             text-align: center;
             transition: 0.2s;
             box-sizing: border-box;
+            -moz-appearance: textfield; /* Usuwa strzałki w Firefox */
+        }
+        .edit-input::-webkit-outer-spin-button,
+        .edit-input::-webkit-inner-spin-button {
+            -webkit-appearance: none; margin: 0; /* Usuwa strzałki w Chrome/Safari */
         }
 
         .edit-input:focus {
@@ -165,7 +182,6 @@
             box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
         }
 
-        /* Efekt sukcesu przy zapisie */
         .saved {
             border-color: #00bf63 !important;
             background-color: #e8f5e9 !important;
@@ -179,7 +195,6 @@
             cursor: pointer;
             padding: 0 10px;
         }
-        .del-btn:hover { color: #c0392b; }
 
         .add-btn {
             background: var(--text);
@@ -189,11 +204,27 @@
             border-radius: 8px;
             cursor: pointer;
             font-weight: bold;
+            white-space: nowrap; /* Zapobiega łamaniu tekstu w przycisku */
         }
-        .add-btn:hover { opacity: 0.9; }
 
+        /* MOBILE ADJUSTMENTS */
         @media (max-width: 600px) {
-            .add-form { grid-template-columns: 1fr; }
+            .add-form {
+                grid-template-columns: 1fr 1fr; /* Dwie kolumny na telefonie */
+                grid-template-areas:
+                    "name name"
+                    "sets reps"
+                    "weight btn";
+            }
+            #exName { grid-area: name; }
+            #exSets { grid-area: sets; }
+            #exReps { grid-area: reps; }
+            #exWeight { grid-area: weight; }
+            .add-form button { grid-area: btn; width: 100%; }
+
+            /* Ciaśniejsza tabela na mobile */
+            td, th { padding: 10px 2px; }
+            .edit-input { font-size: 14px; padding: 8px 2px; }
         }
     </style>
 </head>
@@ -278,17 +309,17 @@
             </form>
         </div>
 
-        {% if activity.activity_type in ['weighttraining', 'workout'] %}
+        {% if activity.activity_type in ['weighttraining', 'workout', 'crossfit', 'circuit', 'yoga'] %}
         <div class="gym-section">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <div class="section-header-mobile">
                 <h3 class="section-title" style="margin: 0;">Dziennik ćwiczeń</h3>
 
                 {% if plans %}
-                <form action="/activity/{{activity.id}}/apply_plan" method="POST" style="display: flex; gap: 5px;">
+                <form action="/activity/{{activity.id}}/apply_plan" method="POST" style="display: flex; gap: 5px; flex: 1; justify-content: flex-end;">
                     <select name="plan_id"
                             onchange="this.form.submit()"
-                            style="padding: 8px; border-radius: 5px; border: 1px solid #ddd; background-color: #f8f9fa; cursor: pointer; font-weight: 500;">
-                        <option value="" disabled selected>📂 Wybierz plan, aby wczytać...</option>
+                            style="padding: 8px; border-radius: 5px; border: 1px solid #ddd; background-color: #f8f9fa; cursor: pointer; font-weight: 500; max-width: 200px;">
+                        <option value="" disabled selected>📂 Wybierz plan...</option>
                         {% for p in plans %}
                         <option value="{{p.id}}">{{p.name}}</option>
                         {% endfor %}
@@ -313,7 +344,7 @@
                     {% for ex in activity.exercises %}
                     <tr>
                         <td style="vertical-align: middle;">
-                            <span style="font-weight: 500;">{{ ex.name }}</span>
+                            <span style="font-weight: 500; font-size: 14px;">{{ ex.name }}</span>
                         </td>
 
                         <td>
@@ -331,7 +362,7 @@
                         </td>
 
                         <td>
-                            <input type="text"
+                            <input type="number" step="0.5"
                                    class="edit-input"
                                    value="{{ ex.weight }}"
                                    placeholder="0"
@@ -348,13 +379,13 @@
                 </tbody>
             </table>
             {% else %}
-                <div style="text-align: center; padding: 20px; background: #f9f9f9; border-radius: 8px; color: #666;">
+                <div style="text-align: center; padding: 20px; background: #f9f9f9; border-radius: 8px; color: #666; font-size: 14px;">
                     Wybierz plan powyżej lub dodaj ćwiczenia ręcznie poniżej.
                 </div>
             {% endif %}
 
             <div class="add-form">
-                <input type="text" id="exName" class="form-input" placeholder="Nazwa ćwiczenia">
+                <input type="text" id="exName" class="form-input" placeholder="Ćwiczenie">
                 <input type="number" id="exSets" class="form-input" placeholder="Serie">
                 <input type="number" id="exReps" class="form-input" placeholder="Powt.">
                 <input type="number" id="exWeight" class="form-input" placeholder="kg">
@@ -377,7 +408,7 @@
             const response = await fetch(`/exercise/${id}/update`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ [field]: val }) // Np. { "weight": "100" }
+                body: JSON.stringify({ [field]: val })
             });
 
             if (response.ok) {
@@ -385,7 +416,6 @@
                 inputElement.classList.add('saved');
                 setTimeout(() => inputElement.classList.remove('saved'), 1000);
             } else {
-                // Błąd
                 inputElement.style.borderColor = 'red';
             }
         } catch (e) {
@@ -407,7 +437,8 @@
             return;
         }
 
-        const btn = document.querySelector('.add-btn');
+        const btn = document.querySelector('.add-form .add-btn');
+        const originalText = btn.innerText;
         btn.innerText = '...';
 
         await fetch('/activity/{{activity.id}}/exercises', {

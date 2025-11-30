@@ -11,7 +11,7 @@ class Activity(db.Model):
     duration = db.Column(db.Integer)
     distance = db.Column(db.Float)
     avg_hr = db.Column(db.Integer)
-    notes = db.Column(db.Text)  # To pole już tu było, ale upewnij się, że jest
+    notes = db.Column(db.Text)
     exercises = db.relationship('Exercise', backref='activity', cascade='all, delete-orphan')
 
 class Exercise(db.Model):
@@ -30,7 +30,6 @@ class UserData(db.Model):
     goal = db.Column(db.String(500))
     target_date = db.Column(db.Date)
 
-# --- NOWE KLASY DO PLANÓW ---
 class WorkoutPlan(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100))
@@ -42,3 +41,10 @@ class PlanExercise(db.Model):
     name = db.Column(db.String(100))
     default_sets = db.Column(db.Integer)
     default_reps = db.Column(db.Integer)
+
+# --- NOWOŚĆ: Tabela do Historii Czatu ---
+class ChatMessage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    sender = db.Column(db.String(10)) # 'user' lub 'ai'
+    content = db.Column(db.Text)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)

@@ -329,13 +329,10 @@
 
     <script>
     // --- KONFIGURACJA WYKRESÓW CHART.JS ---
-
-    // Dane z Pythona przekazane do JS
     const runCount = {{ stats.run_count }};
     const runTarget = 3;
     const remaining = Math.max(0, runTarget - runCount);
 
-    // 1. Wykres Celu (Okrąg)
     const ctxGoal = document.getElementById('runGoalChart').getContext('2d');
     new Chart(ctxGoal, {
         type: 'doughnut',
@@ -348,16 +345,9 @@
                 borderRadius: 10
             }]
         },
-        options: {
-            cutout: '80%', // Grubość pierścienia
-            plugins: { legend: { display: false }, tooltip: { enabled: false } },
-            maintainAspectRatio: false
-        }
+        options: { cutout: '80%', plugins: { legend: { display: false }, tooltip: { enabled: false } }, maintainAspectRatio: false }
     });
 
-    // 2. Wykres Czasu (Rozkład) - opcjonalnie
-    // (Możesz tu dodać dane o czasie z stats.run_hours, gym_hours itd. jeśli je obliczysz,
-    // na razie dam przykładowe oparte na liczbie treningów dla wizualizacji)
     const ctxTime = document.getElementById('timeChart').getContext('2d');
     new Chart(ctxTime, {
         type: 'doughnut',
@@ -369,20 +359,44 @@
                 borderWidth: 0
             }]
         },
-        options: {
-            plugins: { legend: { position: 'right', labels: { boxWidth: 10, font: {size: 10} } } },
-            maintainAspectRatio: false
-        }
+        options: { plugins: { legend: { position: 'right', labels: { boxWidth: 10, font: {size: 10} } } }, maintainAspectRatio: false }
     });
 
 
-    // --- FUNKCJE APLIKACJI (Sync, Chat, Plan) ---
+    // --- FUNKCJE APLIKACJI ---
+
     async function sync() {
         const btn = document.querySelector('header .btn');
         btn.innerText = '...';
         await fetch('/strava/sync');
         location.reload();
     }
+
+    // NOWA FUNKCJA: Ładowanie historii czatu
+    async function loadChatHistory() {
+        const historyDiv = document.getElementById('chat-history');
+        try {
+            const res = await fetch('/api/chat/history');
+            const messages = await res.json();
+
+            // Wyczyść domyślną wiadomość, jeśli jest historia
+            if (messages.length > 0) {
+                historyDiv.innerHTML = '';
+                messages.forEach(msg => {
+                    const cls = msg.sender === 'user' ? 'msg-user' : 'msg-ai';
+                    historyDiv.innerHTML += `<div class="msg ${cls}">${msg.content}</div>`;
+                });
+                // Przewiń na dół
+                historyDiv.scrollTop = historyDiv.scrollHeight;
+            }
+        } catch (e) {
+            console.error("Błąd ładowania historii czatu", e);
+        }
+    }
+
+    // Wywołaj ładowanie historii po załadowaniu strony
+    document.addEventListener('DOMContentLoaded', loadChatHistory);
+
 
     async function sendMessage() {
         const input = document.getElementById('userMsg');
