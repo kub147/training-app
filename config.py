@@ -11,7 +11,7 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-key'
 
     # ZMIANA: Sklejamy ścieżkę folderu z nazwą pliku bazy
-    # Dzięki temu aplikacja zawsze trafi do tego samego pliku
+    # Dzięki temu aplikacja zawsze trafi do TEGO SAMEGO pliku, niezależnie kto ją uruchamia
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///' + os.path.join(basedir, 'training.db')
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
