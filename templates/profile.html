@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Profil</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f0f2f5; margin: 0; padding: 20px; }
+        .container { max-width: 860px; margin: 0 auto; }
+        .card { background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 16px; }
+        h1 { margin: 0 0 8px 0; font-size: 22px; }
+        p.sub { margin: 0 0 18px 0; color: #666; font-size: 14px; line-height: 1.5; }
+        label { display:block; font-size: 12px; letter-spacing: 0.4px; text-transform: uppercase; color:#666; margin-top: 14px; }
+        input, textarea { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid #e0e0e0; border-radius: 10px; font-size: 14px; background: #fff; }
+        textarea { min-height: 90px; resize: vertical; }
+        input:focus, textarea:focus { outline:none; border-color:#3498db; }
+                .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+        /* To jest kluczowe - zmiana na 1 kolumnę na telefonie */
+        @media (max-width: 720px) {
+            .row { grid-template-columns: 1fr; }
+            .container { width: 100%; padding: 0; }
+            .card { border-radius: 0; box-shadow: none; margin-bottom: 0; } /* Na mobile "flat" design wygląda lepiej */
+            body { padding: 0; background: #fff; } /* Usuwamy marginesy body na mobile */
+            .btn { padding: 14px; font-size: 16px; } /* Łatwiejsze klikanie */
+        }
+        .btn { margin-top: 18px; width: 100%; padding: 12px 16px; border: none; border-radius: 10px; background: #2c3e50; color: #fff; font-weight: 700; cursor: pointer; }
+        .btn:hover { opacity: 0.92; }
+        .btn-outline { background: transparent; border: 1px solid #ccc; color: #333; }
+        .flash { background: #fff5f5; border: 1px solid #f5c2c7; color: #842029; padding: 10px 12px; border-radius: 12px; margin-bottom: 12px; font-size: 14px; }
+        .topbar { display:flex; justify-content: space-between; align-items:center; margin-bottom: 12px; }
+        .link { color:#3498db; text-decoration:none; font-size: 13px; }
+        .hint { color:#666; font-size: 13px; margin: 6px 0 0 0; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="topbar">
+        <h1>👤 Profil</h1>
+        <div style="display:flex; gap:10px; align-items:center;">
+            <a class="link" href="/">Dashboard</a>
+            <a class="link" href="/logout">Wyloguj</a>
+        </div>
+    </div>
+
+    <p class="sub">Te dane są używane przez AI jako kontekst: <b>FACTS</b> (stałe), <b>GOALS</b> (cele) i <b>STATE</b> (czasowo wrażliwe, np. uraz). Możesz też ponownie zaimportować ZIP ze Stravy.</p>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for m in messages %}
+          <div class="flash">{{ m }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="card">
+        <div style="font-weight:700; margin-bottom:8px;">📦 Ponowny import ZIP (opcjonalnie)</div>
+        <p class="hint">Strava: strava.com/account → Download or delete your account → Request your archive.</p>
+        <form method="POST" action="/profile" enctype="multipart/form-data">
+            <input type="hidden" name="action" value="reimport_zip">
+            <label>Archiwum Strava (ZIP)</label>
+            <input type="file" name="strava_zip" accept=".zip" required>
+            <button class="btn" type="submit">Zaimportuj ZIP</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <div style="font-weight:700; margin-bottom:8px;">🧠 Dane do personalizacji</div>
+        <form method="POST" action="/profile">
+            <input type="hidden" name="action" value="save">
+
+            <label>FACTS: Dyscypliny (własnymi słowami)</label>
+            <input type="text" name="primary_sports" placeholder="np. bieganie, rower, siłownia" value="{{ profile.primary_sports or '' }}">
+
+            <div class="row">
+                <div>
+                    <label>FACTS: Ile masz czasu tygodniowo (h)?</label>
+                    <input type="number" step="0.5" min="0" name="weekly_time_hours" value="{{ profile.weekly_time_hours if profile.weekly_time_hours is not none else '' }}" placeholder="np. 6">
+                </div>
+                <div>
+                    <label>FACTS: Ile km tygodniowo (średnio)?</label>
+                    <input type="number" step="0.1" min="0" name="weekly_distance_km" value="{{ profile.weekly_distance_km if profile.weekly_distance_km is not none else '' }}" placeholder="np. 35">
+                </div>
+            </div>
+
+            <div class="row">
+                <div>
+                    <label>FACTS: Ile dni/tydzień realnie trenujesz?</label>
+                    <input type="number" min="0" max="7" name="days_per_week" value="{{ profile.days_per_week if profile.days_per_week is not none else '' }}" placeholder="np. 4">
+                </div>
+                <div>
+                    <label>GOALS: Cel / priorytet</label>
+                    <input type="text" name="goals_text" value="{{ profile.goals_text or '' }}" placeholder="np. półmaraton, poprawa 5k, redukcja kontuzji">
+                </div>
+            </div>
+
+            <div class="row">
+                <div>
+                    <label>GOALS: Wydarzenie docelowe (opcjonalnie)</label>
+                    <input type="text" name="target_event" value="{{ profile.target_event or '' }}" placeholder="np. Półmaraton Kraków">
+                </div>
+                <div>
+                    <label>GOALS: Data (YYYY-MM-DD)</label>
+                    <input type="date" name="target_date" value="{{ profile.target_date.isoformat() if profile.target_date else '' }}">
+                </div>
+            </div>
+
+            <label>PREFERENCJE (co lubisz / czego nie lubisz)</label>
+            <textarea name="preferences_text" placeholder="np. wolę biegi rano, nie lubię interwałów na bieżni">{{ profile.preferences_text or '' }}</textarea>
+
+            <label>OGRANICZENIA (stałe)</label>
+            <textarea name="constraints_text" placeholder="np. max 45 min w tygodniu, praca zmianowa">{{ profile.constraints_text or '' }}</textarea>
+
+            <label>STATE: Uraz / dolegliwości (czasowo wrażliwe)</label>
+            <textarea name="injuries_text" placeholder="np. ból kolana od 2 tygodni, fizjo zalecone 7 dni przerwy"></textarea>
+            <p class="hint">Wpisy STATE wygasają automatycznie (domyślnie po 21 dniach bez aktualizacji), żeby AI nie traktowało starego urazu jako „niedawnego”.</p>
+
+            <label>Opis / kontekst (własnymi słowami)</label>
+            <textarea name="experience_text" placeholder="np. jak Ci się trenuje, co Cię męczy, co chcesz poprawić">{{ profile.experience_text or '' }}</textarea>
+
+            <button class="btn" type="submit">Zapisz zmiany</button>
+        </form>
+    </div>
+</div>
+</body>
+</html>

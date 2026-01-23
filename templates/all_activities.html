@@ -25,7 +25,41 @@
         .timeline { position: relative; padding-left: 30px; }
         .timeline::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: #e0e0e0; }
         .date-header { font-size: 14px; font-weight: bold; color: var(--gray); margin: 25px 0 10px -30px; background: var(--bg); padding: 5px 10px; display: inline-block; }
-        .activity-card { position: relative; background: var(--card-bg); border-radius: 10px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.03); display: flex; align-items: center; text-decoration: none; color: inherit; border-left: 5px solid var(--color-default); }
+        .activity-card {
+            position: relative;
+            background: var(--card-bg);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+            display: flex;
+            align-items: center; /* Zostawiamy center, ale dodamy flex-wrap niżej */
+            text-decoration: none;
+            color: inherit;
+            border-left: 5px solid var(--color-default);
+            flex-wrap: nowrap; /* Domyślnie w jednej linii */
+        }
+
+        /* Dodaj ten blok pod spodem */
+        @media (max-width: 480px) {
+            .activity-card {
+                flex-wrap: wrap; /* Pozwól spaść elementom niżej */
+                padding: 12px;
+            }
+            .act-info {
+                width: 60%; /* Zarezerwuj miejsce na tekst */
+            }
+            .act-value {
+                width: 100%;
+                text-align: right;
+                margin-top: 5px;
+                font-size: 13px;
+                color: var(--color-run); /* Wyróżnienie kolorem */
+                padding-top: 5px;
+                border-top: 1px solid #f0f0f0;
+            }
+            .back-btn { width: 100%; text-align: center; display: block; margin-bottom: 5px;}
+        }
         .timeline-dot { position: absolute; left: -39px; width: 16px; height: 16px; border-radius: 50%; background: white; border: 2px solid var(--color-default); z-index: 2; }
         .act-icon { font-size: 24px; margin-right: 15px; width: 30px; text-align: center; }
         .act-info { flex: 1; }
@@ -42,7 +76,10 @@
 <body>
     <div class="container">
         <div class="nav">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
             <a href="/" class="back-btn">← Wróć do Dashboardu</a>
+            <a href="/logout" class="back-btn">Wyloguj</a>
+        </div>
         </div>
 
         <h1>📜 Pełna Historia Treningów</h1>

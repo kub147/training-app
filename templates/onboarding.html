@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Uzupełnij profil</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f0f2f5; margin: 0; padding: 20px; }
+        .container { max-width: 860px; margin: 0 auto; }
+        .card { background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        h1 { margin: 0 0 8px 0; font-size: 22px; }
+        p.sub { margin: 0 0 18px 0; color: #666; font-size: 14px; line-height: 1.5; }
+        label { display:block; font-size: 12px; letter-spacing: 0.4px; text-transform: uppercase; color:#666; margin-top: 14px; }
+        input, textarea { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid #e0e0e0; border-radius: 10px; font-size: 14px; background: #fff; }
+        textarea { min-height: 90px; resize: vertical; }
+        input:focus, textarea:focus { outline:none; border-color:#3498db; }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+        /* To jest kluczowe - zmiana na 1 kolumnę na telefonie */
+        @media (max-width: 720px) {
+            .row { grid-template-columns: 1fr; }
+            .container { width: 100%; padding: 0; }
+            .card { border-radius: 0; box-shadow: none; margin-bottom: 0; } /* Na mobile "flat" design wygląda lepiej */
+            body { padding: 0; background: #fff; } /* Usuwamy marginesy body na mobile */
+            .btn { padding: 14px; font-size: 16px; } /* Łatwiejsze klikanie */
+        }
+        .btn { margin-top: 18px; width: 100%; padding: 12px 16px; border: none; border-radius: 10px; background: #2c3e50; color: #fff; font-weight: 700; cursor: pointer; }
+        .btn:hover { opacity: 0.92; }
+        .flash { background: #fff5f5; border: 1px solid #f5c2c7; color: #842029; padding: 10px 12px; border-radius: 12px; margin-bottom: 12px; font-size: 14px; }
+        .hint { color:#666; font-size: 13px; margin: 6px 0 0 0; }
+        .dictation-wrap { position: relative; }
+        .mic-btn { position: absolute; right: 10px; top: 10px; border: 1px solid #e0e0e0; background: #f8fafc; border-radius: 10px; padding: 6px 10px; cursor: pointer; font-size: 13px; }
+        .mic-btn.active { border-color:#3498db; }
+        .topbar { display:flex; justify-content: space-between; align-items:center; margin-bottom: 12px; }
+        .link { color:#3498db; text-decoration:none; font-size: 13px; }
+        .small { font-size: 12px; color:#777; }
+        .section { margin-top: 18px; padding-top: 10px; border-top: 1px solid #eee; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="card">
+        <div class="topbar">
+            <h1>🧠 Uzupełnij profil (wymagane)</h1>
+            <a class="link" href="/logout">Wyloguj</a>
+        </div>
+        <p class="sub">
+            To jest jednorazowy krok po rejestracji. Pytania są bardziej „otwarte” — model trenera będzie brał pod uwagę nie tylko liczby, ale i kontekst.
+            Dane możesz później edytować w zakładce <b>Profil</b>.
+        </p>
+
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            {% for m in messages %}
+              <div class="flash">{{ m }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <form method="POST" action="/onboarding">
+
+            <div class="section">
+                <h3 style="margin:0 0 6px 0; font-size: 16px;">FACTS (jak wygląda Twoja baza)</h3>
+                <div class="small">Te informacje są względnie stałe — edytujesz je, gdy coś realnie się zmienia.</div>
+
+                <label>1) Jakie dyscypliny trenujesz? (np. run, ride, swim, gym)</label>
+                <input type="text" name="primary_sports" placeholder="np. run, gym" value="{{ profile.primary_sports or '' }}" required>
+
+                <div class="row">
+                    <div>
+                        <label>2) Ile czasu realnie masz tygodniowo? (h)</label>
+                        <input type="number" step="0.5" min="0" name="weekly_time_hours" value="{{ profile.weekly_time_hours if profile.weekly_time_hours is not none else '' }}" placeholder="np. 5" required>
+                    </div>
+                    <div>
+                        <label>3) Ile dni w tygodniu możesz trenować?</label>
+                        <input type="number" min="1" max="7" name="days_per_week" value="{{ profile.days_per_week if profile.days_per_week is not none else '' }}" placeholder="np. 4" required>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div>
+                        <label>4) Ile km tygodniowo biegasz / jeździsz (jeśli dotyczy)?</label>
+                        <input type="number" step="0.1" min="0" name="weekly_distance_km" value="{{ profile.weekly_distance_km if profile.weekly_distance_km is not none else '' }}" placeholder="np. 30">
+                    </div>
+                    <div>
+                        <label>5) Co możesz powiedzieć o swoim doświadczeniu?</label>
+                        <input type="text" name="experience_text" value="{{ profile.experience_text or '' }}" placeholder="np. biegam 2 lata, wracam po przerwie">
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3 style="margin:0 0 6px 0; font-size: 16px;">GOALS (dokąd zmierzasz)</h3>
+                <label>6) Jaki jest Twój główny cel? (napisz normalnie, nie w punktach)</label>
+                <textarea name="goals_text" required>{{ profile.goals_text or '' }}</textarea>
+
+                <div class="row">
+                    <div>
+                        <label>7) Wydarzenie docelowe (opcjonalnie)</label>
+                        <input type="text" name="target_event" value="{{ profile.target_event or '' }}" placeholder="np. półmaraton">
+                    </div>
+                    <div>
+                        <label>8) Data docelowa (opcjonalnie)</label>
+                        <input type="date" name="target_date" value="{{ profile.target_date.isoformat() if profile.target_date else '' }}">
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3 style="margin:0 0 6px 0; font-size: 16px;">PREFERENCJE i OGRANICZENIA</h3>
+                <label>9) Co lubisz / czego nie lubisz w treningu?</label>
+                <textarea name="preferences_text">{{ profile.preferences_text or '' }}</textarea>
+
+                <label>10) Ograniczenia (czas, sprzęt, praca, dojazdy) — cokolwiek istotne</label>
+                <textarea name="constraints_text">{{ profile.constraints_text or '' }}</textarea>
+            </div>
+
+            <div class="section">
+                <h3 style="margin:0 0 6px 0; font-size: 16px;">STATE (czasowo wrażliwe)</h3>
+                <div class="small">To jest „stan na teraz” (np. uraz). Aplikacja traktuje to jako aktualne tylko przez określony czas, dopóki nie zaktualizujesz.</div>
+
+                <label>11) Czy masz teraz uraz / ból / ograniczenie? (opcjonalnie)</label>
+                <textarea name="injuries_text" placeholder="np. lekki ból kolana od tygodnia"> </textarea>
+
+                <label>12) Krótki kontekst (może być głosowo) — co jest dla Ciebie ważne?</label>
+                <div class="dictation-wrap">
+                    <button type="button" class="mic-btn" data-target="context">🎤 Mów</button>
+                    <textarea id="context" name="experience_text" placeholder="Np. jak Ci się trenuje, co Cię męczy, co chcesz poprawić...">{{ profile.experience_text or '' }}</textarea>
+                </div>
+                <p class="hint">Wspierane w Chrome/Edge (Web Speech API). Jeśli nie działa, wpisz ręcznie.</p>
+            </div>
+
+            <button class="btn" type="submit">Zapisz i przejdź do dashboardu</button>
+        </form>
+    </div>
+</div>
+
+<script>
+(function(){
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const micButtons = document.querySelectorAll('.mic-btn');
+
+  if(!SpeechRecognition){
+    micButtons.forEach(b => { b.disabled = true; b.title = 'Brak wsparcia Web Speech API w tej przeglądarce'; });
+    return;
+  }
+
+  micButtons.forEach(btn => {
+    const targetId = btn.getAttribute('data-target');
+    const ta = document.getElementById(targetId);
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'pl-PL';
+    recognition.interimResults = true;
+    recognition.continuous = true;
+
+    let finalText = '';
+
+    recognition.onresult = (event) => {
+      let interim = '';
+      for(let i=event.resultIndex;i<event.results.length;i++){
+        const transcript = event.results[i][0].transcript;
+        if(event.results[i].isFinal){
+          finalText += transcript + ' ';
+        } else {
+          interim += transcript;
+        }
+      }
+      ta.value = (finalText + interim).trim();
+    };
+
+    recognition.onerror = () => {
+      btn.classList.remove('active');
+      btn.textContent = '🎤 Mów';
+    };
+
+    recognition.onend = () => {
+      btn.classList.remove('active');
+      btn.textContent = '🎤 Mów';
+    };
+
+    btn.addEventListener('click', () => {
+      if(btn.classList.contains('active')){
+        recognition.stop();
+        return;
+      }
+      btn.classList.add('active');
+      btn.textContent = '⏹ Stop';
+      try { recognition.start(); } catch(e) { /* ignore */ }
+    });
+  });
+})();
+</script>
+</body>
+</html>
