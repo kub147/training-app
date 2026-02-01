@@ -16,7 +16,7 @@ import google.generativeai as genai
 
 
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import text, inspect
@@ -38,6 +38,11 @@ db.init_app(app)
 login_manager = LoginManager()
 login_manager.login_view = "login"
 login_manager.init_app(app)
+
+
+@app.context_processor
+def inject_lang():
+    return {"lang": session.get("lang", "pl")}
 
 
 @app.route("/favicon.ico")
@@ -129,7 +134,8 @@ def load_user(user_id):
 
 # --- AI ---
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-2.5-flash")
+CHECKIN_MODEL = os.environ.get("CHECKIN_MODEL", "gemini-2.5-flash-lite")
+model = genai.GenerativeModel(CHECKIN_MODEL)
 
 # -------------------- DASHBOARD HELPERS --------------------
 
@@ -150,6 +156,26 @@ SPORT_STYLES = {
     "climb": {"icon": "🧗", "color": "var(--color-climb)"},
     "other": {"icon": "🏅", "color": "var(--color-default)"},
 }
+
+ACTIVITY_LABELS = {
+    "run": "Bieganie",
+    "ride": "Rower",
+    "swim": "Pływanie",
+    "weighttraining": "Siłownia",
+    "workout": "Trening",
+    "yoga": "Joga",
+    "hike": "Wędrówka",
+    "walk": "Spacer",
+    "other": "Inne",
+}
+
+
+def activity_label(activity_type: str | None) -> str:
+    t = (activity_type or "").lower()
+    return ACTIVITY_LABELS.get(t, t or "Inne")
+
+
+app.jinja_env.globals["activity_label"] = activity_label
 
 
 def classify_sport(text: str) -> str:
@@ -187,15 +213,9 @@ def parse_plan_html(html_content: str) -> list[dict]:
     if not html_content:
         return []
 
-    # Usuń nadmiarowe tagi <b> i </b> które psują formatowanie
-    html_content = html_content.replace('</b>', '').strip()
-
-    # Normalizuj <br> na \n
+    # Normalizuj <br> na \n i usuń tagi HTML
     norm = html_content.replace("<br/>", "\n").replace("<br />", "\n").replace("<br>", "\n")
-
-    # Usuń wszystkie tagi HTML oprócz <b>
-    text = re.sub(r'<(?!b|/b)[^>]+>', '', norm)
-    text = re.sub(r'<b>', '\n**DATA**: ', text)
+    text = re.sub(r'<[^>]+>', '', norm)
     text = re.sub(r'\s+', ' ', text).strip()
 
     # Podziel po datach (YYYY-MM-DD)
@@ -228,6 +248,7 @@ def parse_plan_html(html_content: str) -> list[dict]:
         m_work = re.search(r'Trening\s*[:]\s*(.+?)(?=Dlaczego|$)', chunk, re.IGNORECASE | re.DOTALL)
         if m_work:
             workout = m_work.group(1).strip()
+            workout = workout.replace("**", "").replace("DATA:", "").strip()
             # Ogranicz do jednej linii/300 znaków
             workout = ' '.join(workout.split())[:300]
 
@@ -235,6 +256,7 @@ def parse_plan_html(html_content: str) -> list[dict]:
         m_why = re.search(r'Dlaczego\s*[:]\s*(.+)', chunk, re.IGNORECASE | re.DOTALL)
         if m_why:
             why = m_why.group(1).strip()
+            why = why.replace("**", "").replace("DATA:", "").strip()
             why = ' '.join(why.split())[:300]
 
         sport = classify_sport(chunk)
@@ -322,6 +344,10 @@ def enforce_onboarding():
     """Wymusza uzupełnienie ankiety przed wejściem na dashboard i inne widoki."""
     if not current_user.is_authenticated:
         return
+
+    lang = request.args.get("lang")
+    if lang in ("pl", "en"):
+        session["lang"] = lang
 
     # endpoint może być None (np. statyczne pliki) — wtedy nie blokujemy
     endpoint = request.endpoint or ""
@@ -909,22 +935,12 @@ def profile():
 
 # -------------------- APP --------------------
 
-@app.route("/")
-@login_required
-def index():
-    # Zakres stats: rolling window (7/30/90) przez query param
-    try:
-        range_days = int(request.args.get("days", "7"))
-    except Exception:
-        range_days = 7
-    if range_days not in (7, 30, 90, 365):
-        range_days = 7
-
+def compute_stats(user_id: int, range_days: int) -> dict:
     cutoff = datetime.now() - timedelta(days=range_days)
 
     acts = (
         Activity.query
-        .filter(Activity.user_id == current_user.id, Activity.start_time >= cutoff)
+        .filter(Activity.user_id == user_id, Activity.start_time >= cutoff)
         .all()
     )
 
@@ -941,11 +957,13 @@ def index():
             return "gym"
         return "other"
 
-    buckets = {"run": {"count": 0, "distance": 0.0, "duration": 0},
-               "ride": {"count": 0, "distance": 0.0, "duration": 0},
-               "swim": {"count": 0, "distance": 0.0, "duration": 0},
-               "gym": {"count": 0, "distance": 0.0, "duration": 0},
-               "other": {"count": 0, "distance": 0.0, "duration": 0}}
+    buckets = {
+        "run": {"count": 0, "distance": 0.0, "duration": 0},
+        "ride": {"count": 0, "distance": 0.0, "duration": 0},
+        "swim": {"count": 0, "distance": 0.0, "duration": 0},
+        "gym": {"count": 0, "distance": 0.0, "duration": 0},
+        "other": {"count": 0, "distance": 0.0, "duration": 0},
+    }
 
     totals = {"count": 0, "distance": 0.0, "duration": 0}
 
@@ -992,9 +1010,14 @@ def index():
                 "hours": round(v["duration"] / 3600.0, 1),
             }
             for k, v in buckets.items()
-        }
+        },
     }
+    return stats
 
+
+@app.route("/")
+@login_required
+def index():
     recent_activities = (
         Activity.query
         .filter_by(user_id=current_user.id)
@@ -1012,10 +1035,6 @@ def index():
 
     plan_days = parse_plan_html(active_plan.html_content) if active_plan else []
     today_str = datetime.now().strftime("%Y-%m-%d")
-    tomorrow_str = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-
-    plan_today = next((d for d in plan_days if d.get("date") == today_str), None)
-    plan_tomorrow = next((d for d in plan_days if d.get("date") == tomorrow_str), None)
 
     # Future: kolejne 3 dni od dziś (włącznie), jeśli są w planie
     future_days = []
@@ -1053,13 +1072,28 @@ def index():
     return render_template(
         "index.html",
         activities=recent_activities,
-        stats=stats,
         active_plan=active_plan,
-        plan_today=plan_today,
-        plan_tomorrow=plan_tomorrow,
         past_days=past_days,
         future_days=future_days,
         today_str=today_str,
+    )
+
+
+@app.route("/metrics")
+@login_required
+def metrics():
+    try:
+        range_days = int(request.args.get("days", "7"))
+    except Exception:
+        range_days = 7
+    if range_days not in (7, 30, 90, 365):
+        range_days = 7
+
+    stats = compute_stats(current_user.id, range_days)
+
+    return render_template(
+        "metrics.html",
+        stats=stats,
         range_days=range_days,
     )
 
@@ -1211,7 +1245,7 @@ def _guess_mime(path: str) -> str:
 
 
 def parse_strava_screenshot_to_activity(image_path: str) -> dict:
-    """Próbuje wyciągnąć zrzutu Stravy: typ, dystans, czas. Zwraca dict."""
+    """Próbuje wyciągnąć zrzutu Stravy: typ, dystans, czas, tętno, data/godzina. Zwraca dict."""
     try:
         with open(image_path, "rb") as f:
             img_bytes = f.read()
@@ -1223,12 +1257,17 @@ Wyciągnij z niego dane i zwróć WYŁĄCZNIE JSON (bez markdown, bez komentarzy
 {
   "activity_type": "run|ride|swim|workout|weighttraining|yoga|hike|walk|other",
   "distance_km": number|null,
-  "duration_min": number|null
+  "duration_min": number|null,
+  "avg_hr": number|null,
+  "start_date": "YYYY-MM-DD"|null,
+  "start_time": "HH:MM"|null
 }
 
 Zasady:
 - distance_km ma być w kilometrach (np. 8.42)
 - duration_min ma być w minutach (np. 46)
+- avg_hr to średnie tętno (bpm)
+- jeśli widzisz datę/godzinę rozpoczęcia, zwróć start_date i start_time
 - jeśli nie widzisz wartości, daj null
         """.strip()
 
@@ -1251,12 +1290,35 @@ Zasady:
             out["duration_min"] = None if data.get("duration_min") is None else float(data.get("duration_min"))
         except Exception:
             out["duration_min"] = None
+        try:
+            out["avg_hr"] = None if data.get("avg_hr") is None else int(float(data.get("avg_hr")))
+        except Exception:
+            out["avg_hr"] = None
+        out["start_date"] = (data.get("start_date") or "").strip() or None
+        out["start_time"] = (data.get("start_time") or "").strip() or None
 
         return out
     except Exception:
         return {}
 
 # -------------------- QUICK ADD --------------------
+
+def _parse_date_time(date_str: str, time_str: str) -> datetime:
+    date_str = (date_str or "").strip()
+    time_str = (time_str or "").strip()
+    try:
+        if date_str and time_str:
+            dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+        elif date_str:
+            dt = datetime.strptime(date_str, "%Y-%m-%d")
+        else:
+            dt = datetime.now(timezone.utc)
+
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        return datetime.now(timezone.utc)
 
 @app.route("/activity/manual", methods=["POST"])
 @login_required
@@ -1272,18 +1334,7 @@ def add_activity_manual():
     notes = (request.form.get("notes") or "").strip()
 
     # data + godzina -> datetime aware (UTC)
-    try:
-        if date_str and time_str:
-            dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
-        elif date_str:
-            dt = datetime.strptime(date_str, "%Y-%m-%d")
-        else:
-            dt = datetime.now(timezone.utc)
-
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-    except Exception:
-        dt = datetime.now(timezone.utc)
+    dt = _parse_date_time(date_str, time_str)
 
     act = Activity(
         user_id=current_user.id,
@@ -1300,26 +1351,27 @@ def add_activity_manual():
     return redirect(url_for("index"))
 
 
-
 @app.route("/checkin", methods=["POST"])
 @login_required
 def add_checkin():
-    """Dodaj check-in po treningu (tekst + opcjonalny screenshot).
-    Jeśli jest screenshot — spróbuj automatycznie utworzyć Activity.
-    """
+    """Dodaj check-in po treningu (tekst + opcjonalny screenshot)."""
     text_note = (request.form.get("checkin_text") or "").strip()
-    if not text_note and "checkin_image" not in request.files:
-        flash("Dodaj opis lub obrazek.")
+    f = request.files.get("checkin_image")
+
+    # Walidacja: przynajmniej jedno pole
+    if not text_note and (not f or not f.filename):
+        flash("⚠️ Dodaj opis lub obrazek.", "warning")
         return redirect(url_for("index"))
 
+    # Zapisz screenshot jeśli jest
     image_path = None
-    f = request.files.get("checkin_image")
     if f and f.filename:
         os.makedirs("uploads", exist_ok=True)
         safe_name = f"{current_user.id}_{int(datetime.now(timezone.utc).timestamp())}_{re.sub(r'[^a-zA-Z0-9._-]', '_', f.filename)}"
         image_path = os.path.join("uploads", safe_name)
         f.save(image_path)
 
+    # Zapisz check-in (zawsze)
     entry = TrainingCheckin(
         user_id=current_user.id,
         created_at=datetime.now(timezone.utc),
@@ -1328,36 +1380,84 @@ def add_checkin():
     )
     db.session.add(entry)
 
-    # NOWE: jeśli jest screenshot -> spróbuj dodać aktywność
+    # === PRÓBA UTWORZENIA ACTIVITY ===
     created_activity = False
-    if image_path:
-        parsed = parse_strava_screenshot_to_activity(image_path)
-        act_type = (parsed.get("activity_type") or "other").strip().lower()
-        dur_min = parsed.get("duration_min")
-        dist_km = parsed.get("distance_km")
+    screenshot_failed = False
 
-        # jeśli cokolwiek wyciągnęliśmy, tworzymy Activity
-        if dur_min is not None or dist_km is not None or act_type != "other":
-            act = Activity(
-                user_id=current_user.id,
-                activity_type=act_type,
-                start_time=datetime.now(timezone.utc),  # screenshot zwykle nie ma startu — dajemy "teraz"
-                duration=max(0, int(round(dur_min or 0))) * 60,
-                distance=max(0.0, float(dist_km or 0.0)) * 1000.0,
-                avg_hr=None,
-                notes=("AUTO (screenshot): " + text_note).strip(),
+    if image_path:
+        try:
+            parsed = parse_strava_screenshot_to_activity(image_path)
+            act_type = (parsed.get("activity_type") or "").strip().lower()
+            dur_min = parsed.get("duration_min")
+            dist_km = parsed.get("distance_km")
+            avg_hr = parsed.get("avg_hr")
+            start_date = parsed.get("start_date") or ""
+            start_time = parsed.get("start_time") or ""
+
+            # Sprawdź czy AI cokolwiek wyciągnęło
+            has_data = (
+                (dur_min and dur_min > 0)
+                or (dist_km and dist_km > 0)
+                or (avg_hr and avg_hr > 0)
+                or (act_type and act_type != "other")
             )
-            db.session.add(act)
-            created_activity = True
+
+            if has_data:
+                # Sukces parsowania - twórz Activity
+                dt = _parse_date_time(start_date, start_time)
+                act = Activity(
+                    user_id=current_user.id,
+                    activity_type=act_type or "other",
+                    start_time=dt,
+                    duration=max(0, int(round(dur_min or 0))) * 60,
+                    distance=max(0.0, float(dist_km or 0.0)) * 1000.0,
+                    avg_hr=int(avg_hr) if avg_hr else None,
+                    notes=f"📸 Auto: {text_note}" if text_note else "📸 Auto-import ze screena",
+                )
+                db.session.add(act)
+                created_activity = True
+            else:
+                # AI nie wyciągnęło danych
+                screenshot_failed = True
+
+        except Exception as e:
+            # Błąd parsowania (np. plik uszkodzony)
+            print(f"⚠️ Błąd parsowania screenshota: {e}")
+            screenshot_failed = True
+
+    # Fallback: Utwórz Activity "other" jeśli screenshot się nie powiódł
+    if not created_activity and text_note:
+        act = Activity(
+            user_id=current_user.id,
+            activity_type="other",
+            start_time=datetime.now(timezone.utc),
+            duration=0,
+            distance=0.0,
+            avg_hr=None,
+            notes=text_note,
+        )
+        db.session.add(act)
+        created_activity = True
 
     db.session.commit()
 
-    if image_path and not created_activity:
-        flash("Zapisano check-in, ale nie udało się odczytać danych ze screena (dodaj trening ręcznie).")
-    elif created_activity:
-        flash("Zapisano check-in i dodano trening ze screena.")
-    else:
-        flash("Zapisano check-in.")
+    # === KOMUNIKATY DLA UŻYTKOWNIKA ===
+    if created_activity and not screenshot_failed:
+        # Sukces: Activity utworzona ze screena lub tekstu
+        if image_path:
+            flash("✅ Check-in zapisany! Trening dodany automatycznie ze screenshota.", "success")
+        else:
+            flash("✅ Check-in zapisany jako trening 'other'. Uzupełnij szczegóły ręcznie.", "info")
+
+    elif created_activity and screenshot_failed:
+        # Częściowy sukces: Screenshot nie zadziałał, ale tekst zapisany
+        flash(
+            "⚠️ Screenshot nie zawierał danych treningowych. Zapisano check-in jako trening 'other' - uzupełnij dane ręcznie.",
+            "warning")
+
+    elif not created_activity:
+        # Tylko check-in bez Activity (nie powinno się zdarzyć, ale zabezpieczenie)
+        flash("ℹ️ Check-in zapisany bez treningu. Dodaj trening ręcznie.", "info")
 
     return redirect(url_for("index"))
 
@@ -1512,13 +1612,44 @@ def apply_plan_to_activity(activity_id: int):
     return redirect(url_for("activity_detail", activity_id=activity_id))
 
 
-@app.route("/activity/<int:activity_id>/update_notes", methods=["POST"])
+@app.route("/activity/<int:activity_id>/update", methods=["POST"])
 @login_required
-def update_activity_notes(activity_id: int):
+def update_activity(activity_id: int):
     activity = Activity.query.filter_by(id=activity_id, user_id=current_user.id).first_or_404()
-    activity.notes = request.form.get("notes")
+
+    act_type = (request.form.get("activity_type") or activity.activity_type or "other").strip().lower()
+    date_str = (request.form.get("date") or "").strip()
+    time_str = (request.form.get("time") or "").strip()
+
+    duration_min = request.form.get("duration_min")
+    distance_km = request.form.get("distance_km")
+    avg_hr = request.form.get("avg_hr")
+    notes = request.form.get("notes")
+
+    activity.activity_type = act_type
+    activity.start_time = _parse_date_time(date_str, time_str)
+
+    if duration_min not in (None, ""):
+        activity.duration = max(0, int(float(duration_min))) * 60
+    if distance_km not in (None, ""):
+        activity.distance = max(0.0, float(distance_km)) * 1000.0
+    if avg_hr not in (None, ""):
+        activity.avg_hr = int(float(avg_hr))
+    activity.notes = notes
+
     db.session.commit()
+    flash("Zapisano zmiany w treningu.", "success")
     return redirect(url_for("activity_detail", activity_id=activity_id))
+
+
+@app.route("/activity/<int:activity_id>/delete", methods=["POST"])
+@login_required
+def delete_activity(activity_id: int):
+    activity = Activity.query.filter_by(id=activity_id, user_id=current_user.id).first_or_404()
+    db.session.delete(activity)
+    db.session.commit()
+    flash("Usunięto trening.", "success")
+    return redirect(url_for("index"))
 
 
 @app.route("/exercise/<int:exercise_id>/update", methods=["POST"])

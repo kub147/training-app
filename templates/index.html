@@ -6,1172 +6,193 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/png" href="/static/icons/icon-512.png">
     <link rel="apple-touch-icon" href="/static/icons/icon-512.png">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        :root {
-            --bg: #f0f2f5;
-            --card-bg: #ffffff;
-            --text: #1d1d1d;
-            --gray: #666;
-            --primary: #2c3e50;
-            --accent: #3498db;
-            --border: #e0e0e0;
-
-            --color-run: #00bf63;
-            --color-ride: #ff5722;
-            --color-swim: #00a8cc;
-            --color-gym: #8e44ad;
-            --color-yoga: #9b59b6;
-            --color-hike: #2e7d32;
-            --color-walk: #546e7a;
-            --color-default: #7f8c8d;
-        }
-
-        * { box-sizing: border-box; }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg);
-            color: var(--text);
-            margin: 0;
-            padding: 12px;
-            font-size: 14px;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            width: 100%;
-        }
-
-        /* HEADER - RESPONSYWNY */
-        header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 16px;
-            flex-wrap: wrap;
-        }
-
-        h1 {
-            margin: 0;
-            font-size: clamp(18px, 4vw, 22px);
-            flex: 1 1 auto;
-        }
-
-        .header-actions {
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
-        }
-
-        .btn {
-            background: #333;
-            color: white;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 20px;
-            cursor: pointer;
-            text-decoration: none;
-            font-size: 12px;
-            font-weight: 700;
-            white-space: nowrap;
-        }
-        .btn-outline { background: transparent; border: 1px solid #ccc; color: #333; }
-        .btn-soft { background: #eef2f7; color: #111; border: 1px solid #dde3ea; }
-        .modal-actions .btn-soft { background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.18); color: #fff; }
-        .modal-actions .btn-soft:hover { background: rgba(255,255,255,0.14); }
-        .btn-small { padding: 6px 10px; font-size: 11px; border-radius: 16px; }
-
-        /* GRID - RESPONSYWNY */
-        .grid-top {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 14px;
-            margin-bottom: 16px;
-        }
-
-        @media (min-width: 768px) {
-            .grid-top {
-                grid-template-columns: 1.2fr 0.8fr;
-            }
-        }
-
-        .card {
-            background: var(--card-bg);
-            border-radius: 14px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-            padding: 16px;
-        }
-
-        .card-title {
-            font-weight: 900;
-            font-size: clamp(14px, 3vw, 16px);
-            color: var(--primary);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-            margin-bottom: 12px;
-            flex-wrap: wrap;
-        }
-
-        /* NOW GRID - RESPONSYWNY */
-        .now-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 12px;
-        }
-
-        @media (min-width: 640px) {
-            .now-grid {
-                grid-template-columns: 1fr 1fr;
-            }
-        }
-
-        .now-item {
-            border: 1px solid #f0f0f0;
-            border-radius: 12px;
-            padding: 12px;
-            background: #fcfcfd;
-        }
-
-        .now-head {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-            margin-bottom: 8px;
-            flex-wrap: wrap;
-        }
-
-        .pill {
-            font-size: 10px;
-            font-weight: 900;
-            text-transform: uppercase;
-            letter-spacing: 0.4px;
-            padding: 4px 8px;
-            border-radius: 999px;
-            border: 1px solid #ececec;
-            background: white;
-            color: #444;
-        }
-
-        .sport-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            font-weight: 900;
-            font-size: 11px;
-        }
-
-        .sport-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 99px;
-            background: var(--color-default);
-        }
-
-        .why {
-            color: var(--gray);
-            font-size: 12px;
-            margin-top: 6px;
-            line-height: 1.4;
-            word-wrap: break-word;
-        }
-
-        .workout {
-            font-weight: 800;
-            margin-top: 6px;
-            font-size: 13px;
-            line-height: 1.4;
-            word-wrap: break-word;
-        }
-
-        /* ROADMAP - RESPONSYWNY */
-
-        /* ROADMAP - WYRAŹNIEJSZY (klik + kontrast) */
-        .road-item {
-            appearance: none;
-            -webkit-appearance: none;
-            background: #ffffff;
-            border: 1px solid #d0d5dd;
-            box-shadow: 0 6px 16px rgba(16,24,40,0.08);
-            transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
-        }
-        .road-item:hover {
-            border-color: #98a2b3;
-            box-shadow: 0 10px 24px rgba(16,24,40,0.14);
-        }
-        .road-item:focus-visible {
-            outline: 3px solid rgba(52,152,219,0.45);
-            outline-offset: 2px;
-        }
-        .road-date {
-            font-size: 11px;
-            color: #344054;
-            letter-spacing: .2px;
-        }
-        .road-title { font-size: 13px; }
-        .road-sub { font-size: 11px; color: #475467; }
-
-        /* Kolorowy pasek po typie */
-        .road-item[data-sport="run"]{ border-top: 5px solid var(--color-run); }
-        .road-item[data-sport="ride"]{ border-top: 5px solid var(--color-ride); }
-        .road-item[data-sport="swim"]{ border-top: 5px solid var(--color-swim); }
-        .road-item[data-sport="weighttraining"], .road-item[data-sport="workout"]{ border-top: 5px solid var(--color-gym); }
-
-        .road-action .pill{
-            background: #111827;
-            color: #fff;
-        }
-        .roadmap-wrap {
-            overflow-x: auto;
-            padding-bottom: 8px;
-            margin: 0 -16px;
-            padding-left: 16px;
-            padding-right: 16px;
-        }
-
-        .roadmap {
-            display: flex;
-            gap: 10px;
-            min-width: min-content;
-            padding-bottom: 4px;
-        }
-
-        .road-item {
-            flex: 0 0 160px;
-            background: #fbfbfd;
-            border: 1px solid #f0f0f0;
-            border-radius: 12px;
-            padding: 10px;
-            position: relative;
-        }
-
-        @media (max-width: 640px) {
-            .road-item {
-                flex: 0 0 140px;
-                padding: 8px;
-            }
-        }
-
-        .road-date {
-            font-size: 10px;
-            color: #777;
-            font-weight: 800;
-            margin-bottom: 6px;
-        }
-
-        .road-main {
-            display: flex;
-            align-items: flex-start;
-            gap: 8px;
-        }
-
-        .road-icon {
-            font-size: 18px;
-            width: 24px;
-            text-align: center;
-            flex-shrink: 0;
-        }
-
-        .road-text {
-            flex: 1;
-            min-width: 0;
-        }
-
-        .road-title {
-            font-weight: 900;
-            font-size: 12px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            line-height: 1.3;
-        }
-
-        .road-sub {
-            font-size: 10px;
-            color: #777;
-            margin-top: 3px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-        }
-
-        .road-today-line {
-            flex: 0 0 2px;
-            background: #111;
-            border-radius: 2px;
-            opacity: 0.25;
-            margin: 0 4px;
-            align-self: stretch;
-        }
-
-        .road-today-label {
-            position: absolute;
-            top: -10px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #111;
-            color: #fff;
-            font-weight: 900;
-            font-size: 9px;
-            padding: 2px 6px;
-            border-radius: 999px;
-            white-space: nowrap;
-        }
-
-        .road-action {
-            margin-top: 8px;
-            display: flex;
-            justify-content: flex-end;
-        }
-
-
-        /* ROADMAP - WERSJA KALENDARZOWA (HORYZONTALNA) */
-        .roadmap-wrap{
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-            scroll-snap-type: x mandatory;
-        }
-        .roadmap-calendar{
-            display: flex;
-            gap: 12px;
-            overflow-x: auto;
-            overscroll-behavior-x: contain;
-            scroll-snap-type: x mandatory;
-            padding: 6px 4px 10px;
-            -webkit-overflow-scrolling: touch;
-        }
-        .roadmap-calendar::-webkit-scrollbar{ height: 8px; }
-        .roadmap-calendar::-webkit-scrollbar-thumb{ background: rgba(0,0,0,0.18); border-radius: 999px; }
-        .roadmap-calendar .road-item{
-            flex: 0 0 220px;
-            scroll-snap-align: start;
-        }
-        @media (max-width: 520px){
-            .roadmap-calendar .road-item{ flex-basis: 82vw; }
-        }
-        .roadmap-calendar .road-item{
-            flex: 0 0 240px;
-            background: #ffffff;
-            border: 1px solid #dfe3ea;
-            border-radius: 16px;
-            padding: 12px;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.06);
-            scroll-snap-align: start;
-            transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
-        }
-        .roadmap-calendar .road-item:hover{
-            transform: translateY(-2px);
-            box-shadow: 0 10px 26px rgba(0,0,0,0.10);
-            border-color: #cfd6e3;
-        }
-        .roadmap-calendar .road-item:focus-visible{
-            outline: 3px solid rgba(52,152,219,0.35);
-            outline-offset: 2px;
-        }
-
-        .road-top{
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            margin-bottom: 8px;
-        }
-        .road-date{
-            font-size: 12px;
-            color: #334155;
-            font-weight: 800;
-            letter-spacing: .2px;
-        }
-        .today-badge{
-            font-size: 11px;
-            font-weight: 800;
-            padding: 4px 10px;
-            border-radius: 999px;
-            background: rgba(52,152,219,0.14);
-            border: 1px solid rgba(52,152,219,0.30);
-            color: #0b4f7a;
-            white-space: nowrap;
-        }
-
-        .road-main{ gap: 10px; }
-        .road-icon{
-            width: 44px;
-            height: 44px;
-            border-radius: 14px;
-            display: grid;
-            place-items: center;
-            font-size: 20px;
-            background: #f3f6fb;
-            border: 1px solid #e6ecf6;
-        }
-        .road-title{
-            font-size: 14px;
-            color: #111827;
-            font-weight: 900;
-            line-height: 1.25;
-            max-height: 3.6em;
-            overflow: hidden;
-        }
-        .road-sub{
-            margin-top: 4px;
-            font-size: 12px;
-            color: #475569;
-            line-height: 1.35;
-            max-height: 3.6em;
-            overflow: hidden;
-        }
-        .road-action .pill{
-            background: rgba(52,152,219,0.10);
-            border: 1px solid rgba(52,152,219,0.18);
-            color: #0b4f7a;
-            font-weight: 800;
-        }
-
-        /* Wyróżnienie "dziś" */
-        .roadmap-calendar .road-item.is-today{
-            border-color: rgba(52,152,219,0.55);
-            box-shadow: 0 10px 28px rgba(52,152,219,0.18);
-            background: linear-gradient(180deg, rgba(52,152,219,0.08), rgba(255,255,255,1) 42%);
-        }
-
-        @media (max-width: 640px){
-            .roadmap-calendar .road-item{ flex-basis: 82vw; }
-            .road-icon{ width: 48px; height: 48px; }
-            .road-title{ font-size: 15px; }
-            .road-sub{ font-size: 13px; }
-        }
-
-        /* STATS - RESPONSYWNY */
-        .range-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 10px;
-            flex-wrap: wrap;
-        }
-
-        .range-btns {
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
-        }
-
-        .range-btns a { text-decoration: none; }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 10px;
-            margin-bottom: 16px;
-        }
-
-        .stat-card {
-            background: var(--card-bg);
-            padding: 12px;
-            border-radius: 12px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.04);
-            text-align: center;
-            border-top: 3px solid transparent;
-        }
-
-        .stat-card.run { border-color: var(--color-run); }
-        .stat-card.swim { border-color: var(--color-swim); }
-        .stat-card.gym { border-color: var(--color-gym); }
-        .stat-card.ride { border-color: var(--color-ride); }
-
-        .stat-icon { font-size: 20px; margin-bottom: 4px; display: block; }
-        .stat-val { font-size: 18px; font-weight: 900; color: var(--text); }
-        .stat-sub { font-size: 12px; color: var(--gray); margin-top: 2px; }
-        .stat-label { font-size: 10px; text-transform: uppercase; color: #999; letter-spacing: 0.4px; margin-top: 4px;}
-
-        /* CHARTS - RESPONSYWNY */
-        .charts-container {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 14px;
-            margin-bottom: 16px;
-        }
-
-        @media (min-width: 768px) {
-            .charts-container {
-                grid-template-columns: 2fr 1fr;
-            }
-        }
-
-        .chart-card {
-            background: var(--card-bg);
-            padding: 16px;
-            border-radius: 14px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-            position: relative;
-        }
-
-        .chart-title {
-            font-weight: 900;
-            font-size: clamp(13px, 3vw, 15px);
-            margin-bottom: 10px;
-            color: var(--primary);
-        }
-
-        /* AI DASHBOARD - RESPONSYWNY */
-        .ai-dashboard {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 14px;
-            margin: 16px 0;
-        }
-
-        @media (min-width: 900px) {
-            .ai-dashboard {
-                grid-template-columns: 1fr 1fr;
-            }
-        }
-
-        .ai-panel {
-            background: var(--card-bg);
-            border-radius: 14px;
-            padding: 16px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            height: 450px;
-        }
-
-        @media (min-width: 900px) {
-            .ai-panel {
-                height: 520px;
-            }
-        }
-
-        .panel-header {
-            font-weight: 900;
-            font-size: clamp(14px, 3vw, 16px);
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-            color: var(--primary);
-            border-bottom: 1px solid #eee;
-            padding-bottom: 8px;
-            flex-wrap: wrap;
-        }
-
-        #chat-history {
-            flex: 1;
-            overflow-y: auto;
-            margin-bottom: 10px;
-            padding-right: 4px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .msg {
-            padding: 8px 12px;
-            border-radius: 12px;
-            font-size: 13px;
-            line-height: 1.4;
-            max-width: 90%;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-        }
-
-        .msg-user {
-            background: #e3f2fd;
-            color: #0d47a1;
-            align-self: flex-end;
-            border-bottom-right-radius: 2px;
-        }
-
-        .msg-ai {
-            background: #f5f5f5;
-            color: #333;
-            align-self: flex-start;
-            border-bottom-left-radius: 2px;
-        }
-
-        .chat-input-area {
-            display: flex;
-            gap: 6px;
-        }
-
-        .chat-input {
-            flex: 1;
-            padding: 8px 10px;
-            border: 1px solid #ddd;
-            border-radius: 10px;
-            font-family: inherit;
-            font-size: 14px;
-            min-width: 0;
-        }
-
-        .send-btn {
-            background: var(--accent);
-            color: white;
-            border: none;
-            border-radius: 10px;
-            padding: 0 14px;
-            cursor: pointer;
-            font-weight: 900;
-            flex-shrink: 0;
-        }
-
-        .mic-btn {
-            background: #fff;
-            border: 1px solid #ddd;
-            border-radius: 10px;
-            padding: 0 10px;
-            cursor: pointer;
-            font-weight: 900;
-            flex-shrink: 0;
-        }
-
-        .refresh-btn{
-            font-size: 12px;
-            background: #111827;
-            color: #fff;
-            border: 1px solid rgba(255,255,255,0.10);
-            padding: 9px 12px;
-            border-radius: 999px;
-            cursor: pointer;
-            font-weight: 900;
-            transition: transform .12s ease, opacity .12s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .refresh-btn:hover{ transform: translateY(-1px); }
-        .refresh-btn:active{ transform: translateY(0px); }
-        .refresh-btn:disabled{ opacity: 0.65; cursor: not-allowed; }
-
-        .refresh-btn.loading::after{
-            content: "";
-            width: 14px;
-            height: 14px;
-            border-radius: 999px;
-            border: 2px solid rgba(255,255,255,0.35);
-            border-top-color: rgba(255,255,255,1);
-            animation: spin 0.8s linear infinite;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        /* PLAN CONTENT - POPRAWIONE FORMATOWANIE */
-        #plan-content {
-            flex: 1;
-            overflow-y: auto;
-            font-size: 13px;
-            line-height: 1.6;
-            color: #333;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-        }
-
-        #plan-content b {
-            display: block;
-            margin-top: 12px;
-            font-weight: 900;
-            color: var(--primary);
-        }
-
-        #plan-content b:first-child {
-            margin-top: 0;
-            font-size: 14px;
-        }
-
-        /* TIMELINE - RESPONSYWNY */
-        .section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin: 14px 0 10px;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .timeline {
-            position: relative;
-            padding-left: 26px;
-        }
-
-        .timeline::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 2px;
-            background: #e0e0e0;
-        }
-
-        .date-header {
-            font-size: 12px;
-            font-weight: 900;
-            color: var(--gray);
-            margin: 16px 0 8px -26px;
-            background: var(--bg);
-            padding: 4px 8px;
-            display: inline-block;
-            border-radius: 10px;
-        }
-
-        .activity-card {
-            position: relative;
-            background: var(--card-bg);
-            border-radius: 10px;
-            padding: 12px;
-            margin-bottom: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.03);
-            display: flex;
-            align-items: center;
-            text-decoration: none;
-            color: inherit;
-            transition: transform 0.2s;
-            border-left: 4px solid var(--color-default);
-        }
-
-        .activity-card:hover { transform: translateX(4px); }
-
-        .timeline-dot {
-            position: absolute;
-            left: -34px;
-            width: 14px;
-            height: 14px;
-            border-radius: 50%;
-            background: white;
-            border: 2px solid var(--color-default);
-            z-index: 2;
-        }
-
-        .act-icon {
-            font-size: 20px;
-            margin-right: 10px;
-            width: 24px;
-            text-align: center;
-            flex-shrink: 0;
-        }
-
-        .act-info {
-            flex: 1;
-            min-width: 0;
-        }
-
-        .act-title {
-            font-weight: 900;
-            margin-bottom: 2px;
-            text-transform: capitalize;
-            font-size: 13px;
-        }
-
-        .act-meta {
-            font-size: 12px;
-            color: var(--gray);
-        }
-
-        .act-value {
-            font-weight: 900;
-            font-family: ui-monospace, monospace;
-            font-size: 12px;
-            flex-shrink: 0;
-        }
-
-        .type-run { border-left-color: var(--color-run); }
-        .type-run .timeline-dot { border-color: var(--color-run); background: var(--color-run); }
-        .type-ride { border-left-color: var(--color-ride); }
-        .type-ride .timeline-dot { border-color: var(--color-ride); background: var(--color-ride); }
-        .type-swim { border-left-color: var(--color-swim); }
-        .type-swim .timeline-dot { border-color: var(--color-swim); background: var(--color-swim); }
-        .type-weighttraining { border-left-color: var(--color-gym); }
-        .type-weighttraining .timeline-dot { border-color: var(--color-gym); background: var(--color-gym); }
-        .type-yoga { border-left-color: var(--color-yoga); }
-        .type-yoga .timeline-dot { border-color: var(--color-yoga); background: var(--color-yoga); }
-        .type-hike { border-left-color: var(--color-hike); }
-        .type-hike .timeline-dot { border-color: var(--color-hike); background: var(--color-hike); }
-
-        /* QUICK ADD - RESPONSYWNY */
-        .tab-row {
-            display: flex;
-            gap: 6px;
-            margin-bottom: 10px;
-            flex-wrap: wrap;
-        }
-
-        .tab {
-            border: 1px solid #ddd;
-            background: #fff;
-            padding: 6px 10px;
-            border-radius: 999px;
-            font-weight: 900;
-            font-size: 11px;
-            cursor: pointer;
-        }
-
-        .tab.active {
-            background: #111;
-            color: #fff;
-            border-color: #111;
-        }
-
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 8px;
-        }
-
-        @media (min-width: 640px) {
-            .form-row {
-                grid-template-columns: 1fr 1fr;
-            }
-        }
-
-        .field {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        }
-
-        .field label {
-            font-size: 11px;
-            color: #666;
-            font-weight: 800;
-        }
-
-        .field input, .field select, .field textarea {
-            padding: 8px 10px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            font-family: inherit;
-            font-size: 13px;
-            background: #fff;
-        }
-
-        textarea {
-            min-height: 70px;
-            resize: vertical;
-        }
-
-        .actions {
-            display: flex;
-            justify-content: flex-end;
-            gap: 6px;
-            margin-top: 8px;
-        }
-
-        /* MOBILE TWEAKS */
-        @media (max-width: 640px) {
-            body { padding: 8px; }
-            .card { padding: 12px; }
-            h1 { font-size: 18px; }
-            .btn { padding: 6px 10px; font-size: 11px; }
-        }
-
-        /* --- Roadmap modal --- */
-        .modal-backdrop {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,.45);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            padding: 16px;
-            z-index: 9999;
-        }
-        .modal-backdrop.open { display: flex; }
-        .modal {
-            color: #fff;
-            width: min(680px, 100%);
-            background: #0f172a;
-            border: 1px solid rgba(255,255,255,.10);
-            border-radius: 16px;
-            box-shadow: 0 20px 60px rgba(0,0,0,.55);
-            overflow: hidden;
-        }
-        .modal-head {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 12px;
-            padding: 14px 16px;
-            border-bottom: 1px solid rgba(255,255,255,.08);
-        }
-        .modal-title { font-weight: 700; font-size: 16px; line-height: 1.2; }
-        .modal-meta { color: rgba(255,255,255,0.75); font-size: 12px; margin-top: 2px; }
-        .modal-close {
-            border: 0;
-            background: rgba(255,255,255,.08);
-            color: #fff;
-            padding: 8px 10px;
-            border-radius: 10px;
-            cursor: pointer;
-            flex: 0 0 auto;
-        }
-        .modal-body { padding: 14px 16px 16px; color: rgba(255,255,255,0.92); line-height: 1.45; }
-        .modal-body p { margin: 0 0 10px; }
-        .modal-body b { color: #fff; }
-        .modal-actions { display:flex; gap:10px; flex-wrap: wrap; margin-top: 12px; }
-        .btn-small { padding: 8px 10px; border-radius: 10px; font-size: 12px; }
-
-        .road-btn {
-          text-align: left;
-          cursor: pointer;
-          width: 100%;
-          outline: none;
-        }
-        .road-btn:hover { transform: translateY(-1px); }
-        .road-btn:active { transform: translateY(0px); }
-        .road-btn { border: 1px solid #f0f0f0; }
-
-
-        .mini-status{
-          margin-left: 10px;
-          font-size: 13px;
-          opacity: 0.9;
-        }
-        .mini-status.ok{ color: rgba(34,197,94,0.95); }
-        .mini-status.err{ color: rgba(239,68,68,0.95); }
-        .mini-status.work{ color: rgba(255,255,255,0.85); }
-        /* --- MOBILE POLISH --- */
-        /* --- MOBILE FIX (OSTATECZNY) --- */
-        @media (max-width: 600px) {
-            /* 1. ZABEZPIECZENIE STRONY - to blokuje "bujanie" na boki */
-            html, body {
-                overflow-x: hidden; /* Ukrywa wszystko co wystaje na boki */
-                max-width: 100vw;   /* Szerokość nie może być większa niż ekran */
-                padding: 8px;       /* Mniejszy odstęp od krawędzi ekranu na mobile */
-            }
-
-            /* 2. KOREKTA KARTY */
-            .card {
-                padding: 12px; /* Ustalamy sztywny padding na mobile */
-            }
-
-            /* 3. NAPRAWA ROADMAPY (KLUCZOWE) */
-            /* Marginesy muszą być idealnie równe paddingowi karty, ale na minusie */
-            .roadmap-wrap {
-                margin-left: -12px;  /* Wyciągamy w lewo o tyle, ile ma padding karty */
-                margin-right: -12px; /* Wyciągamy w prawo o tyle, ile ma padding karty */
-                width: calc(100% + 24px); /* Szerokość to 100% treści + 2x12px paddingu */
-                border-radius: 0;
-            }
-            /* Opcjonalnie: reset paddingu wewnątrz roadmapy, żeby nie był za duży */
-            .roadmap {
-                padding-left: 12px;
-                padding-right: 12px;
-            }
-
-            /* 4. NAPRAWA INPUTÓW (DODAJ TRENING / CHECK-IN) */
-            /* Zapobiega sytuacji, gdzie input jest szerszy niż ekran */
-            .field input,
-            .field select,
-            .field textarea,
-            .chat-input {
-                width: 100%;
-                max-width: 100%;
-                box-sizing: border-box; /* Ważne: padding inputa zawiera się w jego szerokości */
-                font-size: 16px; /* Zapobiega przybliżaniu na iPhone */
-            }
-
-            /* 5. RESZTA RESPONSYWNOŚCI (ZACHOWANA Z POPRZEDNIEJ WERSJI) */
-            .charts-container { grid-template-columns: 1fr; }
-            .ai-dashboard { grid-template-columns: 1fr; }
-            .road-btn { min-height: 80px; }
-
-            /* Układ formularza "Dodaj trening" na małych ekranach */
-            .form-row { grid-template-columns: 1fr; }
-
-            /* Modal na dole ekranu */
-            .modal {
-                width: 100%;
-                border-radius: 20px 20px 0 0;
-                bottom: 0;
-                top: auto;
-                position: fixed;
-                transform: none;
-                max-height: 85vh;
-                overflow-y: auto;
-            }
-            .modal-backdrop { align-items: flex-end; padding: 0; }
-        }
-</style>
+    <link rel="stylesheet" href="/static/css/main.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <div style="display:flex; align-items:center; gap: 8px; flex-wrap: wrap;">
-                <h1>📅 Dashboard</h1>
-                <span class="pill">Zakres: {{ range_days }} dni</span>
+            <div class="header-row">
+                <h1>📅 Panel</h1>
             </div>
             <div class="header-actions">
+                {% if lang == 'en' %}
+                    <a class="btn btn-outline lang-toggle" href="?lang=pl" title="Zmień język na polski">🌐 PL</a>
+                {% else %}
+                    <a class="btn btn-outline lang-toggle" href="?lang=en" title="Zmień język na angielski">🌐 EN</a>
+                {% endif %}
+                <a class="btn btn-outline" href="/metrics">Metryki</a>
                 <a class="btn btn-outline" href="/profile">Profil</a>
                 <a class="btn btn-outline" href="/plans">Plany siłowe</a>
                 <a class="btn btn-outline" href="/logout">Wyloguj</a>
             </div>
         </header>
 
-        <div class="grid-top">
-            
+        <div class="dashboard-grid">
+            <section class="dash-main">
                 <div class="card">
                     <div class="card-title">
-                        <span>🧭 Roadmap ({{ past_show|length }} dni wstecz → dziś → {{ future_show|length }} dni do przodu)</span>
-                        <button id="refreshPlanBtn" class="refresh-btn" onclick="loadPlan()">⚡ Generuj / odśwież plan</button>
-                        <span id="forecastStatus" class="mini-status" aria-live="polite"></span>
-                    </div>
-
-                    {# --- Zasada: unikamy duplikatu dzisiejszej daty. Jeśli jest aktywność dziś -> bierzemy dziś z historii,
-                       jeśli nie ma -> bierzemy dziś z planu. --- #}
-                    {% set today_has_history = (past_days | selectattr('date','equalto', today_str) | list | length) > 0 %}
-                    {% set past_before = (past_days | rejectattr('date','equalto', today_str) | list) %}
-                    {% set future_after = (future_days | rejectattr('date','equalto', today_str) | list) %}
-
-                    {% if today_has_history %}
-                        {% set today_item = (past_days | selectattr('date','equalto', today_str) | list | first) %}
-                        {% set today_kind = 'past' %}
-                    {% else %}
-                        {% set today_item = (future_days | selectattr('date','equalto', today_str) | list | first) %}
-                        {% set today_kind = 'future' %}
-                    {% endif %}
-
-                    {% set past_show = past_before[-3:] %}
-                    {% set future_show = future_after[:3] %}
-
-                    <div class="roadmap-wrap">
-                        <div class="roadmap roadmap-calendar" aria-label="Roadmap tygodniowy">
-
-                            {# 3 dni wstecz #}
-                            {% for d in past_show %}
-                              <button
-                                  type="button"
-                                  class="road-item road-btn"
-                                  onclick="window.__openRoadModal && window.__openRoadModal(this)"
-                                  data-kind="past"
-                                  data-date="{{ d.date }}"
-                                  data-sport="{{ d.sport }}"
-                                  data-count="{{ d.count }}"
-                                  data-dist="{{ d.dist_km }}"
-                                  data-dur="{{ d.dur_min }}"
-                                  aria-label="Szczegóły dnia {{ d.date }}"
-                              >
-                                  <div class="road-top">
-                                      <div class="road-date js-road-date">{{ d.date }}</div>
-                                  </div>
-
-                                  <div class="road-main">
-                                      <div class="road-icon">
-                                          {% if d.sport == 'run' %}🏃{% elif d.sport == 'ride' %}🚴{% elif d.sport == 'swim' %}🏊{% elif d.sport in ['weighttraining','workout'] %}🏋️{% elif d.sport == 'yoga' %}🧘{% elif d.sport == 'hike' %}⛰️{% elif d.sport == 'walk' %}🚶{% else %}🏅{% endif %}
-                                      </div>
-                                      <div class="road-text">
-                                          <div class="road-title">{{ d.count }} aktyw.</div>
-                                          <div class="road-sub">
-                                              {% if d.dist_km and d.dist_km > 0 %}{{ d.dist_km }} km{% endif %}
-                                              {% if d.dur_min and d.dur_min > 0 %} • {{ d.dur_min }} min{% endif %}
-                                          </div>
-                                      </div>
-                                  </div>
-
-                                  <div class="road-action" aria-hidden="true"><span class="pill">szczegóły</span></div>
-                              </button>
-                            {% endfor %}
-
-                            {# DZIŚ (z historii lub z planu) #}
-                            {% if today_item %}
-                              <button
-                                  type="button"
-                                  class="road-item road-btn is-today"
-                                  onclick="window.__openRoadModal && window.__openRoadModal(this)"
-                                  data-kind="{{ today_kind }}"
-                                  data-date="{{ today_item.date }}"
-                                  data-sport="{{ today_item.sport }}"
-                                  {% if today_kind == 'past' %}
-                                      data-count="{{ today_item.count }}"
-                                      data-dist="{{ today_item.dist_km }}"
-                                      data-dur="{{ today_item.dur_min }}"
-                                  {% else %}
-                                      data-workout="{{ (today_item.workout or '') | e }}"
-                                      data-why="{{ (today_item.why or '') | e }}"
-                                  {% endif %}
-                                  aria-label="Szczegóły dnia {{ today_item.date }}"
-                              >
-                                  <div class="road-top">
-                                      <div class="road-date js-road-date">{{ today_item.date }}</div>
-                                      <div class="today-badge">DZIŚ</div>
-                                  </div>
-
-                                  <div class="road-main">
-                                      <div class="road-icon">
-                                          {% if today_item.sport == 'run' %}🏃{% elif today_item.sport == 'ride' %}🚴{% elif today_item.sport == 'swim' %}🏊{% elif today_item.sport in ['weighttraining','workout'] %}🏋️{% elif today_item.sport == 'yoga' %}🧘{% elif today_item.sport == 'hike' %}⛰️{% elif today_item.sport == 'walk' %}🚶{% else %}🏅{% endif %}
-                                      </div>
-                                      <div class="road-text">
-                                          {% if today_kind == 'past' %}
-                                              <div class="road-title">{{ today_item.count }} aktyw.</div>
-                                              <div class="road-sub">
-                                                  {% if today_item.dist_km and today_item.dist_km > 0 %}{{ today_item.dist_km }} km{% endif %}
-                                                  {% if today_item.dur_min and today_item.dur_min > 0 %} • {{ today_item.dur_min }} min{% endif %}
-                                              </div>
-                                          {% else %}
-                                              <div class="road-title">{{ today_item.workout or 'Trening' }}</div>
-                                              <div class="road-sub">{{ today_item.why or '' }}</div>
-                                          {% endif %}
-                                      </div>
-                                  </div>
-
-                                  <div class="road-action" aria-hidden="true"><span class="pill">szczegóły</span></div>
-                              </button>
-                            {% endif %}
-
-                            {# 3 dni do przodu (wygenerowane) #}
-                            {% for f in future_show %}
-                              <button
-                                  type="button"
-                                  class="road-item road-btn"
-                                  onclick="window.__openRoadModal && window.__openRoadModal(this)"
-                                  data-kind="future"
-                                  data-date="{{ f.date }}"
-                                  data-sport="{{ f.sport }}"
-                                  data-workout="{{ (f.workout or '') | e }}"
-                                  data-why="{{ (f.why or '') | e }}"
-                                  aria-label="Szczegóły dnia {{ f.date }}"
-                              >
-                                  <div class="road-top">
-                                      <div class="road-date js-road-date">{{ f.date }}</div>
-                                  </div>
-
-                                  <div class="road-main">
-                                      <div class="road-icon">
-                                          {% if f.sport == 'run' %}🏃{% elif f.sport == 'ride' %}🚴{% elif f.sport == 'swim' %}🏊{% elif f.sport in ['weighttraining','workout'] %}🏋️{% elif f.sport == 'yoga' %}🧘{% elif f.sport == 'hike' %}⛰️{% elif f.sport == 'walk' %}🚶{% else %}🏅{% endif %}
-                                      </div>
-                                      <div class="road-text">
-                                          <div class="road-title">{{ f.workout or 'Trening' }}</div>
-                                          <div class="road-sub">{{ f.why or '' }}</div>
-                                      </div>
-                                  </div>
-
-                                  <div class="road-action" aria-hidden="true"><span class="pill">szczegóły</span></div>
-                              </button>
-                            {% endfor %}
+                    <span>🧭 Plan tygodnia</span>
+                        <div class="card-actions">
+                            <button id="refreshPlanBtn" class="refresh-btn" onclick="loadPlan()">⚡ Generuj / odśwież plan</button>
+                            <span id="forecastStatus" class="mini-status" aria-live="polite"></span>
                         </div>
                     </div>
-                </div>
-<div class="card">
-                <div class="card-title">➕ Dodaj trening / check-in</div>
 
-                <div class="tab-row">
-                    <button class="tab active" id="tabManual" onclick="showTab('manual')">Ręcznie</button>
-                    <button class="tab" id="tabCheckin" onclick="showTab('checkin')">Check-in</button>
-                </div>
+                        {# --- Zasada: unikamy duplikatu dzisiejszej daty. Jeśli jest aktywność dziś -> bierzemy dziś z historii,
+                           jeśli nie ma -> bierzemy dziś z planu. --- #}
+                        {% set today_has_history = (past_days | selectattr('date','equalto', today_str) | list | length) > 0 %}
+                        {% set past_before = (past_days | rejectattr('date','equalto', today_str) | list) %}
+                        {% set future_after = (future_days | rejectattr('date','equalto', today_str) | list) %}
 
-                <div id="manualForm">
+                        {% if today_has_history %}
+                            {% set today_item = (past_days | selectattr('date','equalto', today_str) | list | first) %}
+                            {% set today_kind = 'past' %}
+                        {% else %}
+                            {% set today_item = (future_days | selectattr('date','equalto', today_str) | list | first) %}
+                            {% set today_kind = 'future' %}
+                        {% endif %}
+
+                        {% set past_show = past_before[-3:] %}
+                        {% set future_show = future_after[:3] %}
+
+                        <div class="roadmap-board" aria-label="Roadmap tygodniowy">
+                            <div class="roadmap-section">
+                                <div class="roadmap-label">Ostatnie 3 dni</div>
+                                <div class="roadmap-grid">
+                                    {% for d in past_show %}
+                                      <button
+                                          type="button"
+                                          class="road-item road-btn"
+                                          onclick="window.__openRoadModal && window.__openRoadModal(this)"
+                                          data-kind="past"
+                                          data-date="{{ d.date }}"
+                                          data-sport="{{ d.sport }}"
+                                          data-count="{{ d.count }}"
+                                          data-dist="{{ d.dist_km }}"
+                                          data-dur="{{ d.dur_min }}"
+                                          aria-label="Szczegóły dnia {{ d.date }}"
+                                      >
+                                          <div class="road-top">
+                                              <div class="road-date js-road-date">{{ d.date }}</div>
+                                          </div>
+
+                                          <div class="road-main">
+                                              <div class="road-icon">
+                                                  {% if d.sport == 'run' %}🏃{% elif d.sport == 'ride' %}🚴{% elif d.sport == 'swim' %}🏊{% elif d.sport in ['weighttraining','workout'] %}🏋️{% elif d.sport == 'yoga' %}🧘{% elif d.sport == 'hike' %}⛰️{% elif d.sport == 'walk' %}🚶{% else %}🏅{% endif %}
+                                              </div>
+                                              <div class="road-text">
+                                                  <div class="road-title">{{ d.count }} aktyw.</div>
+                                                  <div class="road-sub">
+                                                      {% if d.dist_km and d.dist_km > 0 %}{{ d.dist_km }} km{% endif %}
+                                                      {% if d.dur_min and d.dur_min > 0 %} • {{ d.dur_min }} min{% endif %}
+                                                  </div>
+                                              </div>
+                                          </div>
+
+                                          <div class="road-action" aria-hidden="true"><span class="pill">szczegóły</span></div>
+                                      </button>
+                                    {% endfor %}
+                                </div>
+                            </div>
+
+                            <div class="roadmap-section">
+                                <div class="roadmap-label">Dziś</div>
+                                <div class="roadmap-grid is-today-row">
+                                    {% if today_item %}
+                                      <button
+                                          type="button"
+                                          class="road-item road-btn is-today"
+                                          onclick="window.__openRoadModal && window.__openRoadModal(this)"
+                                          data-kind="{{ today_kind }}"
+                                          data-date="{{ today_item.date }}"
+                                          data-sport="{{ today_item.sport }}"
+                                          {% if today_kind == 'past' %}
+                                              data-count="{{ today_item.count }}"
+                                              data-dist="{{ today_item.dist_km }}"
+                                              data-dur="{{ today_item.dur_min }}"
+                                          {% else %}
+                                              data-workout="{{ (today_item.workout or '') | e }}"
+                                              data-why="{{ (today_item.why or '') | e }}"
+                                          {% endif %}
+                                          aria-label="Szczegóły dnia {{ today_item.date }}"
+                                      >
+                                          <div class="road-top">
+                                              <div class="road-date js-road-date">{{ today_item.date }}</div>
+                                              <div class="today-badge">DZIŚ</div>
+                                          </div>
+
+                                          <div class="road-main">
+                                              <div class="road-icon">
+                                                  {% if today_item.sport == 'run' %}🏃{% elif today_item.sport == 'ride' %}🚴{% elif today_item.sport == 'swim' %}🏊{% elif today_item.sport in ['weighttraining','workout'] %}🏋️{% elif today_item.sport == 'yoga' %}🧘{% elif today_item.sport == 'hike' %}⛰️{% elif today_item.sport == 'walk' %}🚶{% else %}🏅{% endif %}
+                                              </div>
+                                              <div class="road-text">
+                                                  {% if today_kind == 'past' %}
+                                                      <div class="road-title">{{ today_item.count }} aktyw.</div>
+                                                      <div class="road-sub">
+                                                          {% if today_item.dist_km and today_item.dist_km > 0 %}{{ today_item.dist_km }} km{% endif %}
+                                                          {% if today_item.dur_min and today_item.dur_min > 0 %} • {{ today_item.dur_min }} min{% endif %}
+                                                      </div>
+                                                  {% else %}
+                                                      <div class="road-title">{{ today_item.workout or 'Trening' }}</div>
+                                                      <div class="road-sub">{{ today_item.why or '' }}</div>
+                                                  {% endif %}
+                                              </div>
+                                          </div>
+
+                                          <div class="road-action" aria-hidden="true"><span class="pill">szczegóły</span></div>
+                                      </button>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="roadmap-section">
+                                <div class="roadmap-label">Najbliższe 3 dni</div>
+                                <div class="roadmap-grid">
+                                    {% for f in future_show %}
+                                      <button
+                                          type="button"
+                                          class="road-item road-btn"
+                                          onclick="window.__openRoadModal && window.__openRoadModal(this)"
+                                          data-kind="future"
+                                          data-date="{{ f.date }}"
+                                          data-sport="{{ f.sport }}"
+                                          data-workout="{{ (f.workout or '') | e }}"
+                                          data-why="{{ (f.why or '') | e }}"
+                                          aria-label="Szczegóły dnia {{ f.date }}"
+                                      >
+                                          <div class="road-top">
+                                              <div class="road-date js-road-date">{{ f.date }}</div>
+                                          </div>
+
+                                          <div class="road-main">
+                                              <div class="road-icon">
+                                                  {% if f.sport == 'run' %}🏃{% elif f.sport == 'ride' %}🚴{% elif f.sport == 'swim' %}🏊{% elif f.sport in ['weighttraining','workout'] %}🏋️{% elif f.sport == 'yoga' %}🧘{% elif f.sport == 'hike' %}⛰️{% elif f.sport == 'walk' %}🚶{% else %}🏅{% endif %}
+                                              </div>
+                                              <div class="road-text">
+                                                  <div class="road-title">{{ f.workout or 'Trening' }}</div>
+                                                  <div class="road-sub">{{ f.why or '' }}</div>
+                                              </div>
+                                          </div>
+
+                                          <div class="road-action" aria-hidden="true"><span class="pill">szczegóły</span></div>
+                                      </button>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                <div class="card">
+                    <div class="card-title">➕ Dodaj trening / raport</div>
+
+                    <div class="tab-row">
+                        <button class="tab active" id="tabManual" onclick="showTab('manual')">Ręcznie</button>
+                        <button class="tab" id="tabCheckin" onclick="showTab('checkin')">Raport</button>
+                    </div>
+
+                    <div id="manualForm">
                     <form action="/activity/manual" method="POST">
+                        <!-- Wiersz 1: Typ + Data (2 kolumny na desktop, 1 na mobile) -->
                         <div class="form-row">
                             <div class="field">
                                 <label>Typ</label>
@@ -1179,16 +200,21 @@
                                     <option value="run">Bieganie</option>
                                     <option value="ride">Rower</option>
                                     <option value="swim">Pływanie</option>
-                                    <option value="weighttraining">Siłownia</option>
-                                    <option value="yoga">Joga</option>
-                                    <option value="hike">Hike</option>
-                                    <option value="other">Inne</option>
-                                </select>
-                            </div>
+                                <option value="weighttraining">Siłownia</option>
+                                <option value="yoga">Joga</option>
+                                <option value="hike">Wędrówka</option>
+                                <option value="walk">Spacer</option>
+                                <option value="other">Inne</option>
+                            </select>
+                        </div>
                             <div class="field">
                                 <label>Data</label>
                                 <input type="date" name="date" value="{{ today_str }}">
                             </div>
+                        </div>
+
+                        <!-- Wiersz 2: Godzina + Czas (2 kolumny) -->
+                        <div class="form-row">
                             <div class="field">
                                 <label>Godzina startu</label>
                                 <input type="time" name="time" value="">
@@ -1197,199 +223,103 @@
                                 <label>Czas (min)</label>
                                 <input type="number" name="duration_min" min="0" step="1" placeholder="np. 45">
                             </div>
+                        </div>
+
+                        <!-- Wiersz 3: Dystans (pojedyncze pole) -->
+                        <div class="form-row">
                             <div class="field">
                                 <label>Dystans (km)</label>
                                 <input type="number" name="distance_km" min="0" step="0.1" placeholder="np. 8.0">
                             </div>
                         </div>
-                        <div class="field" style="margin-top:10px;">
+
+                        <!-- Notatka -->
+                        <div class="field field-spaced">
                             <label>Notatka</label>
                             <textarea name="notes" placeholder="Jak poszło? (opcjonalnie)"></textarea>
                         </div>
+
                         <div class="actions">
                             <button class="btn" type="submit">Dodaj</button>
                         </div>
                     </form>
                 </div>
 
-                <div id="checkinForm" style="display:none;">
-                    <form action="/checkin" method="POST" enctype="multipart/form-data">
-                        <div class="field">
-                            <label>Screenshot (opcjonalnie)</label>
-                            <input type="file" name="checkin_image" accept="image/*">
-                        </div>
-                        <div class="field" style="margin-top:10px;">
+                <div id="checkinForm" class="is-hidden">
+                        <form action="/checkin" method="POST" enctype="multipart/form-data">
+                            <div class="field">
+                            <label>Zrzut ekranu (opcjonalnie)</label>
+                                <input type="file" name="checkin_image" accept="image/*">
+                            </div>
+                        <div class="field field-spaced">
                             <label>Opis (2–3 zdania)</label>
-                            <textarea id="checkin_text" name="checkin_text" placeholder="Jak się czułeś? Co poszło dobrze/źle?"></textarea>
+                            <textarea id="checkin_text" name="checkin_text" class="checkin-textarea" placeholder="Jak się czułeś? Co poszło dobrze/źle?"></textarea>
                         </div>
-                        <div class="actions">
-                            <button class="btn btn-soft" type="button" onclick="dictateTo('checkin_text')">🎤 Mów</button>
-                            <button class="btn" type="submit">Zapisz</button>
+                        <div class="actions actions-row">
+                            <button class="btn btn-soft btn-fixed" type="button" onclick="dictateTo('checkin_text')">🎤 Mów</button>
+                            <button class="btn btn-grow" type="submit">Zapisz</button>
                         </div>
                     </form>
-                </div>
 
-                <div style="margin-top: 12px; font-size: 11px; color:#666; line-height: 1.35;">
-                    Tip: check-in to najlepszy sygnał dla AI (zmęczenie, ból, samopoczucie).
-                </div>
-            </div>
-        </div>
-
-        <!-- STATS -->
-        <div class="range-row">
-            <div style="font-weight: 900; color: #666; font-size: 13px;">📊 Metryki (ostatnie {{ range_days }} dni)</div>
-            <div class="range-btns">
-                <a class="btn btn-soft btn-small" href="/?days=7">7</a>
-                <a class="btn btn-soft btn-small" href="/?days=30">30</a>
-                <a class="btn btn-soft btn-small" href="/?days=90">90</a>
-                <a class="btn btn-soft btn-small" href="/?days=365">365</a>
-            </div>
-        </div>
-
-        <div class="stats-grid">
-            <div class="stat-card run">
-                <span class="stat-icon">🏃</span>
-                <div class="stat-val">{{ stats.run_count }}</div>
-                <div class="stat-sub">{{ stats.run_dist }} km</div>
-                <div class="stat-label">Bieganie</div>
-            </div>
-
-            <div class="stat-card swim">
-                <span class="stat-icon">🏊</span>
-                <div class="stat-val">{{ stats.swim_count }}</div>
-                <div class="stat-sub">{{ stats.swim_dist }} km</div>
-                <div class="stat-label">Basen</div>
-            </div>
-
-            <div class="stat-card gym">
-                <span class="stat-icon">🏋️</span>
-                <div class="stat-val">{{ stats.gym_count }}</div>
-                <div class="stat-sub">{{ stats.gym_hours }} h</div>
-                <div class="stat-label">Siłownia</div>
-            </div>
-
-            <div class="stat-card ride">
-                <span class="stat-icon">🚴</span>
-                <div class="stat-val">{{ stats.ride_count }}</div>
-                <div class="stat-sub">{{ stats.ride_dist }} km</div>
-                <div class="stat-label">Rower</div>
-            </div>
-        </div>
-
-        <div class="charts-container">
-            <div class="chart-card">
-                <div class="chart-title">🎯 Postęp (prosty cel biegowy tygodnia)</div>
-                <div style="display:flex; align-items:center; justify-content:space-around; gap: 16px; flex-wrap: wrap;">
-                    <div style="position: relative; width: 150px; height: 150px;">
-                        <canvas id="runGoalChart"></canvas>
-                        <div style="position:absolute; top:50%; left:50%; transform: translate(-50%,-50%); text-align:center;">
-                            <div style="font-size: 30px; font-weight: 900; color: var(--color-run); line-height:1;">
-                                {{ stats.run_count }} / 3
-                            </div>
-                            <div style="font-size: 12px; color: var(--gray); font-weight: 900;">TRENINGI</div>
-                        </div>
-                    </div>
-                    <div style="text-align:left; min-width: 220px;">
-                        <p style="margin:0 0 6px 0;"><b>Cel:</b> 3 treningi</p>
-                        <p style="margin:0 0 6px 0; color:#666;">Wykonano: {{ stats.run_count }}</p>
-                        <p style="margin:0; color: var(--color-run); font-weight:900;">
-                            {% if (stats.run_count) >= 3 %}Cel osiągnięty! 🎉
-                            {% else %}Zostało: {{ 3 - stats.run_count }}{% endif %}
-                        </p>
+                    <div class="small-note">
+                        Wskazówka: raport to najlepszy sygnał dla AI (zmęczenie, ból, samopoczucie).
                     </div>
                 </div>
-            </div>
 
-            <div class="chart-card">
-                <div class="chart-title">⏱️ Aktywności (liczba)</div>
-                <div style="height: 160px; position:relative;">
-                    <canvas id="timeChart"></canvas>
                 </div>
-            </div>
-        </div>
 
-        <!-- AI -->
-        <div class="ai-dashboard">
-            <div class="ai-panel">
-                <div class="panel-header">
-                    <span>🤖 Czat z trenerem</span>
-                    <span style="font-size:11px; color:#777; font-weight:900;">(ciągłość + daty)</span>
-                </div>
-                <div id="chat-history">
-                    <div class="msg msg-ai">Cześć! Jestem gotowy. Jak mogę pomóc?</div>
-                </div>
-                <div class="chat-input-area">
-                    <input type="text" id="userMsg" class="chat-input" placeholder="Wpisz pytanie..." onkeypress="handleEnter(event)">
-                    <button class="mic-btn" type="button" onclick="dictateTo('userMsg')">🎤</button>
-                    <button onclick="sendMessage()" class="send-btn">➤</button>
-                </div>
-            </div>
-
-            <div class="ai-panel">
-                <div class="panel-header">
-                    <span>📋 Plan (pełny)</span>
-                    <button onclick="loadPlan()" class="refresh-btn">⚡ Generuj plan</button>
-                </div>
-                <div id="plan-content">
-                    {% if active_plan %}
-                        {{ active_plan.html_content|safe }}
-                    {% else %}
-                        <p style="color: #888; text-align: center; margin-top: 50px;">
-                            Kliknij <b>"Generuj plan"</b>, aby pobrać rozpiskę.
-                        </p>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Timeline -->
-        <div class="section-header">
-            <h2 style="margin:0; font-size: 16px;">🕑 Ostatnie aktywności</h2>
-            <a href="/history" class="btn btn-outline">Wszystkie →</a>
-        </div>
-
-        <div class="timeline">
-            {% set current_date = namespace(value=None) %}
-            {% for act in activities %}
-                {% set act_date = act.start_time.strftime('%Y-%m-%d') %}
-                {% if current_date.value != act_date %}
-                    <div class="date-header">
-                        {% if act_date == today_str %} DZISIAJ
-                        {% else %} {{ act.start_time.strftime('%d.%m.%Y (%A)') }}
-                        {% endif %}
+                <div class="card">
+                    <div class="section-header">
+                    <h2 class="section-title-sm">🕑 Ostatnie aktywności</h2>
+                        <a href="/history" class="btn btn-outline">Wszystkie →</a>
                     </div>
-                    {% set current_date.value = act_date %}
-                {% endif %}
 
-                <a href="/activity/{{act.id}}" class="activity-card type-{{act.activity_type}}">
-                    <div class="timeline-dot"></div>
-                    <div class="act-icon">
-                        {% if act.activity_type == 'run' %}🏃
-                        {% elif act.activity_type == 'ride' %}🚴
-                        {% elif act.activity_type == 'swim' %}🏊
-                        {% elif act.activity_type in ['weighttraining', 'workout'] %}🏋️
-                        {% elif act.activity_type == 'yoga' %}🧘
-                        {% elif act.activity_type == 'hike' %}⛰️
-                        {% else %}🏅{% endif %}
-                    </div>
-                    <div class="act-info">
-                        <div class="act-title">{{ act.activity_type }}</div>
-                        <div class="act-meta">
-                            {{ act.start_time.strftime('%H:%M') }}
-                            • {{ (act.duration / 60)|int }} min
-                        </div>
-                    </div>
-                    <div class="act-value">
-                        {% if act.distance and act.distance > 0 %}
-                            {{ (act.distance / 1000)|round(2) }} km
+                    <div class="timeline">
+                        {% set current_date = namespace(value=None) %}
+                        {% for act in activities %}
+                            {% set act_date = act.start_time.strftime('%Y-%m-%d') %}
+                            {% if current_date.value != act_date %}
+                                <div class="date-header">
+                                    {% if act_date == today_str %} DZISIAJ
+                                    {% else %} {{ act.start_time.strftime('%d.%m.%Y (%A)') }}
+                                    {% endif %}
+                                </div>
+                                {% set current_date.value = act_date %}
+                            {% endif %}
+
+                            <a href="/activity/{{act.id}}" class="activity-card type-{{act.activity_type}}">
+                                <div class="timeline-dot"></div>
+                                <div class="act-icon">
+                                    {% if act.activity_type == 'run' %}🏃
+                                    {% elif act.activity_type == 'ride' %}🚴
+                                    {% elif act.activity_type == 'swim' %}🏊
+                                    {% elif act.activity_type in ['weighttraining', 'workout'] %}🏋️
+                                    {% elif act.activity_type == 'yoga' %}🧘
+                                    {% elif act.activity_type == 'hike' %}⛰️
+                                    {% elif act.activity_type == 'walk' %}🚶
+                                    {% else %}🏅{% endif %}
+                                </div>
+                                <div class="act-info">
+                        <div class="act-title">{{ activity_label(act.activity_type) }}</div>
+                                    <div class="act-meta">
+                                        {{ act.start_time.strftime('%H:%M') }}
+                                        • {{ (act.duration / 60)|int }} min
+                                    </div>
+                                </div>
+                                <div class="act-value">
+                                    {% if act.distance and act.distance > 0 %}
+                                        {{ (act.distance / 1000)|round(2) }} km
+                                    {% else %}
+                                        Trening
+                                    {% endif %}
+                                </div>
+                            </a>
                         {% else %}
-                            Trening
-                        {% endif %}
+                        <p class="empty-activities">Brak aktywności.</p>
+                        {% endfor %}
                     </div>
-                </a>
-            {% else %}
-                <p style="text-align:center; padding: 20px; color: #888;">Brak aktywności.</p>
-            {% endfor %}
+                </div>
+            </section>
         </div>
     </div>
 
@@ -1401,12 +331,12 @@
         const t1 = document.getElementById('tabManual');
         const t2 = document.getElementById('tabCheckin');
         if (which === 'manual') {
-            manual.style.display = 'block';
-            checkin.style.display = 'none';
+            manual.classList.remove('is-hidden');
+            checkin.classList.add('is-hidden');
             t1.classList.add('active'); t2.classList.remove('active');
         } else {
-            manual.style.display = 'none';
-            checkin.style.display = 'block';
+            manual.classList.add('is-hidden');
+            checkin.classList.remove('is-hidden');
             t2.classList.add('active'); t1.classList.remove('active');
         }
     }
@@ -1434,90 +364,6 @@
         rec.start();
     }
 
-    // --- Charts ---
-    const runCount = {{ stats.run_count }};
-    const runTarget = 3;
-    const remaining = Math.max(0, runTarget - runCount);
-
-    const ctxGoal = document.getElementById('runGoalChart').getContext('2d');
-    new Chart(ctxGoal, {
-        type: 'doughnut',
-        data: {
-            labels: ['Zrobione', 'Do zrobienia'],
-            datasets: [{
-                data: [runCount, remaining],
-                backgroundColor: ['#00bf63', '#eeeeee'],
-                borderWidth: 0,
-                borderRadius: 10
-            }]
-        },
-        options: { cutout: '80%', plugins: { legend: { display: false }, tooltip: { enabled: false } }, maintainAspectRatio: false }
-    });
-
-    const ctxTime = document.getElementById('timeChart').getContext('2d');
-    new Chart(ctxTime, {
-        type: 'doughnut',
-        data: {
-            labels: ['Bieg', 'Basen', 'Siłownia', 'Rower'],
-            datasets: [{
-                data: [{{ stats.run_count }}, {{ stats.swim_count }}, {{ stats.gym_count }}, {{ stats.ride_count }}],
-                backgroundColor: ['#00bf63', '#00a8cc', '#8e44ad', '#ff5722'],
-                borderWidth: 0
-            }]
-        },
-        options: { plugins: { legend: { position: 'right', labels: { boxWidth: 10, font: {size: 10} } } }, maintainAspectRatio: false }
-    });
-
-    // --- Chat history ---
-    async function loadChatHistory() {
-        const historyDiv = document.getElementById('chat-history');
-        try {
-            const res = await fetch('/api/chat/history');
-            const messages = await res.json();
-            if (messages.length > 0) {
-                historyDiv.innerHTML = '';
-                messages.forEach(msg => {
-                    const cls = msg.sender === 'user' ? 'msg-user' : 'msg-ai';
-                    historyDiv.innerHTML += `<div class="msg ${cls}">${msg.content}</div>`;
-                });
-                historyDiv.scrollTop = historyDiv.scrollHeight;
-            }
-        } catch (e) {}
-    }
-    document.addEventListener('DOMContentLoaded', loadChatHistory);
-
-    async function sendMessage() {
-        const input = document.getElementById('userMsg');
-        const history = document.getElementById('chat-history');
-        const text = input.value.trim();
-        if (!text) return;
-
-        history.innerHTML += `<div class="msg msg-user">${text}</div>`;
-        input.value = '';
-        history.scrollTop = history.scrollHeight;
-
-        const loadingId = 'loading-' + Date.now();
-        history.innerHTML += `<div id="${loadingId}" class="msg msg-ai">...</div>`;
-
-        try {
-            const res = await fetch('/api/chat', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({message: text})
-            });
-            const data = await res.json();
-            document.getElementById(loadingId).remove();
-            history.innerHTML += `<div class="msg msg-ai">${data.response}</div>`;
-        } catch (e) {
-            const el = document.getElementById(loadingId);
-            if (el) el.innerText = "Błąd.";
-        }
-        history.scrollTop = history.scrollHeight;
-    }
-
-    function handleEnter(e) { if (e.key === 'Enter') sendMessage(); }
-
-    
     async function loadPlan() {
         const btn = document.getElementById('refreshPlanBtn');
         const status = document.getElementById('forecastStatus');
@@ -1555,8 +401,9 @@
             let m;
             while ((m = rx.exec(planHtml)) !== null) {
                 const date = m[1];
-                const workout = (m[2] || '').replace(/<[^>]*>/g, '').trim();
-                const why = (m[3] || '').replace(/<[^>]*>/g, '').trim();
+                const clean = (s) => (s || '').replace(/<[^>]*>/g, '').replace(/\*\*/g, '').replace(/DATA\\s*:/gi, '').trim();
+                const workout = clean(m[2]);
+                const why = clean(m[3]);
                 map[date] = { workout, why };
             }
 
@@ -1586,12 +433,11 @@
     }
 
     function suggestChange(dateStr, workout) {
-        const input = document.getElementById('userMsg');
+        const input = document.getElementById('chatInput');
         if (!input) return;
         input.value = `Chcę zmienić trening dnia ${dateStr}. Obecnie: ${workout}. Zmień go proszę i uzasadnij.`;
         input.focus();
-        const chat = document.getElementById('chat-history');
-        if (chat) chat.scrollIntoView({behavior: 'smooth', block: 'center'});
+        if (window.__openChatWidget) window.__openChatWidget();
     }
 
     window.addEventListener('DOMContentLoaded', function(){
@@ -1646,7 +492,7 @@
 
         modalBody.innerHTML = `
           <p><b>Trening:</b> ${escapeHtml(workout)}</p>
-          ${why ? `<p><b>Dlaczego:</b> ${escapeHtml(why)}</p>` : `<p style="opacity:.85">Brak uzasadnienia w planie.</p>`}
+          ${why ? `<p><b>Dlaczego:</b> ${escapeHtml(why)}</p>` : `<p class="muted">Brak uzasadnienia w planie.</p>`}
         `;
 
         const btn = document.createElement('button');
@@ -1724,6 +570,19 @@
     });
   })()
 });;
+
+// Auto-ukrywanie flash messages po 5 sekundach
+document.addEventListener('DOMContentLoaded', () => {
+    const flashes = document.querySelectorAll('.flash');
+    flashes.forEach(flash => {
+        setTimeout(() => {
+            flash.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+            flash.style.opacity = '0';
+            flash.style.transform = 'translateX(400px)';
+            setTimeout(() => flash.remove(), 500);
+        }, 5000);
+    });
+});
     </script>
 
     <!-- ROADMAP MODAL -->
@@ -1743,5 +602,26 @@
         </div>
     </div>
 
+    {% include "_chat_widget.html" %}
+
 </body>
+
+<!-- Flash Messages (tuż po <body>) -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="flash-messages">
+      {% for category, message in messages %}
+        <div class="flash {{ category }}">
+          <div class="flash-icon">
+            {% if category == 'success' %}✅
+            {% elif category == 'warning' %}⚠️
+            {% elif category == 'error' %}❌
+            {% else %}ℹ️{% endif %}
+          </div>
+          <div class="flash-text">{{ message }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
 </html>

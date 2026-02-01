@@ -4,261 +4,33 @@
     <title>Szczegóły Aktywności</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        :root {
-            --bg: #f0f2f5;
-            --card-bg: #ffffff;
-            --text: #1d1d1d;
-            --gray: #666;
-            --border: #e0e0e0;
-
-            /* Kolory z Timeline */
-            --color-run: #00bf63;
-            --color-ride: #ff5722;
-            --color-swim: #00a8cc;
-            --color-gym: #8e44ad;
-            --color-default: #7f8c8d;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg);
-            color: var(--text);
-            margin: 0;
-            padding: 15px; /* Mniejszy padding na start */
-        }
-
-        .container { max-width: 800px; margin: 0 auto; }
-
-        /* Header Navigation */
-        .nav-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .back-btn {
-            background: white;
-            color: var(--text);
-            border: 1px solid var(--border);
-            padding: 8px 16px;
-            border-radius: 20px;
-            text-decoration: none;
-            font-size: 14px;
-            font-weight: 600;
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            transition: 0.2s;
-        }
-        .back-btn:hover { background: #f9f9f9; }
-
-        /* Main Activity Card */
-        .main-card {
-            background: var(--card-bg);
-            border-radius: 16px;
-            overflow: hidden;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-            margin-bottom: 20px;
-        }
-
-        .card-header {
-            padding: 30px;
-            color: white;
-            position: relative;
-        }
-
-        /* Dynamiczne kolory nagłówka */
-        .header-run { background: linear-gradient(135deg, var(--color-run), #00a855); }
-        .header-ride { background: linear-gradient(135deg, var(--color-ride), #e64a19); }
-        .header-swim { background: linear-gradient(135deg, var(--color-swim), #0097b8); }
-        .header-weighttraining { background: linear-gradient(135deg, var(--color-gym), #7d3c98); }
-        .header-workout { background: linear-gradient(135deg, var(--color-gym), #7d3c98); }
-        .header-default { background: var(--color-default); }
-
-        .activity-icon { font-size: 48px; margin-bottom: 10px; display: block; }
-        .activity-title { font-size: 32px; margin: 0; font-weight: 800; text-transform: capitalize; }
-        .activity-date { opacity: 0.9; font-size: 16px; margin-top: 5px; }
-
-        /* Stats Grid */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-            gap: 20px;
-            padding: 25px;
-        }
-
-        .stat-item {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .stat-label {
-            font-size: 12px;
-            text-transform: uppercase;
-            color: var(--gray);
-            letter-spacing: 0.5px;
-            margin-bottom: 5px;
-        }
-
-        .stat-value {
-            font-size: 24px;
-            font-weight: 700;
-            color: var(--text);
-        }
-
-        .stat-unit { font-size: 14px; font-weight: 400; color: var(--gray); }
-
-        /* Sekcja Siłowni */
-        .gym-section {
-            background: var(--card-bg);
-            border-radius: 16px;
-            padding: 25px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            margin-top: 20px;
-        }
-
-        /* --- POPRAWKA RESPONSYWNOŚCI NAGŁÓWKA --- */
-        .section-header-mobile {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            flex-wrap: wrap; /* To naprawia ucinanie na telefonie */
-            gap: 10px;
-        }
-
-        .section-title { margin: 0; font-size: 20px; }
-
-        /* Tabela */
-        table { width: 100%; border-collapse: collapse; table-layout: fixed; } /* Fixed layout trzyma ramy */
-        th { text-align: left; color: var(--gray); font-size: 12px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
-        td { padding: 12px 0; border-bottom: 1px solid #f0f0f0; font-weight: 500; }
-        tr:last-child td { border-bottom: none; }
-
-        /* Formularz dodawania */
-        .add-form {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 12px;
-            margin-top: 20px;
-            display: grid;
-            grid-template-columns: 2fr 1fr 1fr 1fr auto;
-            gap: 8px;
-            align-items: center;
-        }
-
-        .form-input {
-            padding: 10px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            font-size: 14px;
-            width: 100%; box-sizing: border-box;
-        }
-
-        /* --- POPRAWKA INPUTÓW TABELI --- */
-        .edit-input {
-            width: 100%;
-            padding: 8px 4px; /* Mniejszy padding boków */
-            border: 1px solid transparent;
-            border-radius: 6px;
-            background: #f8f9fa;
-            font-size: 16px; /* 16px zapobiega zoomowaniu na iPhone */
-            text-align: center;
-            transition: 0.2s;
-            box-sizing: border-box;
-            -moz-appearance: textfield; /* Usuwa strzałki w Firefox */
-        }
-        .edit-input::-webkit-outer-spin-button,
-        .edit-input::-webkit-inner-spin-button {
-            -webkit-appearance: none; margin: 0; /* Usuwa strzałki w Chrome/Safari */
-        }
-
-        .edit-input:focus {
-            background: #fff;
-            border-color: var(--accent, #3498db);
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
-        }
-
-        .saved {
-            border-color: #00bf63 !important;
-            background-color: #e8f5e9 !important;
-        }
-
-        .del-btn {
-            background: none;
-            border: none;
-            color: #e74c3c;
-            font-size: 20px;
-            cursor: pointer;
-            padding: 0 10px;
-        }
-
-        .add-btn {
-            background: var(--text);
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: bold;
-            white-space: nowrap; /* Zapobiega łamaniu tekstu w przycisku */
-        }
-
-        /* MOBILE ADJUSTMENTS */
-        @media (max-width: 600px) {
-            .add-form {
-                grid-template-columns: 1fr 1fr; /* Dwie kolumny na telefonie */
-                grid-template-areas:
-                    "name name"
-                    "sets reps"
-                    "weight btn";
-            }
-            #exName { grid-area: name; }
-            #exSets { grid-area: sets; }
-            #exReps { grid-area: reps; }
-            #exWeight { grid-area: weight; }
-            .add-form button { grid-area: btn; width: 100%; }
-
-            /* Ciaśniejsza tabela na mobile */
-            td, th { padding: 10px 2px; }
-            .edit-input { font-size: 14px; padding: 8px 2px; }
-        }
-        /* --- RESPONSIVE FIX --- */
-        @media (max-width: 600px) {
-            .container { padding: 10px; }
-            .card-header { padding: 20px; }
-            .activity-title { font-size: 24px; word-break: break-word; }
-            .activity-icon { font-size: 36px; }
-
-            /* Układ statystyk w 2 kolumnach na sztywno, żeby nie skakały */
-            .stats-grid { grid-template-columns: 1fr 1fr; gap: 15px; padding: 15px; }
-            .stat-value { font-size: 20px; }
-
-            /* Lepsze przyciski na dotyk */
-            .back-btn { padding: 10px 12px; font-size: 13px; width: 100%; justify-content: center; box-sizing: border-box;}
-            .nav-header { display: block; margin-bottom: 15px; }
-        }
-    </style>
-</head>
-<body>
+    <link rel="icon" type="image/png" href="/static/icons/icon-512.png">
+    <link rel="apple-touch-icon" href="/static/icons/icon-512.png">
+    <link rel="stylesheet" href="/static/css/main.css">
+    </head>
+<body class="activity-page">
     <div class="container">
-        <div class="nav-header">
-            <a href="/" class="back-btn">← Wróć do listy</a>
-        </div>
+        <header>
+            <div class="header-row">
+                <h1>Szczegóły aktywności</h1>
+            </div>
+            <div class="header-actions">
+                <a class="btn btn-outline" href="/">Panel</a>
+                <a class="btn btn-outline" href="/history">Historia</a>
+            </div>
+        </header>
 
         <div class="main-card">
-            <div class="card-header header-{{activity.activity_type}} {% if activity.activity_type not in ['run','ride','swim','weighttraining', 'workout'] %}header-default{% endif %}">
+            <div class="card-header header-{{activity.activity_type}} {% if activity.activity_type not in ['run','ride','swim','weighttraining', 'workout', 'walk'] %}header-default{% endif %}">
                 <span class="activity-icon">
                     {% if activity.activity_type == 'run' %}🏃
                     {% elif activity.activity_type == 'ride' %}🚴
                     {% elif activity.activity_type == 'swim' %}🏊
                     {% elif activity.activity_type in ['weighttraining', 'workout'] %}🏋️
+                    {% elif activity.activity_type == 'walk' %}🚶
                     {% else %}🏅{% endif %}
                 </span>
-                <h1 class="activity-title">{{ activity.activity_type }}</h1>
+                <h1 class="activity-title">{{ activity_label(activity.activity_type) }}</h1>
                 <div class="activity-date">{{ activity.start_time.strftime('%A, %d %B %Y') }} • {{ activity.start_time.strftime('%H:%M') }}</div>
             </div>
 
@@ -309,28 +81,68 @@
         </div>
 
         <div class="gym-section">
-            <h3 class="section-title">📝 Twoje odczucia i notatki</h3>
-            <p style="color: #666; font-size: 13px; margin-bottom: 10px;">
-                Opisz jak Ci poszło, jak się czułeś. To pomoże AI w przyszłości.
-            </p>
-            <form action="/activity/{{activity.id}}/update_notes" method="POST">
-                <textarea name="notes" style="width: 100%; height: 80px; padding: 10px; border: 1px solid #e0e0e0; border-radius: 8px; font-family: inherit; box-sizing: border-box;">{{ activity.notes or '' }}</textarea>
-                <div style="text-align: right; margin-top: 5px;">
-                    <button type="submit" class="add-btn" style="font-size: 12px; padding: 6px 12px;">Zapisz opis</button>
+            <h3 class="section-title">✏️ Edytuj trening</h3>
+            <form action="/activity/{{activity.id}}/update" method="POST" class="edit-form">
+                <div class="form-grid">
+                    <div class="field">
+                        <label>Typ</label>
+                        <select name="activity_type">
+                            <option value="run" {% if activity.activity_type == 'run' %}selected{% endif %}>Bieganie</option>
+                            <option value="ride" {% if activity.activity_type == 'ride' %}selected{% endif %}>Rower</option>
+                            <option value="swim" {% if activity.activity_type == 'swim' %}selected{% endif %}>Pływanie</option>
+                            <option value="weighttraining" {% if activity.activity_type == 'weighttraining' %}selected{% endif %}>Siłownia</option>
+                            <option value="yoga" {% if activity.activity_type == 'yoga' %}selected{% endif %}>Joga</option>
+                            <option value="hike" {% if activity.activity_type == 'hike' %}selected{% endif %}>Wędrówka</option>
+                            <option value="walk" {% if activity.activity_type == 'walk' %}selected{% endif %}>Spacer</option>
+                            <option value="other" {% if activity.activity_type == 'other' %}selected{% endif %}>Inne</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Data</label>
+                        <input type="date" name="date" value="{{ activity.start_time.strftime('%Y-%m-%d') if activity.start_time else '' }}">
+                    </div>
+                    <div class="field">
+                        <label>Godzina</label>
+                        <input type="time" name="time" value="{{ activity.start_time.strftime('%H:%M') if activity.start_time else '' }}">
+                    </div>
+                    <div class="field">
+                        <label>Czas (min)</label>
+                        <input type="number" name="duration_min" min="0" step="1" value="{{ (activity.duration / 60)|int if activity.duration else '' }}">
+                    </div>
+                    <div class="field">
+                        <label>Dystans (km)</label>
+                        <input type="number" name="distance_km" min="0" step="0.1" value="{{ (activity.distance / 1000)|round(2) if activity.distance else '' }}">
+                    </div>
+                    <div class="field">
+                        <label>Śr. tętno (bpm)</label>
+                        <input type="number" name="avg_hr" min="0" step="1" value="{{ activity.avg_hr if activity.avg_hr else '' }}">
+                    </div>
                 </div>
+
+                <div class="field field-spaced">
+                    <label>Notatka</label>
+                    <textarea name="notes" placeholder="Jak poszło?">{{ activity.notes or '' }}</textarea>
+                </div>
+
+                <div class="edit-actions">
+                    <button type="submit" class="add-btn">Zapisz zmiany</button>
+                </div>
+            </form>
+            <form action="/activity/{{activity.id}}/delete" method="POST" onsubmit="return confirm('Usunąć ten trening?')" class="delete-form">
+                <button type="submit" class="del-btn">Usuń trening</button>
             </form>
         </div>
 
         {% if activity.activity_type in ['weighttraining', 'workout', 'crossfit', 'circuit', 'yoga'] %}
         <div class="gym-section">
             <div class="section-header-mobile">
-                <h3 class="section-title" style="margin: 0;">Dziennik ćwiczeń</h3>
+                <h3 class="section-title gym-title">Dziennik ćwiczeń</h3>
 
                 {% if plans %}
-                <form action="/activity/{{activity.id}}/apply_plan" method="POST" style="display: flex; gap: 5px; flex: 1; justify-content: flex-end;">
+                <form action="/activity/{{activity.id}}/apply_plan" method="POST" class="plan-apply-form">
                     <select name="plan_id"
                             onchange="this.form.submit()"
-                            style="padding: 8px; border-radius: 5px; border: 1px solid #ddd; background-color: #f8f9fa; cursor: pointer; font-weight: 500; max-width: 200px;">
+                            class="plan-select">
                         <option value="" disabled selected>📂 Wybierz plan...</option>
                         {% for p in plans %}
                         <option value="{{p.id}}">{{p.name}}</option>
@@ -342,7 +154,9 @@
             </div>
 
             {% if activity.exercises %}
-            <div style="overflow-x: auto; margin: 0 -10px;"> <table style="min-width: 400px;"> <thead>
+            <div class="scroll-x">
+                <table class="exercise-table">
+                    <thead>
                         <tr>
                             <th width="40%">Ćwiczenie</th> <th width="15%">Serie</th>
                             <th width="15%">Powt.</th>
@@ -353,15 +167,15 @@
                     <tbody>
                         {% for ex in activity.exercises %}
                         <tr>
-                            <td style="vertical-align: middle; padding-left: 10px;">
-                                <span style="font-weight: 500; font-size: 14px;">{{ ex.name }}</span>
+                            <td class="exercise-name-cell">
+                                <span class="exercise-name">{{ ex.name }}</span>
                             </td>
                             <td><input type="number" class="edit-input" value="{{ ex.sets }}" onblur="updateEx({{ ex.id }}, 'sets', this)"></td>
                             <td><input type="number" class="edit-input" value="{{ ex.reps }}" onblur="updateEx({{ ex.id }}, 'reps', this)"></td>
                             <td><input type="number" step="0.5" class="edit-input" value="{{ ex.weight }}" placeholder="0" onblur="updateEx({{ ex.id }}, 'weight', this)"></td>
-                            <td style="text-align: right; padding-right: 10px;">
-                                <form action="/exercise/{{ex.id}}/delete" method="POST" style="display:inline;">
-                                    <button type="submit" class="del-btn" title="Usuń" style="padding: 10px;">&times;</button>
+                            <td class="exercise-delete-cell">
+                                <form action="/exercise/{{ex.id}}/delete" method="POST" class="inline-form">
+                                    <button type="submit" class="del-btn" title="Usuń">&times;</button>
                                 </form>
                             </td>
                         </tr>
@@ -370,7 +184,7 @@
                 </table>
             </div>
             {% else %}
-                <div style="text-align: center; padding: 20px; background: #f9f9f9; border-radius: 8px; color: #666; font-size: 14px;">
+                <div class="empty-note">
                     Wybierz plan powyżej lub dodaj ćwiczenia ręcznie poniżej.
                 </div>
             {% endif %}
@@ -443,5 +257,6 @@
         location.reload();
     }
     </script>
+    {% include "_chat_widget.html" %}
 </body>
 </html>

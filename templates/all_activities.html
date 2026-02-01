@@ -4,85 +4,21 @@
     <title>Historia Treningów</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        :root {
-            --bg: #f0f2f5;
-            --card-bg: #ffffff;
-            --text: #1d1d1d;
-            --gray: #666;
-            --color-run: #00bf63;
-            --color-ride: #ff5722;
-            --color-swim: #00a8cc;
-            --color-gym: #8e44ad;
-            --color-default: #7f8c8d;
-        }
-        body { font-family: sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
-        .container { max-width: 800px; margin: 0 auto; }
-        .nav { margin-bottom: 30px; }
-        .back-btn { background: white; color: #333; padding: 10px 20px; text-decoration: none; border-radius: 20px; font-weight: bold; border: 1px solid #ddd; }
-
-        /* Timeline copied styles */
-        .timeline { position: relative; padding-left: 30px; }
-        .timeline::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: #e0e0e0; }
-        .date-header { font-size: 14px; font-weight: bold; color: var(--gray); margin: 25px 0 10px -30px; background: var(--bg); padding: 5px 10px; display: inline-block; }
-        .activity-card {
-            position: relative;
-            background: var(--card-bg);
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 15px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.03);
-            display: flex;
-            align-items: center; /* Zostawiamy center, ale dodamy flex-wrap niżej */
-            text-decoration: none;
-            color: inherit;
-            border-left: 5px solid var(--color-default);
-            flex-wrap: nowrap; /* Domyślnie w jednej linii */
-        }
-
-        /* Dodaj ten blok pod spodem */
-        @media (max-width: 480px) {
-            .activity-card {
-                flex-wrap: wrap; /* Pozwól spaść elementom niżej */
-                padding: 12px;
-            }
-            .act-info {
-                width: 60%; /* Zarezerwuj miejsce na tekst */
-            }
-            .act-value {
-                width: 100%;
-                text-align: right;
-                margin-top: 5px;
-                font-size: 13px;
-                color: var(--color-run); /* Wyróżnienie kolorem */
-                padding-top: 5px;
-                border-top: 1px solid #f0f0f0;
-            }
-            .back-btn { width: 100%; text-align: center; display: block; margin-bottom: 5px;}
-        }
-        .timeline-dot { position: absolute; left: -39px; width: 16px; height: 16px; border-radius: 50%; background: white; border: 2px solid var(--color-default); z-index: 2; }
-        .act-icon { font-size: 24px; margin-right: 15px; width: 30px; text-align: center; }
-        .act-info { flex: 1; }
-        .act-title { font-weight: 600; margin-bottom: 2px; text-transform: capitalize; }
-        .act-meta { font-size: 13px; color: var(--gray); }
-        .act-value { font-weight: bold; font-family: monospace; font-size: 14px; }
-
-        .type-run { border-left-color: var(--color-run); } .type-run .timeline-dot { border-color: var(--color-run); background: var(--color-run); }
-        .type-ride { border-left-color: var(--color-ride); } .type-ride .timeline-dot { border-color: var(--color-ride); background: var(--color-ride); }
-        .type-swim { border-left-color: var(--color-swim); } .type-swim .timeline-dot { border-color: var(--color-swim); background: var(--color-swim); }
-        .type-weighttraining { border-left-color: var(--color-gym); } .type-weighttraining .timeline-dot { border-color: var(--color-gym); background: var(--color-gym); }
-    </style>
+    <link rel="icon" type="image/png" href="/static/icons/icon-512.png">
+    <link rel="apple-touch-icon" href="/static/icons/icon-512.png">
+    <link rel="stylesheet" href="/static/css/main.css">
 </head>
 <body>
     <div class="container">
-        <div class="nav">
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
-            <a href="/" class="back-btn">← Wróć do Dashboardu</a>
-            <a href="/logout" class="back-btn">Wyloguj</a>
-        </div>
-        </div>
-
-        <h1>📜 Pełna Historia Treningów</h1>
+        <header>
+            <div class="header-row">
+                <h1>📜 Pełna historia treningów</h1>
+            </div>
+            <div class="header-actions">
+                <a class="btn btn-outline" href="/">Panel</a>
+                <a class="btn btn-outline" href="/logout">Wyloguj</a>
+            </div>
+        </header>
 
         <div class="timeline">
             {% set current_date = namespace(value=None) %}
@@ -102,17 +38,18 @@
                         {% elif act.activity_type == 'ride' %}🚴
                         {% elif act.activity_type == 'swim' %}🏊
                         {% elif act.activity_type in ['weighttraining', 'workout'] %}🏋️
+                        {% elif act.activity_type == 'walk' %}🚶
                         {% else %}🏅{% endif %}
                     </div>
                     <div class="act-info">
-                        <div class="act-title">{{ act.activity_type }}</div>
+                    <div class="act-title">{{ activity_label(act.activity_type) }}</div>
                         <div class="act-meta">
                             {{ act.start_time.strftime('%H:%M') }}
                             • {{ (act.duration / 60)|int }} min
                         </div>
                     </div>
                     <div class="act-value">
-                        {% if act.distance > 0 %}
+                    {% if act.distance and act.distance > 0 %}
                             {{ (act.distance / 1000)|round(2) }} km
                         {% else %}
                             Trening
@@ -122,5 +59,6 @@
             {% endfor %}
         </div>
     </div>
+    {% include "_chat_widget.html" %}
 </body>
 </html>

@@ -4,207 +4,24 @@
     <title>Zarządzanie Planami</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        :root {
-            --bg: #f0f2f5;
-            --card-bg: #ffffff;
-            --text: #1d1d1d;
-            --gray: #666;
-            --primary: #2c3e50;
-            --accent: #3498db;
-            --green: #00bf63;
-            --red: #e74c3c;
-            --border: #e0e0e0;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg);
-            color: var(--text);
-            margin: 0;
-            padding: 15px;
-        }
-
-        .container { max-width: 800px; margin: 0 auto; }
-
-        /* Header Navigation */
-        .nav-header { margin-bottom: 25px; }
-        .back-btn {
-            background: white;
-            color: var(--text);
-            border: 1px solid var(--border);
-            padding: 10px 16px;
-            border-radius: 20px;
-            text-decoration: none;
-            font-size: 14px;
-            font-weight: 600;
-            display: inline-flex;
-            align-items: center;
-        }
-
-        h1 { margin: 0 0 20px 0; font-size: 24px; }
-
-        /* Karta Planu */
-        .card {
-            background: var(--card-bg);
-            padding: 20px;
-            border-radius: 16px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-
-        .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            border-bottom: 1px solid #f0f0f0;
-            padding-bottom: 10px;
-        }
-
-        .card-title { margin: 0; font-size: 18px; color: var(--primary); font-weight: 700; }
-
-        /* Lista ćwiczeń */
-        ul { list-style: none; padding: 0; margin: 0; }
-        li {
-            padding: 12px 0;
-            border-bottom: 1px solid #f0f0f0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        li:last-child { border-bottom: none; }
-
-        .ex-name { font-weight: 500; }
-        .ex-details { color: var(--gray); font-size: 0.9em; background: #f5f5f5; padding: 2px 8px; border-radius: 4px; margin-left: 5px;}
-
-        /* Formularze */
-        input {
-            padding: 12px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            font-size: 14px;
-            box-sizing: border-box;
-            background: #fcfcfc;
-        }
-        input:focus { outline: none; border-color: var(--accent); background: #fff; }
-
-        /* Przyciski główne */
-        .btn {
-            padding: 12px 20px;
-            background: var(--primary);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 14px;
-            transition: opacity 0.2s;
-        }
-        .btn:hover { opacity: 0.9; }
-        .btn-add { background: var(--green); display: flex; align-items: center; justify-content: center; }
-
-        /* Przyciski usuwania (małe) */
-        .btn-del-plan {
-            background: transparent;
-            color: var(--gray);
-            border: 1px solid var(--border);
-            padding: 5px 10px;
-            border-radius: 6px;
-            font-size: 12px;
-            cursor: pointer;
-        }
-        .btn-del-plan:hover { border-color: var(--red); color: var(--red); background: #fff5f5; }
-
-        .btn-del-ex {
-            background: none;
-            border: none;
-            color: #ccc;
-            font-size: 20px;
-            padding: 0 10px;
-            cursor: pointer;
-            line-height: 1;
-        }
-        .btn-del-ex:hover { color: var(--red); }
-
-        /* Formularz tworzenia planu */
-        .create-plan-form { display: flex; gap: 10px; }
-        .create-plan-form input { flex: 1; }
-
-        /* Formularz dodawania ćwiczenia */
-        .add-ex-form {
-            margin-top: 15px;
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 12px;
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-        .add-ex-form input[name="name"] { flex: 2; }
-        .add-ex-form input[name="sets"],
-        .add-ex-form input[name="reps"] { flex: 1; text-align: center; }
-        .add-ex-form button { min-width: 44px; padding: 0; height: 42px; font-size: 18px; }
-
-        /* MOBILE */
-        @media (max-width: 600px) {
-            .create-plan-form { flex-direction: column; }
-            .create-plan-form button { width: 100%; }
-
-            .add-ex-form {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                grid-template-areas:
-                    "name name"
-                    "sets reps"
-                    "btn btn";
-                gap: 10px;
-            }
-            .add-ex-form input[name="name"] { grid-area: name; }
-            .add-ex-form input[name="sets"] { grid-area: sets; }
-            .add-ex-form input[name="reps"] { grid-area: reps; }
-            .add-ex-form button { grid-area: btn; width: 100%; height: 44px; }
-            .add-ex-form button::after { content: " Dodaj ćwiczenie"; font-size: 14px; }
-        }
-
-        @media (max-width: 600px) {
-            /* Stackowanie formularza dodawania */
-            .add-ex-form { flex-direction: column; align-items: stretch; }
-            .add-ex-form input[name="name"] { margin-bottom: 5px; }
-
-            /* Układ wiersza ćwiczenia */
-            li {
-                flex-wrap: wrap;
-                padding: 15px 0; /* Większy odstęp */
-            }
-            .ex-name { font-size: 15px; display: block; margin-bottom: 4px; }
-
-            /* Duży przycisk usuwania */
-            .btn-del-ex {
-                padding: 10px 15px;
-                background: #fff5f5;
-                border-radius: 8px;
-                color: #e74c3c;
-                margin-left: auto; /* Dopycha do prawej */
-            }
-
-            /* Przycisk powrotu na całą szerokość */
-            .nav-header { flex-direction: column; align-items: stretch; }
-            .back-btn { justify-content: center; text-align: center; margin-bottom: 5px; }
-        }
-    </style>
-</head>
-<body>
+    <link rel="icon" type="image/png" href="/static/icons/icon-512.png">
+    <link rel="apple-touch-icon" href="/static/icons/icon-512.png">
+    <link rel="stylesheet" href="/static/css/main.css">
+    </head>
+<body class="plans-page">
     <div class="container">
-        <div class="nav-header" style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
-            <a href="/" class="back-btn">← Wróć do Dashboardu</a>
-            <a href="/logout" class="back-btn">Wyloguj</a>
-        </div>
+        <header>
+            <div class="header-row">
+                <h1>💪 Twoje plany</h1>
+            </div>
+            <div class="header-actions">
+                <a class="btn btn-outline" href="/">Panel</a>
+                <a class="btn btn-outline" href="/logout">Wyloguj</a>
+            </div>
+        </header>
 
-        <h1>💪 Twoje Plany</h1>
-
-        <div class="card" style="border-left: 5px solid var(--green);">
-            <h3 class="card-title" style="margin-bottom: 10px;">Utwórz nowy plan</h3>
+        <div class="card card-accent">
+            <h3 class="card-title card-title-tight">Utwórz nowy plan</h3>
             <form action="/plans/add" method="POST" class="create-plan-form">
                 <input type="text" name="name" placeholder="Nazwa planu (np. Split A - Klatka)" required>
                 <button type="submit" class="btn">Utwórz</button>
@@ -224,7 +41,7 @@
             <ul>
                 {% for ex in plan.exercises %}
                 <li>
-                    <div style="flex: 1;">
+                    <div class="plan-ex-row">
                         <span class="ex-name">{{ ex.name }}</span>
                         <span class="ex-details">{{ ex.default_sets }} x {{ ex.default_reps }}</span>
                     </div>
@@ -235,7 +52,7 @@
                 {% endfor %}
             </ul>
             {% else %}
-                <p style="color: #999; font-size: 13px; text-align: center; margin: 10px 0;">Brak ćwiczeń w tym planie.</p>
+                <p class="empty-text">Brak ćwiczeń w tym planie.</p>
             {% endif %}
 
             <form action="/plans/{{plan.id}}/add_exercise" method="POST" class="add-ex-form">
@@ -248,10 +65,11 @@
         {% endfor %}
 
         {% if not plans %}
-            <div style="text-align: center; color: #999; margin-top: 40px;">
+            <div class="empty-state">
                 Brak planów. Dodaj pierwszy powyżej!
             </div>
         {% endif %}
     </div>
+    {% include "_chat_widget.html" %}
 </body>
 </html>

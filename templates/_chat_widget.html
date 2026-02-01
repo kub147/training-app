@@ -1,0 +1,140 @@
+<div class="chat-widget" id="chatWidget">
+    <button class="chat-fab" id="chatFab" type="button" aria-controls="chatPanel" aria-expanded="false" aria-label="Otwórz czat z trenerem">
+        💬
+    </button>
+    <div class="chat-panel" id="chatPanel" aria-hidden="true" role="dialog" aria-label="Czat z trenerem">
+        <div class="chat-head">
+            <div class="chat-title">🤖 Trener</div>
+            <button class="chat-close" id="chatClose" type="button" aria-label="Zamknij czat">✕</button>
+        </div>
+        <div id="chatHistory" class="chat-history">
+            <div class="msg msg-ai">Cześć! Jestem gotowy. Jak mogę pomóc?</div>
+        </div>
+        <div class="chat-input-area">
+            <input type="text" id="chatInput" class="chat-input" placeholder="Wpisz pytanie..." autocomplete="off">
+            <button class="mic-btn" type="button" id="chatMic">🎤</button>
+            <button class="send-btn" type="button" id="chatSend">➤</button>
+        </div>
+    </div>
+</div>
+
+<script>
+(function initChatWidget() {
+    const fab = document.getElementById('chatFab');
+    const panel = document.getElementById('chatPanel');
+    const closeBtn = document.getElementById('chatClose');
+    const input = document.getElementById('chatInput');
+    const history = document.getElementById('chatHistory');
+    const sendBtn = document.getElementById('chatSend');
+    const micBtn = document.getElementById('chatMic');
+    if (!fab || !panel || !input || !history || !sendBtn) return;
+
+    let hasLoaded = false;
+
+    function sanitizeText(text) {
+        return String(text || '')
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<[^>]*>/g, '')
+            .trim();
+    }
+
+    function addMsg(text, cls) {
+        const el = document.createElement('div');
+        el.className = `msg ${cls}`;
+        el.textContent = sanitizeText(text);
+        history.appendChild(el);
+        history.scrollTop = history.scrollHeight;
+        return el;
+    }
+
+    async function loadHistory() {
+        try {
+            const res = await fetch('/api/chat/history');
+            const messages = await res.json();
+            if (!Array.isArray(messages) || messages.length === 0) return;
+            history.innerHTML = '';
+            messages.forEach(msg => {
+                const cls = msg.sender === 'user' ? 'msg-user' : 'msg-ai';
+                addMsg(msg.content || '', cls);
+            });
+        } catch (e) {}
+    }
+
+    function openPanel() {
+        panel.style.display = 'flex';
+        panel.classList.add('open');
+        panel.setAttribute('aria-hidden', 'false');
+        fab.setAttribute('aria-expanded', 'true');
+        if (!hasLoaded) {
+            hasLoaded = true;
+            loadHistory();
+        }
+        setTimeout(() => input.focus(), 50);
+    }
+
+    function closePanel() {
+        panel.classList.remove('open');
+        panel.setAttribute('aria-hidden', 'true');
+        fab.setAttribute('aria-expanded', 'false');
+        panel.style.display = '';
+    }
+
+    function togglePanel() {
+        if (panel.classList.contains('open')) {
+            closePanel();
+        } else {
+            openPanel();
+        }
+    }
+
+    async function sendMessage() {
+        const text = (input.value || '').trim();
+        if (!text) return;
+        addMsg(text, 'msg-user');
+        input.value = '';
+        const loading = addMsg('...', 'msg-ai');
+
+        try {
+            const res = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({message: text})
+            });
+            const data = await res.json();
+            loading.remove();
+            addMsg(data.response || 'Błąd.', 'msg-ai');
+        } catch (e) {
+            loading.textContent = 'Błąd.';
+        }
+    }
+
+    function dictate() {
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            alert('Rozpoznawanie mowy nie jest wspierane w tej przeglądarce.');
+            return;
+        }
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const rec = new SR();
+        rec.lang = 'pl-PL';
+        rec.interimResults = false;
+        rec.maxAlternatives = 1;
+        rec.onresult = (event) => {
+            const text = event.results[0][0].transcript;
+            input.value = (input.value ? (input.value + " ") : "") + text;
+            input.focus();
+        };
+        rec.onerror = () => {};
+        rec.start();
+    }
+
+    fab.addEventListener('click', togglePanel);
+    closeBtn.addEventListener('click', closePanel);
+    sendBtn.addEventListener('click', sendMessage);
+    micBtn.addEventListener('click', dictate);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') sendMessage();
+    });
+
+    window.__openChatWidget = openPanel;
+})();
+</script>
