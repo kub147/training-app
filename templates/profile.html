@@ -16,6 +16,7 @@
         </div>
         <div class="header-actions">
             {% include "_lang_toggle.html" %}
+                {% include "_theme_toggle.html" %}
             <a class="btn btn-outline" href="/">{{ t('nav_panel') }}</a>
             <a class="btn btn-outline" href="/logout">{{ t('nav_logout') }}</a>
         </div>
@@ -73,9 +74,14 @@
                     <input type="number" min="0" name="days_per_week" value="{{ profile.days_per_week if profile.days_per_week is not none else '' }}" placeholder="{{ tx('np. 4','e.g. 4') }}">
                 </div>
                 <div class="field">
-                    <label>{{ tx('FAKTY: Doświadczenie','FACTS: Experience') }}</label>
-                    <input type="text" name="experience_text" value="{{ profile.experience_text or '' }}" placeholder="{{ tx('np. 2 lata biegania, 1 rok siłowni','e.g. 2 years running, 1 year gym') }}">
+                    <label>{{ t('goal_per_week_label') }}</label>
+                    <input type="number" min="1" max="30" name="weekly_goal_workouts" value="{{ profile.weekly_goal_workouts if profile.weekly_goal_workouts is not none else '' }}" placeholder="{{ tx('np. 3','e.g. 3') }}">
                 </div>
+            </div>
+
+            <div class="field">
+                <label>{{ tx('FAKTY: Doświadczenie','FACTS: Experience') }}</label>
+                <input type="text" name="experience_text" value="{{ profile.experience_text or '' }}" placeholder="{{ tx('np. 2 lata biegania, 1 rok siłowni','e.g. 2 years running, 1 year gym') }}">
             </div>
 
             <div class="field">

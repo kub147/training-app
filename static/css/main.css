@@ -13,6 +13,8 @@
     --primary: #101827;
     --accent: #ef4444;
     --border: #e5e7eb;
+    --chart-text: #334155;
+    --chart-grid: rgba(148, 163, 184, 0.25);
 
     --color-run: #00bf63;
     --color-ride: #ff5722;
@@ -190,6 +192,13 @@ h1 {
     align-items: center;
     gap: 6px;
     font-weight: 800;
+}
+
+.theme-toggle {
+    min-width: 40px;
+    padding: 8px 10px;
+    font-size: 14px;
+    line-height: 1;
 }
 
 .btn-soft {
@@ -456,11 +465,9 @@ h1 {
     color: #111827;
     font-weight: 900;
     line-height: 1.25;
-    max-height: 3.6em;
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
+    overflow: visible;
+    display: block;
+    padding-bottom: 2px;
 }
 
 .road-sub {
@@ -468,11 +475,9 @@ h1 {
     font-size: 12px;
     color: #475569;
     line-height: 1.35;
-    max-height: 3.6em;
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
+    overflow: visible;
+    display: block;
+    padding-bottom: 2px;
 }
 
 .road-action {
@@ -912,6 +917,10 @@ textarea {
     color: var(--primary);
 }
 
+.km-summary {
+    margin-bottom: 8px;
+}
+
 #chatHistory {
     flex: 1;
     overflow-y: auto;
@@ -936,8 +945,10 @@ textarea {
 .chat-widget {
     position: fixed;
     right: 24px;
-    bottom: 24px;
+    bottom: calc(24px + env(safe-area-inset-bottom));
     z-index: 1200;
+    transform: translateZ(0);
+    will-change: transform;
 }
 
 .chat-fab {
@@ -957,7 +968,7 @@ textarea {
 .chat-panel {
     position: fixed;
     right: 24px;
-    bottom: 90px;
+    bottom: calc(90px + env(safe-area-inset-bottom));
     width: min(380px, calc(100vw - 32px));
     max-height: 70vh;
     background: var(--card-bg);
@@ -1019,14 +1030,14 @@ textarea {
 @media (max-width: 640px) {
     .chat-widget {
         right: 14px;
-        bottom: 14px;
+        bottom: calc(14px + env(safe-area-inset-bottom));
     }
 
     .chat-panel {
         right: 12px;
         left: 12px;
         width: auto;
-        bottom: 78px;
+        bottom: calc(78px + env(safe-area-inset-bottom));
         max-height: 65vh;
     }
 }
@@ -1385,6 +1396,114 @@ textarea {
 
 .mini-status.work {
     color: rgba(15,23,42,0.75);
+}
+
+/* === DARK MODE (toggle + saved preference) === */
+:root[data-theme="dark"] {
+    --bg: #0b1220;
+    --card-bg: #111a2e;
+    --text: #e5e7eb;
+    --gray: #9aa4ba;
+    --primary: #f3f4f6;
+    --border: #23304a;
+    --chart-text: #cbd5e1;
+    --chart-grid: rgba(148, 163, 184, 0.2);
+}
+
+:root[data-theme="dark"] body {
+    background-image:
+        radial-gradient(900px 600px at 15% -10%, rgba(30, 64, 175, 0.25), transparent 60%),
+        radial-gradient(700px 500px at 110% 10%, rgba(6, 78, 59, 0.22), transparent 55%);
+}
+
+:root[data-theme="dark"] .card,
+:root[data-theme="dark"] .chart-card,
+:root[data-theme="dark"] .stat-card,
+:root[data-theme="dark"] .road-item,
+:root[data-theme="dark"] .activity-card,
+:root[data-theme="dark"] .main-card,
+:root[data-theme="dark"] .gym-section {
+    background: var(--card-bg);
+    border-color: var(--border);
+    box-shadow: 0 10px 24px rgba(2, 6, 23, 0.45);
+}
+
+:root[data-theme="dark"] .road-icon {
+    background: #1a263f;
+    border-color: #263754;
+}
+
+:root[data-theme="dark"] .road-title,
+:root[data-theme="dark"] .stat-val,
+:root[data-theme="dark"] .chart-title,
+:root[data-theme="dark"] .card-title,
+:root[data-theme="dark"] .roadmap-label,
+:root[data-theme="dark"] .road-date,
+:root[data-theme="dark"] .modal-title,
+:root[data-theme="dark"] .modal-body b {
+    color: #f8fafc;
+}
+
+:root[data-theme="dark"] .road-sub,
+:root[data-theme="dark"] .stat-sub,
+:root[data-theme="dark"] .help-text,
+:root[data-theme="dark"] .modal-meta,
+:root[data-theme="dark"] .modal-body p {
+    color: #a9b4c8;
+}
+
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] .form-input,
+:root[data-theme="dark"] #chatInput,
+:root[data-theme="dark"] #chatHistory {
+    background: #0f1729;
+    color: #e5e7eb;
+    border-color: #2a3a59;
+}
+
+:root[data-theme="dark"] .btn-outline {
+    border-color: #334969;
+    color: #dbe6ff;
+}
+
+:root[data-theme="dark"] .btn-soft {
+    background: #1b2a44;
+    border-color: #2d3f62;
+    color: #e7edf9;
+}
+
+:root[data-theme="dark"] .pill {
+    background: #1c2a43;
+    border-color: #2f466f;
+    color: #dbeafe;
+}
+
+:root[data-theme="dark"] .date-header {
+    background: #0f1729;
+    border-color: #2a3a59;
+    color: #cbd5e1;
+}
+
+:root[data-theme="dark"] .chat-panel,
+:root[data-theme="dark"] .modal {
+    background: #111a2e;
+    border-color: #2b3f62;
+    color: #e5e7eb;
+}
+
+:root[data-theme="dark"] .road-item.is-today {
+    border-color: rgba(96, 165, 250, 0.75);
+    box-shadow: 0 10px 28px rgba(37, 99, 235, 0.25);
+    background: linear-gradient(180deg, rgba(37, 99, 235, 0.26), rgba(17, 26, 46, 1) 42%);
+}
+
+:root[data-theme="dark"] .today-badge,
+:root[data-theme="dark"] .road-action .pill {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: rgba(96, 165, 250, 0.45);
+    color: #dbeafe;
 }
 /* ====================================
    RESPONSIVE - TABLET

@@ -44,6 +44,7 @@ class UserProfile(db.Model):
     weekly_time_hours = db.Column(db.Float)           # time available per week
     weekly_distance_km = db.Column(db.Float)          # declared distance per week
     days_per_week = db.Column(db.Integer)             # training days per week
+    weekly_goal_workouts = db.Column(db.Integer)      # target workouts per week (for metrics goal)
     experience_text = db.Column(db.Text)              # free-form: experience background
 
     goals_text = db.Column(db.Text)                   # free-form main goal

@@ -112,7 +112,12 @@ I18N = {
         "goal_done": "Wykonano:",
         "goal_done_text": "Cel osiągnięty! 🎉",
         "goal_left_text": "Zostało: {count}",
+        "goal_profile_hint": "Cel ustawisz w profilu",
+        "goal_per_week_label": "Cel treningów / tydzień",
         "activity_count_title": "⏱️ Aktywności (liczba)",
+        "km_chart_title": "📏 Kilometry według dyscypliny",
+        "km_total_label": "Łącznie",
+        "discipline_label": "Dyscyplina",
         "history_title": "📜 Pełna historia treningów",
     },
     "en": {
@@ -181,7 +186,12 @@ I18N = {
         "goal_done": "Completed:",
         "goal_done_text": "Goal achieved! 🎉",
         "goal_left_text": "Remaining: {count}",
+        "goal_profile_hint": "Set your target in profile",
+        "goal_per_week_label": "Workout goal / week",
         "activity_count_title": "⏱️ Activities (count)",
+        "km_chart_title": "📏 Distance by discipline",
+        "km_total_label": "Total",
+        "discipline_label": "Discipline",
         "history_title": "📜 Full training history",
     },
 }
@@ -345,6 +355,7 @@ def ensure_schema() -> None:
             'weekly_time_hours': "weekly_time_hours REAL",
             'weekly_distance_km': "weekly_distance_km REAL",
             'days_per_week': "days_per_week INTEGER",
+            'weekly_goal_workouts': "weekly_goal_workouts INTEGER",
             'experience_text': "experience_text TEXT",
             'goals_text': "goals_text TEXT",
             'target_event': "target_event TEXT",
@@ -1167,6 +1178,7 @@ def onboarding():
         profile.weekly_time_hours = _to_float(request.form.get("weekly_time_hours"))
         profile.weekly_distance_km = _to_float(request.form.get("weekly_distance_km"))
         profile.days_per_week = _to_int(request.form.get("days_per_week"))
+        profile.weekly_goal_workouts = _to_int(request.form.get("weekly_goal_workouts"))
         profile.experience_text = _clip(request.form.get("experience_text"), 10000)
 
         # GOALS
@@ -1258,6 +1270,7 @@ def profile():
             profile_obj.weekly_time_hours = _to_float(request.form.get("weekly_time_hours"))
             profile_obj.weekly_distance_km = _to_float(request.form.get("weekly_distance_km"))
             profile_obj.days_per_week = _to_int(request.form.get("days_per_week"))
+            profile_obj.weekly_goal_workouts = _to_int(request.form.get("weekly_goal_workouts"))
             profile_obj.experience_text = _clip(request.form.get("experience_text"), 10000)
 
             profile_obj.goals_text = _clip(request.form.get("goals_text"), 10000)
@@ -1304,6 +1317,7 @@ def profile():
 
 def compute_stats(user_id: int, range_days: int) -> dict:
     cutoff = datetime.now() - timedelta(days=range_days)
+    start_date = datetime.now().date() - timedelta(days=range_days - 1)
 
     acts = (
         Activity.query
@@ -1333,6 +1347,7 @@ def compute_stats(user_id: int, range_days: int) -> dict:
     }
 
     totals = {"count": 0, "distance": 0.0, "duration": 0}
+    daily_bucket = {}
 
     for a in acts:
         b = bucket(a.activity_type)
@@ -1343,6 +1358,26 @@ def compute_stats(user_id: int, range_days: int) -> dict:
         totals["count"] += 1
         totals["distance"] += float(a.distance or 0)
         totals["duration"] += int(a.duration or 0)
+
+        if a.start_time:
+            day_key = a.start_time.date().isoformat()
+            day_entry = daily_bucket.setdefault(day_key, {"run": 0.0, "ride": 0.0, "swim": 0.0, "gym": 0.0, "other": 0.0})
+            day_entry[b] += float(a.distance or 0.0) / 1000.0
+
+    daily_labels = []
+    daily_km_by_sport = {"run": [], "ride": [], "swim": [], "gym": [], "other": [], "total": []}
+    cur = start_date
+    for _ in range(range_days):
+        key = cur.isoformat()
+        daily_labels.append(key)
+        row = daily_bucket.get(key, {})
+        total_km = 0.0
+        for sport_key in ("run", "ride", "swim", "gym", "other"):
+            v = round(float(row.get(sport_key, 0.0)), 2)
+            daily_km_by_sport[sport_key].append(v)
+            total_km += v
+        daily_km_by_sport["total"].append(round(total_km, 2))
+        cur = cur + timedelta(days=1)
 
     # POPRAWKA: Dodaj bezpośrednie klucze dla szablonu
     stats = {
@@ -1378,6 +1413,8 @@ def compute_stats(user_id: int, range_days: int) -> dict:
             }
             for k, v in buckets.items()
         },
+        "daily_labels": daily_labels,
+        "daily_km_by_sport": daily_km_by_sport,
     }
     return stats
 
@@ -1457,11 +1494,17 @@ def metrics():
         range_days = 7
 
     stats = compute_stats(current_user.id, range_days)
+    profile_obj = UserProfile.query.filter_by(user_id=current_user.id).first()
+    weekly_goal = (profile_obj.weekly_goal_workouts if profile_obj and profile_obj.weekly_goal_workouts else 3)
+    weekly_goal = max(1, int(weekly_goal))
+    goal_target = max(1, int(round((weekly_goal * range_days) / 7)))
 
     return render_template(
         "metrics.html",
         stats=stats,
         range_days=range_days,
+        weekly_goal=weekly_goal,
+        goal_target=goal_target,
     )
 
 
@@ -1697,6 +1740,39 @@ def _parse_date_time(date_str: str, time_str: str) -> datetime:
     except Exception:
         return datetime.now(timezone.utc)
 
+
+def _looks_like_duplicate_activity(
+    *,
+    user_id: int,
+    activity_type: str,
+    start_time: datetime,
+    duration_sec: int,
+    distance_m: float,
+    notes: str | None,
+    window_seconds: int = 120,
+) -> bool:
+    """Best-effort dedupe guard for double form submit on slow mobile/web."""
+    start_min = start_time - timedelta(seconds=window_seconds)
+    start_max = start_time + timedelta(seconds=window_seconds)
+    needle_notes = (notes or "").strip()
+
+    q = (
+        Activity.query
+        .filter(
+            Activity.user_id == user_id,
+            Activity.activity_type == activity_type,
+            Activity.start_time >= start_min,
+            Activity.start_time <= start_max,
+            Activity.duration == int(duration_sec or 0),
+            Activity.distance == float(distance_m or 0.0),
+        )
+        .order_by(Activity.id.desc())
+    )
+    if needle_notes:
+        q = q.filter(Activity.notes == needle_notes)
+
+    return q.first() is not None
+
 @app.route("/activity/manual", methods=["POST"])
 @login_required
 def add_activity_manual():
@@ -1722,6 +1798,17 @@ def add_activity_manual():
         avg_hr=None,
         notes=notes,
     )
+    if _looks_like_duplicate_activity(
+        user_id=current_user.id,
+        activity_type=act.activity_type or "other",
+        start_time=act.start_time,
+        duration_sec=act.duration or 0,
+        distance_m=act.distance or 0.0,
+        notes=act.notes,
+    ):
+        flash(tr("Wykryto duplikat — trening już istnieje.", "Duplicate detected — workout already exists."))
+        return redirect(url_for("index"))
+
     db.session.add(act)
     db.session.commit()
     flash(tr("Dodano trening.", "Workout added."))
@@ -1782,17 +1869,30 @@ def add_checkin():
             if has_data:
                 # Sukces parsowania - twórz Activity
                 dt = _parse_date_time(start_date, start_time)
-                act = Activity(
+                prepared_type = act_type or "other"
+                prepared_duration = max(0, int(round(dur_min or 0))) * 60
+                prepared_distance = max(0.0, float(dist_km or 0.0)) * 1000.0
+                prepared_notes = f"📸 Auto: {text_note}" if text_note else "📸 Auto-import ze screena"
+
+                if not _looks_like_duplicate_activity(
                     user_id=current_user.id,
-                    activity_type=act_type or "other",
+                    activity_type=prepared_type,
                     start_time=dt,
-                    duration=max(0, int(round(dur_min or 0))) * 60,
-                    distance=max(0.0, float(dist_km or 0.0)) * 1000.0,
-                    avg_hr=int(avg_hr) if avg_hr else None,
-                    notes=f"📸 Auto: {text_note}" if text_note else "📸 Auto-import ze screena",
-                )
-                db.session.add(act)
-                created_activity = True
+                    duration_sec=prepared_duration,
+                    distance_m=prepared_distance,
+                    notes=prepared_notes,
+                ):
+                    act = Activity(
+                        user_id=current_user.id,
+                        activity_type=prepared_type,
+                        start_time=dt,
+                        duration=prepared_duration,
+                        distance=prepared_distance,
+                        avg_hr=int(avg_hr) if avg_hr else None,
+                        notes=prepared_notes,
+                    )
+                    db.session.add(act)
+                    created_activity = True
             else:
                 # AI nie wyciągnęło danych
                 screenshot_failed = True
@@ -1804,17 +1904,26 @@ def add_checkin():
 
     # Fallback: Utwórz Activity "other" jeśli screenshot się nie powiódł
     if not created_activity and text_note:
-        act = Activity(
+        fallback_dt = datetime.now(timezone.utc)
+        if not _looks_like_duplicate_activity(
             user_id=current_user.id,
             activity_type="other",
-            start_time=datetime.now(timezone.utc),
-            duration=0,
-            distance=0.0,
-            avg_hr=None,
+            start_time=fallback_dt,
+            duration_sec=0,
+            distance_m=0.0,
             notes=text_note,
-        )
-        db.session.add(act)
-        created_activity = True
+        ):
+            act = Activity(
+                user_id=current_user.id,
+                activity_type="other",
+                start_time=fallback_dt,
+                duration=0,
+                distance=0.0,
+                avg_hr=None,
+                notes=text_note,
+            )
+            db.session.add(act)
+            created_activity = True
 
     db.session.commit()
 

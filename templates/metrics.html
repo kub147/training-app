@@ -18,6 +18,7 @@
             </div>
             <div class="header-actions">
                 {% include "_lang_toggle.html" %}
+                {% include "_theme_toggle.html" %}
                 <a class="btn btn-outline" href="/">{{ t('nav_panel') }}</a>
                 <a class="btn btn-outline" href="/profile">{{ t('nav_profile') }}</a>
                 <a class="btn btn-outline" href="/plans">{{ t('nav_plans') }}</a>
@@ -74,18 +75,19 @@
                             <canvas id="runGoalChart"></canvas>
                             <div class="goal-center">
                                 <div class="goal-count">
-                                    {{ stats.run_count }} / 3
+                                    {{ stats.run_count }} / {{ goal_target }}
                                 </div>
                                 <div class="goal-label">{{ tx('TRENINGI','WORKOUTS') }}</div>
                             </div>
                         </div>
                         <div class="goal-meta">
-                            <p><b>{{ t('goal_target') }}</b> {{ tx('3 treningi','3 workouts') }}</p>
+                            <p><b>{{ t('goal_target') }}</b> {{ goal_target }}</p>
                             <p class="goal-sub">{{ t('goal_done') }} {{ stats.run_count }}</p>
                             <p class="goal-remaining">
-                                {% if (stats.run_count) >= 3 %}{{ t('goal_done_text') }}
-                                {% else %}{{ t('goal_left_text', count=(3 - stats.run_count)) }}{% endif %}
+                                {% if (stats.run_count) >= goal_target %}{{ t('goal_done_text') }}
+                                {% else %}{{ t('goal_left_text', count=(goal_target - stats.run_count)) }}{% endif %}
                             </p>
+                            <p class="goal-sub">{{ t('goal_per_week_label') }}: {{ weekly_goal }} • <a href="/profile">{{ t('goal_profile_hint') }}</a></p>
                         </div>
                     </div>
                 </div>
@@ -96,6 +98,27 @@
                         <canvas id="timeChart"></canvas>
                     </div>
                 </div>
+
+                <div class="chart-card">
+                    <div class="chart-title">{{ t('km_chart_title') }}</div>
+                    <div class="field">
+                        <label>{{ t('discipline_label') }}</label>
+                        <select id="disciplineSelect">
+                            <option value="run">{{ t('run_label') }}</option>
+                            <option value="ride">{{ t('ride_label') }}</option>
+                            <option value="swim">{{ t('swim_label') }}</option>
+                            <option value="gym">{{ t('gym_label') }}</option>
+                            <option value="other">{{ tx('Inne','Other') }}</option>
+                            <option value="total">{{ tx('Suma','Total') }}</option>
+                        </select>
+                    </div>
+                    <div class="goal-meta km-summary">
+                        <p><b>{{ t('km_total_label') }}:</b> {{ stats.distance_km }} km</p>
+                    </div>
+                    <div class="chart-fixed">
+                        <canvas id="kmChart"></canvas>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -104,8 +127,10 @@
 
     <script>
     const runCount = {{ stats.run_count }};
-    const runTarget = 3;
+    const runTarget = {{ goal_target }};
     const remaining = Math.max(0, runTarget - runCount);
+    const chartText = getComputedStyle(document.documentElement).getPropertyValue('--chart-text').trim() || '#334155';
+    const chartGrid = getComputedStyle(document.documentElement).getPropertyValue('--chart-grid').trim() || 'rgba(148,163,184,0.25)';
 
     const ctxGoal = document.getElementById('runGoalChart').getContext('2d');
     new Chart(ctxGoal, {
@@ -119,7 +144,11 @@
                 borderRadius: 10
             }]
         },
-        options: { cutout: '80%', plugins: { legend: { display: false }, tooltip: { enabled: false } }, maintainAspectRatio: false }
+        options: {
+            cutout: '80%',
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+            maintainAspectRatio: false
+        }
     });
 
     const ctxTime = document.getElementById('timeChart').getContext('2d');
@@ -138,8 +167,82 @@
                 borderWidth: 0
             }]
         },
-        options: { plugins: { legend: { position: 'right', labels: { boxWidth: 10, font: {size: 10} } } }, maintainAspectRatio: false }
+        options: {
+            plugins: {
+                legend: { position: 'right', labels: { boxWidth: 10, font: { size: 10 }, color: chartText } }
+            },
+            maintainAspectRatio: false
+        }
     });
+
+    const ctxKm = document.getElementById('kmChart').getContext('2d');
+    const dayLabels = {{ stats.daily_labels|tojson }};
+    const kmBySport = {{ stats.daily_km_by_sport|tojson }};
+    const disciplineSelect = document.getElementById('disciplineSelect');
+    const disciplineNames = {
+        run: {{ t('run_label')|tojson }},
+        ride: {{ t('ride_label')|tojson }},
+        swim: {{ t('swim_label')|tojson }},
+        gym: {{ t('gym_label')|tojson }},
+        other: {{ tx('Inne','Other')|tojson }},
+        total: {{ tx('Suma','Total')|tojson }}
+    };
+    const kmColors = {
+        run: '#00bf63',
+        ride: '#ff5722',
+        swim: '#00a8cc',
+        gym: '#8e44ad',
+        other: '#7f8c8d',
+        total: '#2563eb'
+    };
+
+    const kmChart = new Chart(ctxKm, {
+        type: 'line',
+        data: {
+            labels: dayLabels,
+            datasets: [{
+                label: disciplineNames.run,
+                data: kmBySport.run || [],
+                borderColor: kmColors.run,
+                backgroundColor: 'rgba(0,191,99,0.14)',
+                pointRadius: 2,
+                pointHoverRadius: 4,
+                tension: 0.35,
+                fill: true
+            }]
+        },
+        options: {
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: (ctx) => `${ctx.parsed.y || 0} km` } }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: { color: chartGrid },
+                    ticks: { color: chartText }
+                },
+                x: {
+                    grid: { color: chartGrid },
+                    ticks: { color: chartText }
+                }
+            }
+        }
+    });
+
+    function updateKmDiscipline(sport) {
+        const safeSport = kmBySport[sport] ? sport : 'run';
+        kmChart.data.datasets[0].label = disciplineNames[safeSport];
+        kmChart.data.datasets[0].data = kmBySport[safeSport] || [];
+        kmChart.data.datasets[0].borderColor = kmColors[safeSport];
+        kmChart.data.datasets[0].backgroundColor = safeSport === 'total' ? 'rgba(37,99,235,0.14)' : 'rgba(15,23,42,0.10)';
+        kmChart.update();
+    }
+
+    if (disciplineSelect) {
+        disciplineSelect.addEventListener('change', (e) => updateKmDiscipline(e.target.value));
+    }
     </script>
 </body>
 </html>

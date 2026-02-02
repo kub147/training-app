@@ -16,6 +16,7 @@
             </div>
             <div class="header-actions">
                 {% include "_lang_toggle.html" %}
+                {% include "_theme_toggle.html" %}
                 <a class="btn btn-outline" href="/metrics">{{ t('nav_metrics') }}</a>
                 <a class="btn btn-outline" href="/profile">{{ t('nav_profile') }}</a>
                 <a class="btn btn-outline" href="/plans">{{ t('nav_plans') }}</a>
@@ -574,6 +575,25 @@
 
 // Auto-ukrywanie flash messages po 5 sekundach
 document.addEventListener('DOMContentLoaded', () => {
+    // Prevent accidental double-submit on slower mobile connections.
+    const lockSubmit = (form) => {
+        if (!form) return;
+        form.addEventListener('submit', (e) => {
+            if (form.dataset.submitting === '1') {
+                e.preventDefault();
+                return;
+            }
+            form.dataset.submitting = '1';
+            const btn = form.querySelector('button[type="submit"]');
+            if (btn) {
+                btn.disabled = true;
+                btn.classList.add('loading');
+            }
+        });
+    };
+    lockSubmit(document.querySelector('form[action="/activity/manual"]'));
+    lockSubmit(document.querySelector('form[action="/checkin"]'));
+
     const flashes = document.querySelectorAll('.flash');
     flashes.forEach(flash => {
         setTimeout(() => {
