@@ -213,6 +213,10 @@ def tr(pl: str, en: str) -> str:
     return en if session.get("lang", "pl") == "en" else pl
 
 
+def _clip(value: str | None, max_len: int) -> str:
+    return (value or "").strip()[:max_len]
+
+
 def _password_reset_serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(app.config["SECRET_KEY"])
 
@@ -1159,15 +1163,15 @@ def onboarding():
                 return None
 
         # FACTS (bardziej otwarte)
-        profile.primary_sports = (request.form.get("primary_sports") or "").strip()
+        profile.primary_sports = _clip(request.form.get("primary_sports"), 200)
         profile.weekly_time_hours = _to_float(request.form.get("weekly_time_hours"))
         profile.weekly_distance_km = _to_float(request.form.get("weekly_distance_km"))
         profile.days_per_week = _to_int(request.form.get("days_per_week"))
-        profile.experience_text = (request.form.get("experience_text") or "").strip()
+        profile.experience_text = _clip(request.form.get("experience_text"), 10000)
 
         # GOALS
-        profile.goals_text = (request.form.get("goals_text") or "").strip()
-        profile.target_event = (request.form.get("target_event") or "").strip() or None
+        profile.goals_text = _clip(request.form.get("goals_text"), 10000)
+        profile.target_event = _clip(request.form.get("target_event"), 200) or None
 
         target_date_str = (request.form.get("target_date") or "").strip()
         if target_date_str:
@@ -1176,8 +1180,8 @@ def onboarding():
             except Exception:
                 profile.target_date = None
 
-        profile.preferences_text = (request.form.get("preferences_text") or "").strip()
-        profile.constraints_text = (request.form.get("constraints_text") or "").strip()
+        profile.preferences_text = _clip(request.form.get("preferences_text"), 10000)
+        profile.constraints_text = _clip(request.form.get("constraints_text"), 10000)
 
         # STATE (czasowo wrażliwe) — zapisujemy osobno z TTL
         injuries_text = (request.form.get("injuries_text") or "").strip()
@@ -1185,7 +1189,13 @@ def onboarding():
             set_or_refresh_injury_state(current_user.id, injuries_text)
 
         current_user.onboarding_completed = True
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception as e:
+            app.logger.exception("Onboarding save failed for user %s: %s", current_user.id, e)
+            db.session.rollback()
+            flash(tr("Nie udało się zapisać profilu. Skróć wpisy i spróbuj ponownie.", "Could not save profile. Please shorten inputs and try again."))
+            return redirect(url_for("onboarding"))
 
         flash(tr("Dzięki! Profil zapisany. Możesz korzystać z dashboardu.", "Thanks! Profile saved. You can now use the dashboard."))
         return redirect(url_for("index"))
@@ -1243,14 +1253,14 @@ def profile():
             except Exception:
                 return None
 
-        profile_obj.primary_sports = (request.form.get("primary_sports") or "").strip()
+        profile_obj.primary_sports = _clip(request.form.get("primary_sports"), 200)
         profile_obj.weekly_time_hours = _to_float(request.form.get("weekly_time_hours"))
         profile_obj.weekly_distance_km = _to_float(request.form.get("weekly_distance_km"))
         profile_obj.days_per_week = _to_int(request.form.get("days_per_week"))
-        profile_obj.experience_text = (request.form.get("experience_text") or "").strip()
+        profile_obj.experience_text = _clip(request.form.get("experience_text"), 10000)
 
-        profile_obj.goals_text = (request.form.get("goals_text") or "").strip()
-        profile_obj.target_event = (request.form.get("target_event") or "").strip() or None
+        profile_obj.goals_text = _clip(request.form.get("goals_text"), 10000)
+        profile_obj.target_event = _clip(request.form.get("target_event"), 200) or None
 
         target_date_str = (request.form.get("target_date") or "").strip()
         if target_date_str:
@@ -1259,14 +1269,21 @@ def profile():
             except Exception:
                 profile_obj.target_date = None
 
-        profile_obj.preferences_text = (request.form.get("preferences_text") or "").strip()
-        profile_obj.constraints_text = (request.form.get("constraints_text") or "").strip()
+        profile_obj.preferences_text = _clip(request.form.get("preferences_text"), 10000)
+        profile_obj.constraints_text = _clip(request.form.get("constraints_text"), 10000)
 
         injuries_text = (request.form.get("injuries_text") or "").strip()
         if injuries_text:
             set_or_refresh_injury_state(current_user.id, injuries_text)
 
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception as e:
+            app.logger.exception("Profile save failed for user %s: %s", current_user.id, e)
+            db.session.rollback()
+            flash(tr("Nie udało się zapisać profilu. Skróć wpisy i spróbuj ponownie.", "Could not save profile. Please shorten inputs and try again."))
+            return redirect(url_for("profile"))
+
         flash(tr("Zapisano zmiany w profilu.", "Profile changes saved."))
         return redirect(url_for("profile"))
 
