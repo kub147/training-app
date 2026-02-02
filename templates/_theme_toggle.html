@@ -7,8 +7,7 @@
     const root = document.documentElement;
     const key = 'theme';
     const saved = localStorage.getItem(key);
-    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const startTheme = saved || (prefersDark ? 'dark' : 'light');
+    const startTheme = saved || 'light';
     root.setAttribute('data-theme', startTheme);
 
     const btn = document.getElementById('themeToggle');

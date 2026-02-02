@@ -14,8 +14,7 @@
     <div class="container auth-container">
         <div class="card auth-card">
             <div class="header-actions">
-                {% include "_lang_toggle.html" %}
-                {% include "_theme_toggle.html" %}
+                                {% include "_theme_toggle.html" %}
             </div>
             <h1 class="page-title">🧾 {{ tx('Rejestracja','Register') }}</h1>
 
@@ -40,6 +39,14 @@
             </div>
 
             <form method="POST" action="/register" enctype="multipart/form-data">
+                <div class="field">
+                    <label>{{ tx('Język aplikacji','App language') }}</label>
+                    <select name="preferred_lang" required>
+                        <option value="pl" {% if lang != 'en' %}selected{% endif %}>Polski</option>
+                        <option value="en" {% if lang == 'en' %}selected{% endif %}>English</option>
+                    </select>
+                </div>
+
                 <div class="form-row">
                     <div class="field">
                         <label>{{ tx('Imię','First name') }}</label>

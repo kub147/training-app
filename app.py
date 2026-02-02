@@ -340,6 +340,7 @@ def ensure_schema() -> None:
         wanted = {
             'first_name': "first_name TEXT",
             'last_name': "last_name TEXT",
+            'preferred_lang': "preferred_lang TEXT DEFAULT 'pl'",
             'created_at': "created_at DATETIME",
             'onboarding_completed': "onboarding_completed BOOLEAN DEFAULT 0",
         }
@@ -626,6 +627,9 @@ def enforce_onboarding():
 
     if not current_user.is_authenticated:
         return
+
+    if session.get("lang") not in ("pl", "en"):
+        session["lang"] = (getattr(current_user, "preferred_lang", None) or "pl")
 
     # endpoint może być None (np. statyczne pliki) — wtedy nie blokujemy
     endpoint = request.endpoint or ""
@@ -999,6 +1003,11 @@ def register():
         return redirect(url_for("index"))
 
     if request.method == "POST":
+        preferred_lang = (request.form.get("preferred_lang") or "pl").strip().lower()
+        if preferred_lang not in ("pl", "en"):
+            preferred_lang = "pl"
+        session["lang"] = preferred_lang
+
         email = (request.form.get("email") or "").strip().lower()
         password = request.form.get("password") or ""
         first_name = (request.form.get("first_name") or "").strip()
@@ -1023,6 +1032,7 @@ def register():
             password_hash=generate_password_hash(password),
             first_name=first_name,
             last_name=last_name,
+            preferred_lang=preferred_lang,
         )
         db.session.add(user)
         db.session.commit()
@@ -1072,6 +1082,7 @@ def login():
             return redirect(url_for("login"))
 
         login_user(user)
+        session["lang"] = (getattr(user, "preferred_lang", None) or "pl")
         return redirect(url_for("index"))
 
     return render_template("login.html")

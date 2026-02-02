@@ -18,6 +18,7 @@ class User(db.Model, UserMixin):
 
     first_name = db.Column(db.String(100), nullable=True)
     last_name = db.Column(db.String(100), nullable=True)
+    preferred_lang = db.Column(db.String(5), default="pl", nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     onboarding_completed = db.Column(db.Boolean, default=False, nullable=False)
