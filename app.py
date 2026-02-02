@@ -1234,49 +1234,49 @@ def profile():
                 flash(tr("Import nieudany.", "Import failed."))
             return redirect(url_for("profile"))
 
-        # save
-        def _to_float(v):
-            try:
-                if v is None:
-                    return None
-                s = str(v).strip().replace(",", ".")
-                return float(s) if s else None
-            except Exception:
-                return None
-
-        def _to_int(v):
-            try:
-                if v is None:
-                    return None
-                s = str(v).strip()
-                return int(s) if s else None
-            except Exception:
-                return None
-
-        profile_obj.primary_sports = _clip(request.form.get("primary_sports"), 200)
-        profile_obj.weekly_time_hours = _to_float(request.form.get("weekly_time_hours"))
-        profile_obj.weekly_distance_km = _to_float(request.form.get("weekly_distance_km"))
-        profile_obj.days_per_week = _to_int(request.form.get("days_per_week"))
-        profile_obj.experience_text = _clip(request.form.get("experience_text"), 10000)
-
-        profile_obj.goals_text = _clip(request.form.get("goals_text"), 10000)
-        profile_obj.target_event = _clip(request.form.get("target_event"), 200) or None
-
-        target_date_str = (request.form.get("target_date") or "").strip()
-        if target_date_str:
-            try:
-                profile_obj.target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
-            except Exception:
-                profile_obj.target_date = None
-
-        profile_obj.preferences_text = _clip(request.form.get("preferences_text"), 10000)
-        profile_obj.constraints_text = _clip(request.form.get("constraints_text"), 10000)
-
-        injuries_text = (request.form.get("injuries_text") or "").strip()
-        if injuries_text:
-            set_or_refresh_injury_state(current_user.id, injuries_text)
-
         try:
+            # save
+            def _to_float(v):
+                try:
+                    if v is None:
+                        return None
+                    s = str(v).strip().replace(",", ".")
+                    return float(s) if s else None
+                except Exception:
+                    return None
+
+            def _to_int(v):
+                try:
+                    if v is None:
+                        return None
+                    s = str(v).strip()
+                    return int(s) if s else None
+                except Exception:
+                    return None
+
+            profile_obj.primary_sports = _clip(request.form.get("primary_sports"), 200)
+            profile_obj.weekly_time_hours = _to_float(request.form.get("weekly_time_hours"))
+            profile_obj.weekly_distance_km = _to_float(request.form.get("weekly_distance_km"))
+            profile_obj.days_per_week = _to_int(request.form.get("days_per_week"))
+            profile_obj.experience_text = _clip(request.form.get("experience_text"), 10000)
+
+            profile_obj.goals_text = _clip(request.form.get("goals_text"), 10000)
+            profile_obj.target_event = _clip(request.form.get("target_event"), 200) or None
+
+            target_date_str = (request.form.get("target_date") or "").strip()
+            if target_date_str:
+                try:
+                    profile_obj.target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+                except Exception:
+                    profile_obj.target_date = None
+
+            profile_obj.preferences_text = _clip(request.form.get("preferences_text"), 10000)
+            profile_obj.constraints_text = _clip(request.form.get("constraints_text"), 10000)
+
+            injuries_text = (request.form.get("injuries_text") or "").strip()
+            if injuries_text:
+                set_or_refresh_injury_state(current_user.id, injuries_text)
+
             db.session.commit()
         except Exception as e:
             app.logger.exception("Profile save failed for user %s: %s", current_user.id, e)
@@ -1287,7 +1287,17 @@ def profile():
         flash(tr("Zapisano zmiany w profilu.", "Profile changes saved."))
         return redirect(url_for("profile"))
 
-    return render_template("profile.html", profile=profile_obj)
+    try:
+        return render_template("profile.html", profile=profile_obj)
+    except Exception as e:
+        app.logger.exception("Profile render failed for user %s: %s", current_user.id, e)
+        return (
+            tr(
+                "Błąd renderowania profilu. Sprawdź logi serwera.",
+                "Profile render error. Check server logs.",
+            ),
+            500,
+        )
 
 
 # -------------------- APP --------------------
