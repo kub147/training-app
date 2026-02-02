@@ -1,0 +1,32 @@
+<button class="btn btn-outline theme-toggle" type="button" id="themeToggle" aria-label="{{ tx('Przełącz tryb kolorów','Toggle color theme') }}">🌙</button>
+<script>
+(function initThemeToggle() {
+    if (window.__themeInit) return;
+    window.__themeInit = true;
+
+    const root = document.documentElement;
+    const key = 'theme';
+    const saved = localStorage.getItem(key);
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const startTheme = saved || (prefersDark ? 'dark' : 'light');
+    root.setAttribute('data-theme', startTheme);
+
+    const btn = document.getElementById('themeToggle');
+    if (!btn) return;
+
+    function syncIcon() {
+        const t = root.getAttribute('data-theme') || 'light';
+        btn.textContent = t === 'dark' ? '☀️' : '🌙';
+        btn.title = t === 'dark' ? {{ tx('Przełącz na jasny','Switch to light')|tojson }} : {{ tx('Przełącz na ciemny','Switch to dark')|tojson }};
+    }
+
+    syncIcon();
+    btn.addEventListener('click', function () {
+        const current = root.getAttribute('data-theme') || 'light';
+        const next = current === 'dark' ? 'light' : 'dark';
+        root.setAttribute('data-theme', next);
+        localStorage.setItem(key, next);
+        syncIcon();
+    });
+})();
+</script>
