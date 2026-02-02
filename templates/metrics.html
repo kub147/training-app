@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Metryki</title>
+    <title>{{ tx('Metryki','Metrics') }}</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/png" href="/static/icons/icon-512.png">
@@ -13,20 +13,21 @@
     <div class="container">
         <header>
             <div class="header-row">
-                <h1>📊 Metryki</h1>
-                <span class="pill">Zakres: {{ range_days }} dni</span>
+                <h1>{{ t('metrics_header') }}</h1>
+                <span class="pill">{{ tx('Zakres:','Range:') }} {{ range_days }} {{ tx('dni','days') }}</span>
             </div>
             <div class="header-actions">
-                <a class="btn btn-outline" href="/">Panel</a>
-                <a class="btn btn-outline" href="/profile">Profil</a>
-                <a class="btn btn-outline" href="/plans">Plany siłowe</a>
-                <a class="btn btn-outline" href="/logout">Wyloguj</a>
+                {% include "_lang_toggle.html" %}
+                <a class="btn btn-outline" href="/">{{ t('nav_panel') }}</a>
+                <a class="btn btn-outline" href="/profile">{{ t('nav_profile') }}</a>
+                <a class="btn btn-outline" href="/plans">{{ t('nav_plans') }}</a>
+                <a class="btn btn-outline" href="/logout">{{ t('nav_logout') }}</a>
             </div>
         </header>
 
         <div class="card">
             <div class="range-row">
-                <div class="metrics-range-label">📊 Metryki (ostatnie {{ range_days }} dni)</div>
+                <div class="metrics-range-label">{{ t('metrics_range', days=range_days) }}</div>
                 <div class="range-btns">
                     <a class="btn btn-soft btn-small" href="/metrics?days=7">7</a>
                     <a class="btn btn-soft btn-small" href="/metrics?days=30">30</a>
@@ -40,34 +41,34 @@
                     <span class="stat-icon">🏃</span>
                     <div class="stat-val">{{ stats.run_count }}</div>
                     <div class="stat-sub">{{ stats.run_dist }} km</div>
-                    <div class="stat-label">Bieganie</div>
+                    <div class="stat-label">{{ t('run_label') }}</div>
                 </div>
 
                 <div class="stat-card swim">
                     <span class="stat-icon">🏊</span>
                     <div class="stat-val">{{ stats.swim_count }}</div>
                     <div class="stat-sub">{{ stats.swim_dist }} km</div>
-                    <div class="stat-label">Basen</div>
+                    <div class="stat-label">{{ t('swim_label') }}</div>
                 </div>
 
                 <div class="stat-card gym">
                     <span class="stat-icon">🏋️</span>
                     <div class="stat-val">{{ stats.gym_count }}</div>
                     <div class="stat-sub">{{ stats.gym_hours }} h</div>
-                    <div class="stat-label">Siłownia</div>
+                    <div class="stat-label">{{ t('gym_label') }}</div>
                 </div>
 
                 <div class="stat-card ride">
                     <span class="stat-icon">🚴</span>
                     <div class="stat-val">{{ stats.ride_count }}</div>
                     <div class="stat-sub">{{ stats.ride_dist }} km</div>
-                    <div class="stat-label">Rower</div>
+                    <div class="stat-label">{{ t('ride_label') }}</div>
                 </div>
             </div>
 
             <div class="charts-container">
                 <div class="chart-card">
-                    <div class="chart-title">🎯 Postęp (prosty cel biegowy tygodnia)</div>
+                    <div class="chart-title">{{ t('goal_title') }}</div>
                     <div class="goal-row">
                         <div class="goal-chart">
                             <canvas id="runGoalChart"></canvas>
@@ -75,22 +76,22 @@
                                 <div class="goal-count">
                                     {{ stats.run_count }} / 3
                                 </div>
-                                <div class="goal-label">TRENINGI</div>
+                                <div class="goal-label">{{ tx('TRENINGI','WORKOUTS') }}</div>
                             </div>
                         </div>
                         <div class="goal-meta">
-                            <p><b>Cel:</b> 3 treningi</p>
-                            <p class="goal-sub">Wykonano: {{ stats.run_count }}</p>
+                            <p><b>{{ t('goal_target') }}</b> {{ tx('3 treningi','3 workouts') }}</p>
+                            <p class="goal-sub">{{ t('goal_done') }} {{ stats.run_count }}</p>
                             <p class="goal-remaining">
-                                {% if (stats.run_count) >= 3 %}Cel osiągnięty! 🎉
-                                {% else %}Zostało: {{ 3 - stats.run_count }}{% endif %}
+                                {% if (stats.run_count) >= 3 %}{{ t('goal_done_text') }}
+                                {% else %}{{ t('goal_left_text', count=(3 - stats.run_count)) }}{% endif %}
                             </p>
                         </div>
                     </div>
                 </div>
 
                 <div class="chart-card">
-                    <div class="chart-title">⏱️ Aktywności (liczba)</div>
+                    <div class="chart-title">{{ t('activity_count_title') }}</div>
                     <div class="chart-fixed">
                         <canvas id="timeChart"></canvas>
                     </div>
@@ -110,7 +111,7 @@
     new Chart(ctxGoal, {
         type: 'doughnut',
         data: {
-            labels: ['Zrobione', 'Do zrobienia'],
+            labels: [{{ tx('Zrobione','Done')|tojson }}, {{ tx('Do zrobienia','Remaining')|tojson }}],
             datasets: [{
                 data: [runCount, remaining],
                 backgroundColor: ['#00bf63', '#eeeeee'],
@@ -125,7 +126,12 @@
     new Chart(ctxTime, {
         type: 'doughnut',
         data: {
-            labels: ['Bieg', 'Basen', 'Siłownia', 'Rower'],
+            labels: [
+                {{ t('run_label')|tojson }},
+                {{ t('swim_label')|tojson }},
+                {{ t('gym_label')|tojson }},
+                {{ t('ride_label')|tojson }}
+            ],
             datasets: [{
                 data: [{{ stats.run_count }}, {{ stats.swim_count }}, {{ stats.gym_count }}, {{ stats.ride_count }}],
                 backgroundColor: ['#00bf63', '#00a8cc', '#8e44ad', '#ff5722'],

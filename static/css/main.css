@@ -35,6 +35,9 @@ body {
     background-image:
         radial-gradient(900px 600px at 15% -10%, rgba(253, 230, 138, 0.35), transparent 60%),
         radial-gradient(700px 500px at 110% 10%, rgba(186, 230, 253, 0.4), transparent 55%);
+    background-repeat: no-repeat;
+    background-size: 120% 680px, 100% 620px;
+    background-attachment: fixed;
     color: var(--text);
     margin: 0;
     padding: 12px;
@@ -1412,6 +1415,8 @@ textarea {
     body {
         padding: 8px;
         font-size: 15px;
+        background-attachment: scroll;
+        background-size: 180% 520px, 140% 460px;
     }
 
     .container {

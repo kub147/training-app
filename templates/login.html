@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Logowanie</title>
+    <title>{{ tx('Logowanie','Login') }}</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/png" href="/static/icons/icon-512.png">
@@ -11,7 +11,10 @@
 <body class="auth-page">
     <div class="container auth-container">
         <div class="card auth-card">
-            <h1 class="page-title">🔐 Logowanie</h1>
+            <div class="header-actions">
+                {% include "_lang_toggle.html" %}
+            </div>
+            <h1 class="page-title">🔐 {{ tx('Logowanie','Login') }}</h1>
 
             {% with messages = get_flashed_messages() %}
               {% if messages %}
@@ -23,20 +26,21 @@
 
             <form method="POST" action="/login">
                 <div class="field">
-                    <label>Email</label>
+                    <label>{{ tx('Email','Email') }}</label>
                     <input type="email" name="email" required>
                 </div>
                 <div class="field">
-                    <label>Hasło</label>
+                    <label>{{ tx('Hasło','Password') }}</label>
                     <input type="password" name="password" required>
                 </div>
 
                 <div class="actions">
-                    <button class="btn" type="submit">Zaloguj</button>
+                    <button class="btn" type="submit">{{ tx('Zaloguj','Sign in') }}</button>
                 </div>
             </form>
 
-            <a class="link" href="/register">Nie masz konta? Zarejestruj się</a>
+            <a class="link" href="/forgot-password">{{ tx('Nie pamiętasz hasła?','Forgot password?') }}</a>
+            <a class="link" href="/register">{{ tx('Nie masz konta? Zarejestruj się','No account? Sign up') }}</a>
         </div>
     </div>
 </body>

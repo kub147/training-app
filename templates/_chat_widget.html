@@ -1,17 +1,17 @@
 <div class="chat-widget" id="chatWidget">
-    <button class="chat-fab" id="chatFab" type="button" aria-controls="chatPanel" aria-expanded="false" aria-label="Otwórz czat z trenerem">
+    <button class="chat-fab" id="chatFab" type="button" aria-controls="chatPanel" aria-expanded="false" aria-label="{{ t('chat_open') }}">
         💬
     </button>
-    <div class="chat-panel" id="chatPanel" aria-hidden="true" role="dialog" aria-label="Czat z trenerem">
+    <div class="chat-panel" id="chatPanel" aria-hidden="true" role="dialog" aria-label="{{ t('chat_title') }}">
         <div class="chat-head">
-            <div class="chat-title">🤖 Trener</div>
-            <button class="chat-close" id="chatClose" type="button" aria-label="Zamknij czat">✕</button>
+            <div class="chat-title">{{ t('chat_title') }}</div>
+            <button class="chat-close" id="chatClose" type="button" aria-label="{{ t('chat_close') }}">✕</button>
         </div>
         <div id="chatHistory" class="chat-history">
-            <div class="msg msg-ai">Cześć! Jestem gotowy. Jak mogę pomóc?</div>
+            <div class="msg msg-ai">{{ t('chat_ready') }}</div>
         </div>
         <div class="chat-input-area">
-            <input type="text" id="chatInput" class="chat-input" placeholder="Wpisz pytanie..." autocomplete="off">
+            <input type="text" id="chatInput" class="chat-input" placeholder="{{ t('chat_placeholder') }}" autocomplete="off">
             <button class="mic-btn" type="button" id="chatMic">🎤</button>
             <button class="send-btn" type="button" id="chatSend">➤</button>
         </div>
@@ -102,20 +102,20 @@
             });
             const data = await res.json();
             loading.remove();
-            addMsg(data.response || 'Błąd.', 'msg-ai');
+            addMsg(data.response || {{ t('chat_err')|tojson }}, 'msg-ai');
         } catch (e) {
-            loading.textContent = 'Błąd.';
+            loading.textContent = {{ t('chat_err')|tojson }};
         }
     }
 
     function dictate() {
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-            alert('Rozpoznawanie mowy nie jest wspierane w tej przeglądarce.');
+            alert({{ t('speech_unsupported')|tojson }});
             return;
         }
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
         const rec = new SR();
-        rec.lang = 'pl-PL';
+        rec.lang = {{ tx('pl-PL','en-US')|tojson }};
         rec.interimResults = false;
         rec.maxAlternatives = 1;
         rec.onresult = (event) => {

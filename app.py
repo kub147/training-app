@@ -8,7 +8,11 @@ import io
 import json
 import os
 import re
+import smtplib
+import ssl
 import zipfile
+from email.message import EmailMessage
+from urllib.parse import urlencode
 from datetime import datetime, timedelta, date, timezone
 
 from dotenv import load_dotenv
@@ -20,13 +24,15 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, f
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import text, inspect
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 
 from models import db, User, UserProfile, UserState, GeneratedPlan, Activity, Exercise, WorkoutPlan, PlanExercise, \
     ChatMessage, TrainingCheckin
 from ask_coach import build_chat_prompt, build_chat_history
 from config import Config
 
-load_dotenv()
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -39,10 +45,251 @@ login_manager = LoginManager()
 login_manager.login_view = "login"
 login_manager.init_app(app)
 
+I18N = {
+    "pl": {
+        "nav_panel": "Panel",
+        "nav_metrics": "Metryki",
+        "nav_profile": "Profil",
+        "nav_plans": "Plany siłowe",
+        "nav_logout": "Wyloguj",
+        "header_dashboard": "📅 Panel",
+        "roadmap_title": "🧭 Plan tygodnia",
+        "roadmap_refresh": "⚡ Generuj / odśwież plan",
+        "roadmap_past": "Ostatnie 3 dni",
+        "roadmap_today": "Dziś",
+        "roadmap_next": "Najbliższe 3 dni",
+        "roadmap_details": "szczegóły",
+        "roadmap_today_badge": "DZIŚ",
+        "roadmap_activities": "aktyw.",
+        "add_title": "➕ Dodaj trening / raport",
+        "tab_manual": "Ręcznie",
+        "tab_checkin": "Raport",
+        "opt_run": "Bieganie",
+        "opt_ride": "Rower",
+        "opt_swim": "Pływanie",
+        "opt_gym": "Siłownia",
+        "opt_yoga": "Joga",
+        "opt_hike": "Wędrówka",
+        "opt_walk": "Spacer",
+        "opt_other": "Inne",
+        "label_type": "Typ",
+        "label_date": "Data",
+        "label_time": "Godzina startu",
+        "label_duration": "Czas (min)",
+        "label_distance": "Dystans (km)",
+        "label_notes": "Notatka",
+        "btn_add": "Dodaj",
+        "label_screenshot": "Zrzut ekranu (opcjonalnie)",
+        "label_checkin_desc": "Opis (2–3 zdania)",
+        "btn_speak": "🎤 Mów",
+        "btn_save": "Zapisz",
+        "checkin_tip": "Wskazówka: raport to najlepszy sygnał dla AI (zmęczenie, ból, samopoczucie).",
+        "latest_title": "🕑 Ostatnie aktywności",
+        "all_btn": "Wszystkie →",
+        "no_activities": "Brak aktywności.",
+        "label_training": "Trening",
+        "chat_title": "🤖 Trener",
+        "chat_open": "Otwórz czat z trenerem",
+        "chat_close": "Zamknij czat",
+        "chat_ready": "Cześć! Jestem gotowy. Jak mogę pomóc?",
+        "chat_placeholder": "Wpisz pytanie...",
+        "chat_err": "Błąd.",
+        "speech_unsupported": "Rozpoznawanie mowy nie jest wspierane w tej przeglądarce.",
+        "status_generating": "Generuję plan…",
+        "status_server_error": "Błąd serwera ({code})",
+        "status_empty_plan": "Brak planu w odpowiedzi",
+        "status_plan_updated": "Plan zaktualizowany",
+        "status_connection_error": "Błąd połączenia",
+        "modal_no_reason": "Brak uzasadnienia w planie.",
+        "metrics_header": "📊 Metryki",
+        "metrics_range": "📊 Metryki (ostatnie {days} dni)",
+        "run_label": "Bieganie",
+        "swim_label": "Basen",
+        "gym_label": "Siłownia",
+        "ride_label": "Rower",
+        "goal_title": "🎯 Postęp (prosty cel biegowy tygodnia)",
+        "goal_target": "Cel:",
+        "goal_done": "Wykonano:",
+        "goal_done_text": "Cel osiągnięty! 🎉",
+        "goal_left_text": "Zostało: {count}",
+        "activity_count_title": "⏱️ Aktywności (liczba)",
+        "history_title": "📜 Pełna historia treningów",
+    },
+    "en": {
+        "nav_panel": "Dashboard",
+        "nav_metrics": "Metrics",
+        "nav_profile": "Profile",
+        "nav_plans": "Strength Plans",
+        "nav_logout": "Logout",
+        "header_dashboard": "📅 Dashboard",
+        "roadmap_title": "🧭 Weekly roadmap",
+        "roadmap_refresh": "⚡ Generate / refresh plan",
+        "roadmap_past": "Last 3 days",
+        "roadmap_today": "Today",
+        "roadmap_next": "Next 3 days",
+        "roadmap_details": "details",
+        "roadmap_today_badge": "TODAY",
+        "roadmap_activities": "activities",
+        "add_title": "➕ Add workout / check-in",
+        "tab_manual": "Manual",
+        "tab_checkin": "Check-in",
+        "opt_run": "Running",
+        "opt_ride": "Cycling",
+        "opt_swim": "Swimming",
+        "opt_gym": "Gym",
+        "opt_yoga": "Yoga",
+        "opt_hike": "Hike",
+        "opt_walk": "Walk",
+        "opt_other": "Other",
+        "label_type": "Type",
+        "label_date": "Date",
+        "label_time": "Start time",
+        "label_duration": "Duration (min)",
+        "label_distance": "Distance (km)",
+        "label_notes": "Notes",
+        "btn_add": "Add",
+        "label_screenshot": "Screenshot (optional)",
+        "label_checkin_desc": "Description (2–3 sentences)",
+        "btn_speak": "🎤 Speak",
+        "btn_save": "Save",
+        "checkin_tip": "Tip: check-in is the best AI signal (fatigue, pain, wellbeing).",
+        "latest_title": "🕑 Recent activities",
+        "all_btn": "All →",
+        "no_activities": "No activities.",
+        "label_training": "Workout",
+        "chat_title": "🤖 Coach",
+        "chat_open": "Open coach chat",
+        "chat_close": "Close chat",
+        "chat_ready": "Hi! I am ready. How can I help?",
+        "chat_placeholder": "Type your question...",
+        "chat_err": "Error.",
+        "speech_unsupported": "Speech recognition is not supported in this browser.",
+        "status_generating": "Generating plan…",
+        "status_server_error": "Server error ({code})",
+        "status_empty_plan": "No plan in response",
+        "status_plan_updated": "Plan updated",
+        "status_connection_error": "Connection error",
+        "modal_no_reason": "No reason provided in the plan.",
+        "metrics_header": "📊 Metrics",
+        "metrics_range": "📊 Metrics (last {days} days)",
+        "run_label": "Running",
+        "swim_label": "Swimming",
+        "gym_label": "Gym",
+        "ride_label": "Cycling",
+        "goal_title": "🎯 Progress (simple weekly running goal)",
+        "goal_target": "Target:",
+        "goal_done": "Completed:",
+        "goal_done_text": "Goal achieved! 🎉",
+        "goal_left_text": "Remaining: {count}",
+        "activity_count_title": "⏱️ Activities (count)",
+        "history_title": "📜 Full training history",
+    },
+}
+
 
 @app.context_processor
 def inject_lang():
-    return {"lang": session.get("lang", "pl")}
+    def tx(pl: str, en: str) -> str:
+        return en if session.get("lang", "pl") == "en" else pl
+
+    def t(key: str, **kwargs) -> str:
+        lang = session.get("lang", "pl")
+        text = I18N.get(lang, I18N["pl"]).get(key, I18N["pl"].get(key, key))
+        try:
+            return text.format(**kwargs)
+        except Exception:
+            return text
+
+    def lang_url(target_lang: str) -> str:
+        args = dict(request.args)
+        args["lang"] = target_lang
+        query = urlencode({k: v for k, v in args.items() if v is not None and v != ""})
+        return f"{request.path}?{query}" if query else request.path
+
+    return {"lang": session.get("lang", "pl"), "t": t, "tx": tx, "lang_url": lang_url}
+
+
+def tr(pl: str, en: str) -> str:
+    return en if session.get("lang", "pl") == "en" else pl
+
+
+def _password_reset_serializer() -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(app.config["SECRET_KEY"])
+
+
+def _build_password_reset_token(user: User) -> str:
+    payload = {
+        "uid": user.id,
+        "ph": (user.password_hash or "")[-16:],
+    }
+    return _password_reset_serializer().dumps(payload, salt="password-reset")
+
+
+def _verify_password_reset_token(token: str, max_age_seconds: int = 3600) -> User | None:
+    try:
+        data = _password_reset_serializer().loads(token, salt="password-reset", max_age=max_age_seconds)
+    except (SignatureExpired, BadSignature):
+        return None
+
+    user_id = data.get("uid")
+    ph_tail = data.get("ph", "")
+    if not user_id:
+        return None
+
+    user = db.session.get(User, int(user_id))
+    if not user:
+        return None
+    if (user.password_hash or "")[-16:] != ph_tail:
+        return None
+    return user
+
+
+def _send_password_reset_email(to_email: str, reset_url: str) -> bool:
+    smtp_host = os.environ.get("MAIL_HOST", "smtp.gmail.com")
+    smtp_port = int(os.environ.get("MAIL_PORT", "587"))
+    smtp_user = os.environ.get("MAIL_USER")
+    smtp_password = os.environ.get("MAIL_PASSWORD")
+    mail_from = os.environ.get("MAIL_FROM") or smtp_user
+    use_tls = os.environ.get("MAIL_USE_TLS", "1").lower() in {"1", "true", "yes"}
+
+    if not smtp_user or not smtp_password or not mail_from:
+        app.logger.warning("Password reset mail not sent: missing MAIL_USER/MAIL_PASSWORD/MAIL_FROM.")
+        return False
+
+    subject = tr("Reset hasła - Training App", "Password reset - Training App")
+    body_text = tr(
+        f"""Cześć!
+
+Otrzymaliśmy prośbę o reset hasła.
+Kliknij link, aby ustawić nowe hasło (link ważny 60 minut):
+{reset_url}
+
+Jeśli to nie Ty, zignoruj tę wiadomość.""",
+        f"""Hi!
+
+We received a password reset request.
+Use the link below to set a new password (valid for 60 minutes):
+{reset_url}
+
+If this wasn't you, you can ignore this email.""",
+    )
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = mail_from
+    msg["To"] = to_email
+    msg.set_content(body_text)
+
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
+            if use_tls:
+                server.starttls(context=ssl.create_default_context())
+            server.login(smtp_user, smtp_password)
+            server.send_message(msg)
+        return True
+    except Exception as exc:
+        app.logger.exception("SMTP mail send failed: %s", exc)
+        return False
 
 
 @app.route("/favicon.ico")
@@ -158,21 +405,37 @@ SPORT_STYLES = {
 }
 
 ACTIVITY_LABELS = {
-    "run": "Bieganie",
-    "ride": "Rower",
-    "swim": "Pływanie",
-    "weighttraining": "Siłownia",
-    "workout": "Trening",
-    "yoga": "Joga",
-    "hike": "Wędrówka",
-    "walk": "Spacer",
-    "other": "Inne",
+    "pl": {
+        "run": "Bieganie",
+        "ride": "Rower",
+        "swim": "Pływanie",
+        "weighttraining": "Siłownia",
+        "workout": "Trening",
+        "yoga": "Joga",
+        "hike": "Wędrówka",
+        "walk": "Spacer",
+        "other": "Inne",
+    },
+    "en": {
+        "run": "Running",
+        "ride": "Cycling",
+        "swim": "Swimming",
+        "weighttraining": "Gym",
+        "workout": "Workout",
+        "yoga": "Yoga",
+        "hike": "Hike",
+        "walk": "Walk",
+        "other": "Other",
+    },
 }
 
 
 def activity_label(activity_type: str | None) -> str:
-    t = (activity_type or "").lower()
-    return ACTIVITY_LABELS.get(t, t or "Inne")
+    label_key = (activity_type or "").lower()
+    lang = session.get("lang", "pl")
+    labels = ACTIVITY_LABELS.get(lang, ACTIVITY_LABELS["pl"])
+    fallback = "Other" if lang == "en" else "Inne"
+    return labels.get(label_key, label_key or fallback)
 
 
 app.jinja_env.globals["activity_label"] = activity_label
@@ -342,12 +605,12 @@ def compute_profile_defaults_from_history(user_id: int) -> None:
 @app.before_request
 def enforce_onboarding():
     """Wymusza uzupełnienie ankiety przed wejściem na dashboard i inne widoki."""
-    if not current_user.is_authenticated:
-        return
-
     lang = request.args.get("lang")
     if lang in ("pl", "en"):
         session["lang"] = lang
+
+    if not current_user.is_authenticated:
+        return
 
     # endpoint może być None (np. statyczne pliki) — wtedy nie blokujemy
     endpoint = request.endpoint or ""
@@ -729,15 +992,15 @@ def register():
         zip_file = request.files.get("strava_zip")
 
         if not email or not password:
-            flash("Email i hasło są wymagane.")
+            flash(tr("Email i hasło są wymagane.", "Email and password are required."))
             return redirect(url_for("register"))
 
         if not zip_file or not getattr(zip_file, "filename", ""):
-            flash("Dodaj plik ZIP z archiwum Stravy, żeby rozpocząć.")
+            flash(tr("Dodaj plik ZIP z archiwum Stravy, żeby rozpocząć.", "Add a Strava ZIP archive file to start."))
             return redirect(url_for("register"))
 
         if User.query.filter_by(email=email).first():
-            flash("Taki email już istnieje. Zaloguj się.")
+            flash(tr("Taki email już istnieje. Zaloguj się.", "This email already exists. Please sign in."))
             return redirect(url_for("login"))
 
         user = User(
@@ -759,9 +1022,20 @@ def register():
         try:
             added, skipped = import_strava_zip_for_user(zip_file, user.id)
             compute_profile_defaults_from_history(user.id)
-            flash(f"Konto utworzone. Zaimportowano {added} aktywności (pominięto {skipped} duplikatów).")
+            flash(
+                tr(
+                    f"Konto utworzone. Zaimportowano {added} aktywności (pominięto {skipped} duplikatów).",
+                    f"Account created. Imported {added} activities (skipped {skipped} duplicates).",
+                )
+            )
         except Exception as e:
-            flash(f"Konto utworzone, ale import ZIP się nie udał: {e}")
+            app.logger.exception("ZIP import failed during registration: %s", e)
+            flash(
+                tr(
+                    "Konto utworzone, ale import ZIP się nie udał.",
+                    "Account created, but ZIP import failed.",
+                )
+            )
 
         return redirect(url_for("onboarding"))
 
@@ -779,13 +1053,73 @@ def login():
 
         user = User.query.filter_by(email=email).first()
         if not user or not check_password_hash(user.password_hash, password):
-            flash("Nieprawidłowy email lub hasło.")
+            flash(tr("Nieprawidłowy email lub hasło.", "Invalid email or password."))
             return redirect(url_for("login"))
 
         login_user(user)
         return redirect(url_for("index"))
 
     return render_template("login.html")
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip().lower()
+        user = User.query.filter_by(email=email).first()
+
+        if user:
+            token = _build_password_reset_token(user)
+            reset_url = url_for("reset_password", token=token, _external=True)
+            _send_password_reset_email(user.email, reset_url)
+
+        flash(
+            tr(
+                "Jeśli konto istnieje, wysłaliśmy link do resetu hasła.",
+                "If the account exists, we sent a password reset link.",
+            )
+        )
+        return redirect(url_for("login"))
+
+    return render_template("forgot_password.html")
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token: str):
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+
+    user = _verify_password_reset_token(token)
+    if not user:
+        flash(
+            tr(
+                "Link do resetu jest nieprawidłowy albo wygasł. Spróbuj ponownie.",
+                "The reset link is invalid or expired. Please try again.",
+            )
+        )
+        return redirect(url_for("forgot_password"))
+
+    if request.method == "POST":
+        password = request.form.get("password") or ""
+        password2 = request.form.get("password2") or ""
+
+        if len(password) < 8:
+            flash(tr("Hasło musi mieć co najmniej 8 znaków.", "Password must be at least 8 characters long."))
+            return render_template("reset_password.html", token=token)
+
+        if password != password2:
+            flash(tr("Hasła nie są takie same.", "Passwords do not match."))
+            return render_template("reset_password.html", token=token)
+
+        user.password_hash = generate_password_hash(password)
+        db.session.commit()
+        flash(tr("Hasło zostało zresetowane. Możesz się zalogować.", "Password has been reset. You can sign in now."))
+        return redirect(url_for("login"))
+
+    return render_template("reset_password.html", token=token)
 
 
 @app.route("/logout")
@@ -853,7 +1187,7 @@ def onboarding():
         current_user.onboarding_completed = True
         db.session.commit()
 
-        flash("Dzięki! Profil zapisany. Możesz korzystać z dashboardu.")
+        flash(tr("Dzięki! Profil zapisany. Możesz korzystać z dashboardu.", "Thanks! Profile saved. You can now use the dashboard."))
         return redirect(url_for("index"))
 
     return render_template("onboarding.html", profile=profile)
@@ -875,13 +1209,19 @@ def profile():
         if action == "reimport_zip":
             zip_file = request.files.get("strava_zip")
             if not zip_file or not getattr(zip_file, "filename", ""):
-                flash("Wybierz plik ZIP do importu.")
+                flash(tr("Wybierz plik ZIP do importu.", "Choose a ZIP file to import."))
                 return redirect(url_for("profile"))
             try:
                 added, skipped = import_strava_zip_for_user(zip_file, current_user.id)
-                flash(f"Zaimportowano {added} aktywności (pominięto {skipped} duplikatów).")
+                flash(
+                    tr(
+                        f"Zaimportowano {added} aktywności (pominięto {skipped} duplikatów).",
+                        f"Imported {added} activities (skipped {skipped} duplicates).",
+                    )
+                )
             except Exception as e:
-                flash(f"Import nieudany: {e}")
+                app.logger.exception("ZIP reimport failed for user %s: %s", current_user.id, e)
+                flash(tr("Import nieudany.", "Import failed."))
             return redirect(url_for("profile"))
 
         # save
@@ -927,7 +1267,7 @@ def profile():
             set_or_refresh_injury_state(current_user.id, injuries_text)
 
         db.session.commit()
-        flash("Zapisano zmiany w profilu.")
+        flash(tr("Zapisano zmiany w profilu.", "Profile changes saved."))
         return redirect(url_for("profile"))
 
     return render_template("profile.html", profile=profile_obj)
@@ -1131,7 +1471,7 @@ def get_chat_history():
 def chat_with_coach():
     user_msg = (request.json or {}).get("message")
     if not user_msg:
-        return jsonify({"response": "Brak wiadomości."})
+        return jsonify({"response": tr("Brak wiadomości.", "Missing message.")})
 
     user_message_db = ChatMessage(user_id=current_user.id, sender="user", content=user_msg)
     db.session.add(user_message_db)
@@ -1162,6 +1502,10 @@ def chat_with_coach():
         chat_history=chat_history_text,
         user_msg=user_msg,
     )
+    full_prompt += "\n\n" + tr(
+        "ODPOWIADAJ WYŁĄCZNIE PO POLSKU.",
+        "RESPOND ONLY IN ENGLISH.",
+    )
 
     try:
         response = model.generate_content(full_prompt)
@@ -1173,7 +1517,7 @@ def chat_with_coach():
 
         return jsonify({"response": clean_text})
     except Exception as e:
-        return jsonify({"response": f"Błąd AI: {str(e)}"})
+        return jsonify({"response": tr(f"Błąd AI: {str(e)}", f"AI error: {str(e)}")})
 
 
 @app.route("/api/forecast", methods=["GET"])
@@ -1185,6 +1529,11 @@ def generate_forecast():
     recent_details = get_recent_activity_details(user_id=current_user.id, days=21)
 
     today = datetime.now().strftime("%Y-%m-%d")
+
+    language_hint = tr(
+        "Opis i uzasadnienie pisz po polsku.",
+        "Write workout description and rationale in English.",
+    )
 
     prompt = f"""
 Jesteś trenerem sportowym. Stwórz plan treningowy na 4 dni (start: {today}).
@@ -1206,6 +1555,7 @@ FORMAT (BARDZO WAŻNE):
   <b>Trening:</b> ...<br>
   <b>Dlaczego:</b> ...<br><br>
 - Trening ma być konkretny: intensywność, czas/dystans, ewentualnie rozgrzewka/schłodzenie.
+- {language_hint}
 """
 
     try:
@@ -1229,7 +1579,7 @@ FORMAT (BARDZO WAŻNE):
 
         return jsonify({"plan": text})
     except Exception:
-        return jsonify({"plan": "Nie udało się wygenerować planu."})
+        return jsonify({"plan": tr("Nie udało się wygenerować planu.", "Could not generate plan.")})
 
 
 
@@ -1347,7 +1697,7 @@ def add_activity_manual():
     )
     db.session.add(act)
     db.session.commit()
-    flash("Dodano trening.")
+    flash(tr("Dodano trening.", "Workout added."))
     return redirect(url_for("index"))
 
 
@@ -1360,7 +1710,7 @@ def add_checkin():
 
     # Walidacja: przynajmniej jedno pole
     if not text_note and (not f or not f.filename):
-        flash("⚠️ Dodaj opis lub obrazek.", "warning")
+        flash(tr("⚠️ Dodaj opis lub obrazek.", "⚠️ Add a description or screenshot."), "warning")
         return redirect(url_for("index"))
 
     # Zapisz screenshot jeśli jest
@@ -1445,19 +1795,22 @@ def add_checkin():
     if created_activity and not screenshot_failed:
         # Sukces: Activity utworzona ze screena lub tekstu
         if image_path:
-            flash("✅ Check-in zapisany! Trening dodany automatycznie ze screenshota.", "success")
+            flash(tr("✅ Check-in zapisany! Trening dodany automatycznie ze screenshota.", "✅ Check-in saved! Workout added automatically from screenshot."), "success")
         else:
-            flash("✅ Check-in zapisany jako trening 'other'. Uzupełnij szczegóły ręcznie.", "info")
+            flash(tr("✅ Check-in zapisany jako trening 'other'. Uzupełnij szczegóły ręcznie.", "✅ Check-in saved as 'other' workout. Complete details manually."), "info")
 
     elif created_activity and screenshot_failed:
         # Częściowy sukces: Screenshot nie zadziałał, ale tekst zapisany
         flash(
-            "⚠️ Screenshot nie zawierał danych treningowych. Zapisano check-in jako trening 'other' - uzupełnij dane ręcznie.",
+            tr(
+                "⚠️ Screenshot nie zawierał danych treningowych. Zapisano check-in jako trening 'other' - uzupełnij dane ręcznie.",
+                "⚠️ Screenshot did not contain workout data. Check-in was saved as 'other' workout - complete details manually.",
+            ),
             "warning")
 
     elif not created_activity:
         # Tylko check-in bez Activity (nie powinno się zdarzyć, ale zabezpieczenie)
-        flash("ℹ️ Check-in zapisany bez treningu. Dodaj trening ręcznie.", "info")
+        flash(tr("ℹ️ Check-in zapisany bez treningu. Dodaj trening ręcznie.", "ℹ️ Check-in saved without workout. Add workout manually."), "info")
 
     return redirect(url_for("index"))
 
@@ -1477,19 +1830,19 @@ def activity_detail(activity_id: int):
 @login_required
 def import_zip():
     if "file" not in request.files:
-        flash("Nie wybrano pliku")
+        flash(tr("Nie wybrano pliku", "No file selected"))
         return redirect(url_for("index"))
 
     file = request.files["file"]
     if not file or file.filename == "":
-        flash("Nie wybrano pliku")
+        flash(tr("Nie wybrano pliku", "No file selected"))
         return redirect(url_for("index"))
 
     try:
         with zipfile.ZipFile(file) as z:
             csv_filename = next((name for name in z.namelist() if name.endswith("activities.csv")), None)
             if not csv_filename:
-                flash("Nie znaleziono pliku activities.csv w archiwum!")
+                flash(tr("Nie znaleziono pliku activities.csv w archiwum!", "Could not find activities.csv in the archive!"))
                 return redirect(url_for("index"))
 
             with z.open(csv_filename) as f:
@@ -1562,14 +1915,20 @@ def import_zip():
                         continue
 
                 db.session.commit()
-                flash(f"Sukces! Zaimportowano {added_count} treningów. Pominięto {skipped_count}.")
+                flash(
+                    tr(
+                        f"Sukces! Zaimportowano {added_count} treningów. Pominięto {skipped_count}.",
+                        f"Success! Imported {added_count} workouts. Skipped {skipped_count}.",
+                    )
+                )
                 try:
                     compute_profile_defaults_from_history(current_user.id)
                 except Exception:
                     pass
 
     except Exception as e:
-        flash(f"Błąd pliku: {e}")
+        app.logger.exception("ZIP import endpoint error for user %s: %s", current_user.id, e)
+        flash(tr("Błąd pliku ZIP.", "ZIP file error."))
 
     return redirect(url_for("index"))
 
@@ -1638,7 +1997,7 @@ def update_activity(activity_id: int):
     activity.notes = notes
 
     db.session.commit()
-    flash("Zapisano zmiany w treningu.", "success")
+    flash(tr("Zapisano zmiany w treningu.", "Workout changes saved."), "success")
     return redirect(url_for("activity_detail", activity_id=activity_id))
 
 
@@ -1648,7 +2007,7 @@ def delete_activity(activity_id: int):
     activity = Activity.query.filter_by(id=activity_id, user_id=current_user.id).first_or_404()
     db.session.delete(activity)
     db.session.commit()
-    flash("Usunięto trening.", "success")
+    flash(tr("Usunięto trening.", "Workout deleted."), "success")
     return redirect(url_for("index"))
 
 

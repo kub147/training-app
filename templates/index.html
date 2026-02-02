@@ -12,18 +12,14 @@
     <div class="container">
         <header>
             <div class="header-row">
-                <h1>📅 Panel</h1>
+                <h1>{{ t('header_dashboard') }}</h1>
             </div>
             <div class="header-actions">
-                {% if lang == 'en' %}
-                    <a class="btn btn-outline lang-toggle" href="?lang=pl" title="Zmień język na polski">🌐 PL</a>
-                {% else %}
-                    <a class="btn btn-outline lang-toggle" href="?lang=en" title="Zmień język na angielski">🌐 EN</a>
-                {% endif %}
-                <a class="btn btn-outline" href="/metrics">Metryki</a>
-                <a class="btn btn-outline" href="/profile">Profil</a>
-                <a class="btn btn-outline" href="/plans">Plany siłowe</a>
-                <a class="btn btn-outline" href="/logout">Wyloguj</a>
+                {% include "_lang_toggle.html" %}
+                <a class="btn btn-outline" href="/metrics">{{ t('nav_metrics') }}</a>
+                <a class="btn btn-outline" href="/profile">{{ t('nav_profile') }}</a>
+                <a class="btn btn-outline" href="/plans">{{ t('nav_plans') }}</a>
+                <a class="btn btn-outline" href="/logout">{{ t('nav_logout') }}</a>
             </div>
         </header>
 
@@ -31,9 +27,9 @@
             <section class="dash-main">
                 <div class="card">
                     <div class="card-title">
-                    <span>🧭 Plan tygodnia</span>
+                    <span>{{ t('roadmap_title') }}</span>
                         <div class="card-actions">
-                            <button id="refreshPlanBtn" class="refresh-btn" onclick="loadPlan()">⚡ Generuj / odśwież plan</button>
+                            <button id="refreshPlanBtn" class="refresh-btn" onclick="loadPlan()">{{ t('roadmap_refresh') }}</button>
                             <span id="forecastStatus" class="mini-status" aria-live="polite"></span>
                         </div>
                     </div>
@@ -55,9 +51,9 @@
                         {% set past_show = past_before[-3:] %}
                         {% set future_show = future_after[:3] %}
 
-                        <div class="roadmap-board" aria-label="Roadmap tygodniowy">
+                        <div class="roadmap-board" aria-label="{{ tx('Roadmap tygodniowy','Weekly roadmap') }}">
                             <div class="roadmap-section">
-                                <div class="roadmap-label">Ostatnie 3 dni</div>
+                                <div class="roadmap-label">{{ t('roadmap_past') }}</div>
                                 <div class="roadmap-grid">
                                     {% for d in past_show %}
                                       <button
@@ -70,7 +66,7 @@
                                           data-count="{{ d.count }}"
                                           data-dist="{{ d.dist_km }}"
                                           data-dur="{{ d.dur_min }}"
-                                          aria-label="Szczegóły dnia {{ d.date }}"
+                                          aria-label="{{ tx('Szczegóły dnia','Day details') }} {{ d.date }}"
                                       >
                                           <div class="road-top">
                                               <div class="road-date js-road-date">{{ d.date }}</div>
@@ -81,7 +77,7 @@
                                                   {% if d.sport == 'run' %}🏃{% elif d.sport == 'ride' %}🚴{% elif d.sport == 'swim' %}🏊{% elif d.sport in ['weighttraining','workout'] %}🏋️{% elif d.sport == 'yoga' %}🧘{% elif d.sport == 'hike' %}⛰️{% elif d.sport == 'walk' %}🚶{% else %}🏅{% endif %}
                                               </div>
                                               <div class="road-text">
-                                                  <div class="road-title">{{ d.count }} aktyw.</div>
+                                              <div class="road-title">{{ d.count }} {{ t('roadmap_activities') }}</div>
                                                   <div class="road-sub">
                                                       {% if d.dist_km and d.dist_km > 0 %}{{ d.dist_km }} km{% endif %}
                                                       {% if d.dur_min and d.dur_min > 0 %} • {{ d.dur_min }} min{% endif %}
@@ -89,14 +85,14 @@
                                               </div>
                                           </div>
 
-                                          <div class="road-action" aria-hidden="true"><span class="pill">szczegóły</span></div>
+                                          <div class="road-action" aria-hidden="true"><span class="pill">{{ t('roadmap_details') }}</span></div>
                                       </button>
                                     {% endfor %}
                                 </div>
                             </div>
 
                             <div class="roadmap-section">
-                                <div class="roadmap-label">Dziś</div>
+                                <div class="roadmap-label">{{ t('roadmap_today') }}</div>
                                 <div class="roadmap-grid is-today-row">
                                     {% if today_item %}
                                       <button
@@ -114,11 +110,11 @@
                                               data-workout="{{ (today_item.workout or '') | e }}"
                                               data-why="{{ (today_item.why or '') | e }}"
                                           {% endif %}
-                                          aria-label="Szczegóły dnia {{ today_item.date }}"
+                                          aria-label="{{ tx('Szczegóły dnia','Day details') }} {{ today_item.date }}"
                                       >
                                           <div class="road-top">
                                               <div class="road-date js-road-date">{{ today_item.date }}</div>
-                                              <div class="today-badge">DZIŚ</div>
+                                          <div class="today-badge">{{ t('roadmap_today_badge') }}</div>
                                           </div>
 
                                           <div class="road-main">
@@ -127,26 +123,26 @@
                                               </div>
                                               <div class="road-text">
                                                   {% if today_kind == 'past' %}
-                                                      <div class="road-title">{{ today_item.count }} aktyw.</div>
+                                                      <div class="road-title">{{ today_item.count }} {{ t('roadmap_activities') }}</div>
                                                       <div class="road-sub">
                                                           {% if today_item.dist_km and today_item.dist_km > 0 %}{{ today_item.dist_km }} km{% endif %}
                                                           {% if today_item.dur_min and today_item.dur_min > 0 %} • {{ today_item.dur_min }} min{% endif %}
                                                       </div>
                                                   {% else %}
-                                                      <div class="road-title">{{ today_item.workout or 'Trening' }}</div>
+                                                      <div class="road-title">{{ today_item.workout or t('label_training') }}</div>
                                                       <div class="road-sub">{{ today_item.why or '' }}</div>
                                                   {% endif %}
                                               </div>
                                           </div>
 
-                                          <div class="road-action" aria-hidden="true"><span class="pill">szczegóły</span></div>
+                                          <div class="road-action" aria-hidden="true"><span class="pill">{{ t('roadmap_details') }}</span></div>
                                       </button>
                                     {% endif %}
                                 </div>
                             </div>
 
                             <div class="roadmap-section">
-                                <div class="roadmap-label">Najbliższe 3 dni</div>
+                                <div class="roadmap-label">{{ t('roadmap_next') }}</div>
                                 <div class="roadmap-grid">
                                     {% for f in future_show %}
                                       <button
@@ -158,7 +154,7 @@
                                           data-sport="{{ f.sport }}"
                                           data-workout="{{ (f.workout or '') | e }}"
                                           data-why="{{ (f.why or '') | e }}"
-                                          aria-label="Szczegóły dnia {{ f.date }}"
+                                          aria-label="{{ tx('Szczegóły dnia','Day details') }} {{ f.date }}"
                                       >
                                           <div class="road-top">
                                               <div class="road-date js-road-date">{{ f.date }}</div>
@@ -169,12 +165,12 @@
                                                   {% if f.sport == 'run' %}🏃{% elif f.sport == 'ride' %}🚴{% elif f.sport == 'swim' %}🏊{% elif f.sport in ['weighttraining','workout'] %}🏋️{% elif f.sport == 'yoga' %}🧘{% elif f.sport == 'hike' %}⛰️{% elif f.sport == 'walk' %}🚶{% else %}🏅{% endif %}
                                               </div>
                                               <div class="road-text">
-                                                  <div class="road-title">{{ f.workout or 'Trening' }}</div>
+                                                  <div class="road-title">{{ f.workout or t('label_training') }}</div>
                                                   <div class="road-sub">{{ f.why or '' }}</div>
                                               </div>
                                           </div>
 
-                                          <div class="road-action" aria-hidden="true"><span class="pill">szczegóły</span></div>
+                                          <div class="road-action" aria-hidden="true"><span class="pill">{{ t('roadmap_details') }}</span></div>
                                       </button>
                                     {% endfor %}
                                 </div>
@@ -183,11 +179,11 @@
                     </div>
 
                 <div class="card">
-                    <div class="card-title">➕ Dodaj trening / raport</div>
+                    <div class="card-title">{{ t('add_title') }}</div>
 
                     <div class="tab-row">
-                        <button class="tab active" id="tabManual" onclick="showTab('manual')">Ręcznie</button>
-                        <button class="tab" id="tabCheckin" onclick="showTab('checkin')">Raport</button>
+                        <button class="tab active" id="tabManual" onclick="showTab('manual')">{{ t('tab_manual') }}</button>
+                        <button class="tab" id="tabCheckin" onclick="showTab('checkin')">{{ t('tab_checkin') }}</button>
                     </div>
 
                     <div id="manualForm">
@@ -195,20 +191,20 @@
                         <!-- Wiersz 1: Typ + Data (2 kolumny na desktop, 1 na mobile) -->
                         <div class="form-row">
                             <div class="field">
-                                <label>Typ</label>
+                                <label>{{ t('label_type') }}</label>
                                 <select name="activity_type">
-                                    <option value="run">Bieganie</option>
-                                    <option value="ride">Rower</option>
-                                    <option value="swim">Pływanie</option>
-                                <option value="weighttraining">Siłownia</option>
-                                <option value="yoga">Joga</option>
-                                <option value="hike">Wędrówka</option>
-                                <option value="walk">Spacer</option>
-                                <option value="other">Inne</option>
+                                <option value="run">{{ t('opt_run') }}</option>
+                                <option value="ride">{{ t('opt_ride') }}</option>
+                                <option value="swim">{{ t('opt_swim') }}</option>
+                                <option value="weighttraining">{{ t('opt_gym') }}</option>
+                                <option value="yoga">{{ t('opt_yoga') }}</option>
+                                <option value="hike">{{ t('opt_hike') }}</option>
+                                <option value="walk">{{ t('opt_walk') }}</option>
+                                <option value="other">{{ t('opt_other') }}</option>
                             </select>
                         </div>
                             <div class="field">
-                                <label>Data</label>
+                                <label>{{ t('label_date') }}</label>
                                 <input type="date" name="date" value="{{ today_str }}">
                             </div>
                         </div>
@@ -216,31 +212,31 @@
                         <!-- Wiersz 2: Godzina + Czas (2 kolumny) -->
                         <div class="form-row">
                             <div class="field">
-                                <label>Godzina startu</label>
+                                <label>{{ t('label_time') }}</label>
                                 <input type="time" name="time" value="">
                             </div>
                             <div class="field">
-                                <label>Czas (min)</label>
-                                <input type="number" name="duration_min" min="0" step="1" placeholder="np. 45">
+                                <label>{{ t('label_duration') }}</label>
+                                <input type="number" name="duration_min" min="0" step="1" placeholder="{{ tx('np. 45','e.g. 45') }}">
                             </div>
                         </div>
 
                         <!-- Wiersz 3: Dystans (pojedyncze pole) -->
                         <div class="form-row">
                             <div class="field">
-                                <label>Dystans (km)</label>
-                                <input type="number" name="distance_km" min="0" step="0.1" placeholder="np. 8.0">
+                                <label>{{ t('label_distance') }}</label>
+                                <input type="number" name="distance_km" min="0" step="0.1" placeholder="{{ tx('np. 8.0','e.g. 8.0') }}">
                             </div>
                         </div>
 
                         <!-- Notatka -->
                         <div class="field field-spaced">
-                            <label>Notatka</label>
-                            <textarea name="notes" placeholder="Jak poszło? (opcjonalnie)"></textarea>
+                            <label>{{ t('label_notes') }}</label>
+                            <textarea name="notes" placeholder="{{ tx('Jak poszło? (opcjonalnie)','How did it go? (optional)') }}"></textarea>
                         </div>
 
                         <div class="actions">
-                            <button class="btn" type="submit">Dodaj</button>
+                            <button class="btn" type="submit">{{ t('btn_add') }}</button>
                         </div>
                     </form>
                 </div>
@@ -248,21 +244,21 @@
                 <div id="checkinForm" class="is-hidden">
                         <form action="/checkin" method="POST" enctype="multipart/form-data">
                             <div class="field">
-                            <label>Zrzut ekranu (opcjonalnie)</label>
+                            <label>{{ t('label_screenshot') }}</label>
                                 <input type="file" name="checkin_image" accept="image/*">
                             </div>
                         <div class="field field-spaced">
-                            <label>Opis (2–3 zdania)</label>
-                            <textarea id="checkin_text" name="checkin_text" class="checkin-textarea" placeholder="Jak się czułeś? Co poszło dobrze/źle?"></textarea>
+                                <label>{{ t('label_checkin_desc') }}</label>
+                            <textarea id="checkin_text" name="checkin_text" class="checkin-textarea" placeholder="{{ tx('Jak się czułeś? Co poszło dobrze/źle?','How did you feel? What went well/badly?') }}"></textarea>
                         </div>
                         <div class="actions actions-row">
-                            <button class="btn btn-soft btn-fixed" type="button" onclick="dictateTo('checkin_text')">🎤 Mów</button>
-                            <button class="btn btn-grow" type="submit">Zapisz</button>
+                            <button class="btn btn-soft btn-fixed" type="button" onclick="dictateTo('checkin_text')">{{ t('btn_speak') }}</button>
+                            <button class="btn btn-grow" type="submit">{{ t('btn_save') }}</button>
                         </div>
                     </form>
 
                     <div class="small-note">
-                        Wskazówka: raport to najlepszy sygnał dla AI (zmęczenie, ból, samopoczucie).
+                        {{ t('checkin_tip') }}
                     </div>
                 </div>
 
@@ -270,8 +266,8 @@
 
                 <div class="card">
                     <div class="section-header">
-                    <h2 class="section-title-sm">🕑 Ostatnie aktywności</h2>
-                        <a href="/history" class="btn btn-outline">Wszystkie →</a>
+                        <h2 class="section-title-sm">{{ t('latest_title') }}</h2>
+                        <a href="/history" class="btn btn-outline">{{ t('all_btn') }}</a>
                     </div>
 
                     <div class="timeline">
@@ -280,7 +276,7 @@
                             {% set act_date = act.start_time.strftime('%Y-%m-%d') %}
                             {% if current_date.value != act_date %}
                                 <div class="date-header">
-                                    {% if act_date == today_str %} DZISIAJ
+                                    {% if act_date == today_str %} {{ tx('DZISIAJ','TODAY') }}
                                     {% else %} {{ act.start_time.strftime('%d.%m.%Y (%A)') }}
                                     {% endif %}
                                 </div>
@@ -310,12 +306,12 @@
                                     {% if act.distance and act.distance > 0 %}
                                         {{ (act.distance / 1000)|round(2) }} km
                                     {% else %}
-                                        Trening
+                                        {{ t('label_training') }}
                                     {% endif %}
                                 </div>
                             </a>
                         {% else %}
-                        <p class="empty-activities">Brak aktywności.</p>
+                            <p class="empty-activities">{{ t('no_activities') }}</p>
                         {% endfor %}
                     </div>
                 </div>
@@ -345,12 +341,12 @@
     function dictateTo(inputId) {
         const el = document.getElementById(inputId);
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-            alert('Rozpoznawanie mowy nie jest wspierane w tej przeglądarce.');
+            alert({{ t('speech_unsupported')|tojson }});
             return;
         }
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
         const rec = new SR();
-        rec.lang = 'pl-PL';
+        rec.lang = {{ tx('pl-PL','en-US')|tojson }};
         rec.interimResults = false;
         rec.maxAlternatives = 1;
 
@@ -375,13 +371,13 @@
         };
 
         if (btn) { btn.disabled = true; btn.classList.add('loading'); }
-        setStatus('Generuję plan…', 'work');
+        setStatus({{ t('status_generating')|tojson }}, 'work');
 
         try {
             const res = await fetch('/api/forecast');
             if (!res.ok) {
                 const t = await res.text();
-                setStatus(`Błąd serwera (${res.status})`, 'err');
+                setStatus({{ t('status_server_error', code='__CODE__')|tojson }}.replace('__CODE__', String(res.status)), 'err');
                 console.error('Forecast error:', res.status, t);
                 if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
                 return;
@@ -390,7 +386,7 @@
             const data = await res.json();
             const planHtml = (data && data.plan) ? String(data.plan) : '';
             if (!planHtml) {
-                setStatus('Brak planu w odpowiedzi', 'err');
+                setStatus({{ t('status_empty_plan')|tojson }}, 'err');
                 if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
                 return;
             }
@@ -418,15 +414,15 @@
 
                 const titleEl = btnEl.querySelector('.road-title');
                 const subEl = btnEl.querySelector('.road-sub');
-                if (titleEl) titleEl.textContent = entry.workout || 'Trening';
+                if (titleEl) titleEl.textContent = entry.workout || {{ t('label_training')|tojson }};
                 if (subEl) subEl.textContent = entry.why || '';
             });
 
-            setStatus('Plan zaktualizowany', 'ok');
+            setStatus({{ t('status_plan_updated')|tojson }}, 'ok');
             setTimeout(() => setStatus('', ''), 2500);
         } catch (e) {
             console.error('loadPlan exception:', e);
-            setStatus('Błąd połączenia', 'err');
+            setStatus({{ t('status_connection_error')|tojson }}, 'err');
         } finally {
             if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
         }
@@ -435,7 +431,12 @@
     function suggestChange(dateStr, workout) {
         const input = document.getElementById('chatInput');
         if (!input) return;
-        input.value = `Chcę zmienić trening dnia ${dateStr}. Obecnie: ${workout}. Zmień go proszę i uzasadnij.`;
+        input.value = {{ tx(
+            "Chcę zmienić trening dnia __DATE__. Obecnie: __WORKOUT__. Zmień go proszę i uzasadnij.",
+            "I want to change the workout for __DATE__. Current one: __WORKOUT__. Please replace it and explain why."
+        )|tojson }}
+            .replace('__DATE__', dateStr)
+            .replace('__WORKOUT__', workout || '');
         input.focus();
         if (window.__openChatWidget) window.__openChatWidget();
     }
@@ -454,14 +455,14 @@
       return;
     }
 
-    const plWeek = ["niedz", "pon", "wto", "śro", "czw", "pią", "sob"];
+    const weekShort = {{ tx(["niedz", "pon", "wto", "sro", "czw", "pia", "sob"], ["sun", "mon", "tue", "wed", "thu", "fri", "sat"])|tojson }};
 
     function formatDate(isoDate) {
       // isoDate: YYYY-MM-DD
       const [y, m, d] = (isoDate || '').split('-').map(Number);
       if (!y || !m || !d) return isoDate || '';
       const dt = new Date(y, m - 1, d);
-      const wd = plWeek[dt.getDay()];
+      const wd = weekShort[dt.getDay()];
       const dd = String(d).padStart(2, '0');
       const mm = String(m).padStart(2, '0');
       return `${wd} ${dd}.${mm}`;
@@ -481,24 +482,24 @@
       modal.setAttribute('aria-hidden', 'false');
 
       const pretty = formatDate(payload.date);
-      modalTitle.textContent = pretty ? `Szczegóły: ${pretty}` : `Szczegóły dnia`;
+      modalTitle.textContent = pretty ? `{{ t('roadmap_details') }}: ${pretty}` : `{{ t('roadmap_details') }}`;
       modalMeta.textContent = payload.date || '';
 
       modalActions.innerHTML = '';
 
       if (payload.kind === 'future') {
-        const workout = cleanPlanText(payload.workout || 'Trening');
+        const workout = cleanPlanText(payload.workout || {{ t('label_training')|tojson }});
         const why = cleanPlanText(payload.why || '');
 
         modalBody.innerHTML = `
-          <p><b>Trening:</b> ${escapeHtml(workout)}</p>
-          ${why ? `<p><b>Dlaczego:</b> ${escapeHtml(why)}</p>` : `<p class="muted">Brak uzasadnienia w planie.</p>`}
+          <p><b>{{ tx('Trening','Workout') }}:</b> ${escapeHtml(workout)}</p>
+          ${why ? `<p><b>{{ tx('Dlaczego','Why') }}:</b> ${escapeHtml(why)}</p>` : `<p class="muted">{{ t('modal_no_reason') }}</p>`}
         `;
 
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'btn btn-soft btn-small';
-        btn.textContent = 'Zaproponuj zmianę';
+        btn.textContent = {{ tx('Zaproponuj zmianę','Suggest change')|tojson }};
         btn.addEventListener('click', () => {
           if (typeof suggestChange === 'function') {
             suggestChange(payload.date, workout);
@@ -511,8 +512,8 @@
         const dist = payload.dist ?? '0';
         const dur = payload.dur ?? '0';
         modalBody.innerHTML = `
-          <p><b>Podsumowanie:</b></p>
-          <p>${escapeHtml(String(count))} aktywności</p>
+          <p><b>{{ tx('Podsumowanie','Summary') }}:</b></p>
+          <p>${escapeHtml(String(count))} {{ tx('aktywności','activities') }}</p>
           <p>${escapeHtml(String(dist))} km • ${escapeHtml(String(dur))} min</p>
         `;
       }
@@ -590,10 +591,10 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="modal" role="dialog" aria-modal="true" aria-labelledby="roadModalTitle">
             <div class="modal-head">
                 <div>
-                    <div class="modal-title" id="roadModalTitle">Szczegóły dnia</div>
+                    <div class="modal-title" id="roadModalTitle">{{ t('roadmap_details') }}</div>
                     <div class="modal-meta" id="roadModalMeta"></div>
                 </div>
-                <button class="modal-close" type="button" id="roadModalClose" aria-label="Zamknij">Zamknij</button>
+                <button class="modal-close" type="button" id="roadModalClose" aria-label="{{ tx('Zamknij','Close') }}">{{ tx('Zamknij','Close') }}</button>
             </div>
             <div class="modal-body">
                 <p id="roadModalBody"></p>

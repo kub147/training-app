@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Historia Treningów</title>
+    <title>{{ tx('Historia treningów','Training history') }}</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/png" href="/static/icons/icon-512.png">
@@ -12,11 +12,12 @@
     <div class="container">
         <header>
             <div class="header-row">
-                <h1>📜 Pełna historia treningów</h1>
+                <h1>{{ t('history_title') }}</h1>
             </div>
             <div class="header-actions">
-                <a class="btn btn-outline" href="/">Panel</a>
-                <a class="btn btn-outline" href="/logout">Wyloguj</a>
+                {% include "_lang_toggle.html" %}
+                <a class="btn btn-outline" href="/">{{ t('nav_panel') }}</a>
+                <a class="btn btn-outline" href="/logout">{{ t('nav_logout') }}</a>
             </div>
         </header>
 
@@ -49,10 +50,10 @@
                         </div>
                     </div>
                     <div class="act-value">
-                    {% if act.distance and act.distance > 0 %}
+                        {% if act.distance and act.distance > 0 %}
                             {{ (act.distance / 1000)|round(2) }} km
                         {% else %}
-                            Trening
+                            {{ t('label_training') }}
                         {% endif %}
                     </div>
                 </a>

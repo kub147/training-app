@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Rejestracja</title>
+    <title>{{ tx('Rejestracja','Register') }}</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/png" href="/static/icons/icon-512.png">
@@ -11,7 +11,10 @@
 <body class="auth-page">
     <div class="container auth-container">
         <div class="card auth-card">
-            <h1 class="page-title">🧾 Rejestracja</h1>
+            <div class="header-actions">
+                {% include "_lang_toggle.html" %}
+            </div>
+            <h1 class="page-title">🧾 {{ tx('Rejestracja','Register') }}</h1>
 
             {% with messages = get_flashed_messages() %}
               {% if messages %}
@@ -22,52 +25,52 @@
             {% endwith %}
 
             <div class="info-box">
-                <div class="info-title">📦 Skąd wziąć ZIP ze Stravy?</div>
+                <div class="info-title">📦 {{ tx('Skąd wziąć ZIP ze Stravy?','Where to get a Strava ZIP?') }}</div>
                 <ol class="info-list">
-                    <li>Wejdź na ustawienia konta: <code>strava.com/account</code></li>
-                    <li>Przejdź do sekcji pobierania danych i wybierz <b>Request your archive</b></li>
-                    <li>Strava wyśle link do ZIP-a na email. Pobierz ZIP i dodaj go poniżej.</li>
+                    <li>{{ tx('Wejdź na ustawienia konta:','Go to account settings:') }} <code>strava.com/account</code></li>
+                    <li>{{ tx('Przejdź do sekcji pobierania danych i wybierz','Go to data export and select') }} <b>{{ tx('Request your archive','Request your archive') }}</b></li>
+                    <li>{{ tx('Strava wyśle link do ZIP-a na email. Pobierz ZIP i dodaj go poniżej.','Strava will email you a ZIP link. Download it and upload below.') }}</li>
                 </ol>
                 <div class="help-text">
-                    Bezpośrednia strona: <a href="https://www.strava.com/athlete/delete_your_account" target="_blank" rel="noopener noreferrer">Strava – Download or delete your account</a>
+                    {{ tx('Bezpośrednia strona:','Direct page:') }} <a href="https://www.strava.com/athlete/delete_your_account" target="_blank" rel="noopener noreferrer">{{ tx('Strava – pobierz lub usuń konto','Strava - download or delete your account') }}</a>
                 </div>
             </div>
 
             <form method="POST" action="/register" enctype="multipart/form-data">
                 <div class="form-row">
                     <div class="field">
-                        <label>Imię</label>
+                        <label>{{ tx('Imię','First name') }}</label>
                         <input type="text" name="first_name">
                     </div>
                     <div class="field">
-                        <label>Nazwisko</label>
+                        <label>{{ tx('Nazwisko','Last name') }}</label>
                         <input type="text" name="last_name">
                     </div>
                 </div>
 
                 <div class="field">
-                    <label>Email</label>
+                    <label>{{ tx('Email','Email') }}</label>
                     <input type="email" name="email" required>
                 </div>
 
                 <div class="field">
-                    <label>Hasło</label>
+                    <label>{{ tx('Hasło','Password') }}</label>
                     <input type="password" name="password" required>
-                    <div class="help-text">Minimum 8 znaków zalecane.</div>
+                    <div class="help-text">{{ tx('Minimum 8 znaków zalecane.','Minimum 8 characters recommended.') }}</div>
                 </div>
 
                 <div class="field">
-                    <label>Archiwum Strava (ZIP) *</label>
+                    <label>{{ tx('Archiwum Strava (ZIP) *','Strava archive (ZIP) *') }}</label>
                     <input type="file" name="strava_zip" accept=".zip" required>
-                    <div class="help-text">Plik typu <code>export_....zip</code>. Import wykonuje się automatycznie.</div>
+                    <div class="help-text">{{ tx('Plik typu','File like') }} <code>export_....zip</code>. {{ tx('Import wykonuje się automatycznie.','Import runs automatically.') }}</div>
                 </div>
 
                 <div class="actions">
-                    <button class="btn" type="submit">Utwórz konto i przejdź dalej</button>
+                    <button class="btn" type="submit">{{ tx('Utwórz konto i przejdź dalej','Create account and continue') }}</button>
                 </div>
             </form>
 
-            <a class="link" href="/login">Masz już konto? Zaloguj się</a>
+            <a class="link" href="/login">{{ tx('Masz już konto? Zaloguj się','Already have an account? Sign in') }}</a>
         </div>
     </div>
 </body>

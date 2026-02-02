@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Szczegóły Aktywności</title>
+    <title>{{ tx('Szczegóły aktywności','Activity details') }}</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/png" href="/static/icons/icon-512.png">
@@ -12,11 +12,12 @@
     <div class="container">
         <header>
             <div class="header-row">
-                <h1>Szczegóły aktywności</h1>
+                <h1>{{ tx('Szczegóły aktywności','Activity details') }}</h1>
             </div>
             <div class="header-actions">
-                <a class="btn btn-outline" href="/">Panel</a>
-                <a class="btn btn-outline" href="/history">Historia</a>
+                {% include "_lang_toggle.html" %}
+                <a class="btn btn-outline" href="/">{{ t('nav_panel') }}</a>
+                <a class="btn btn-outline" href="/history">{{ tx('Historia','History') }}</a>
             </div>
         </header>
 
@@ -36,7 +37,7 @@
 
             <div class="stats-grid">
                 <div class="stat-item">
-                    <div class="stat-label">Czas trwania</div>
+                    <div class="stat-label">{{ tx('Czas trwania','Duration') }}</div>
                     <div class="stat-value">
                         {{ activity.duration // 60 }}<span class="stat-unit">m</span>
                         {{ activity.duration % 60 }}<span class="stat-unit">s</span>
@@ -44,7 +45,7 @@
                 </div>
 
                 <div class="stat-item">
-                    <div class="stat-label">Dystans</div>
+                    <div class="stat-label">{{ tx('Dystans','Distance') }}</div>
                     <div class="stat-value">
                         {{ (activity.distance / 1000)|round(2) }}<span class="stat-unit">km</span>
                     </div>
@@ -52,7 +53,7 @@
 
                 {% if activity.avg_hr %}
                 <div class="stat-item">
-                    <div class="stat-label">Śr. Tętno</div>
+                    <div class="stat-label">{{ tx('Śr. Tętno','Avg HR') }}</div>
                     <div class="stat-value">
                         {{ activity.avg_hr }}<span class="stat-unit">bpm</span>
                     </div>
@@ -61,7 +62,7 @@
 
                 {% if activity.activity_type == 'run' and activity.distance > 0 %}
                     <div class="stat-item">
-                        <div class="stat-label">Śr. Tempo</div>
+                        <div class="stat-label">{{ tx('Śr. Tempo','Avg pace') }}</div>
                         <div class="stat-value">
                             {% set pace_decimal = (activity.duration / 60) / (activity.distance / 1000) %}
                             {% set pace_min = pace_decimal|int %}
@@ -71,7 +72,7 @@
                     </div>
                 {% elif activity.activity_type == 'ride' and activity.duration > 0 %}
                     <div class="stat-item">
-                        <div class="stat-label">Śr. Prędkość</div>
+                        <div class="stat-label">{{ tx('Śr. Prędkość','Avg speed') }}</div>
                         <div class="stat-value">
                             {{ ((activity.distance / 1000) / (activity.duration / 3600))|round(1) }}<span class="stat-unit">km/h</span>
                         </div>
@@ -81,74 +82,74 @@
         </div>
 
         <div class="gym-section">
-            <h3 class="section-title">✏️ Edytuj trening</h3>
+            <h3 class="section-title">✏️ {{ tx('Edytuj trening','Edit workout') }}</h3>
             <form action="/activity/{{activity.id}}/update" method="POST" class="edit-form">
                 <div class="form-grid">
                     <div class="field">
-                        <label>Typ</label>
+                        <label>{{ tx('Typ','Type') }}</label>
                         <select name="activity_type">
-                            <option value="run" {% if activity.activity_type == 'run' %}selected{% endif %}>Bieganie</option>
-                            <option value="ride" {% if activity.activity_type == 'ride' %}selected{% endif %}>Rower</option>
-                            <option value="swim" {% if activity.activity_type == 'swim' %}selected{% endif %}>Pływanie</option>
-                            <option value="weighttraining" {% if activity.activity_type == 'weighttraining' %}selected{% endif %}>Siłownia</option>
-                            <option value="yoga" {% if activity.activity_type == 'yoga' %}selected{% endif %}>Joga</option>
-                            <option value="hike" {% if activity.activity_type == 'hike' %}selected{% endif %}>Wędrówka</option>
-                            <option value="walk" {% if activity.activity_type == 'walk' %}selected{% endif %}>Spacer</option>
-                            <option value="other" {% if activity.activity_type == 'other' %}selected{% endif %}>Inne</option>
+                            <option value="run" {% if activity.activity_type == 'run' %}selected{% endif %}>{{ t('opt_run') }}</option>
+                            <option value="ride" {% if activity.activity_type == 'ride' %}selected{% endif %}>{{ t('opt_ride') }}</option>
+                            <option value="swim" {% if activity.activity_type == 'swim' %}selected{% endif %}>{{ t('opt_swim') }}</option>
+                            <option value="weighttraining" {% if activity.activity_type == 'weighttraining' %}selected{% endif %}>{{ t('opt_gym') }}</option>
+                            <option value="yoga" {% if activity.activity_type == 'yoga' %}selected{% endif %}>{{ t('opt_yoga') }}</option>
+                            <option value="hike" {% if activity.activity_type == 'hike' %}selected{% endif %}>{{ t('opt_hike') }}</option>
+                            <option value="walk" {% if activity.activity_type == 'walk' %}selected{% endif %}>{{ t('opt_walk') }}</option>
+                            <option value="other" {% if activity.activity_type == 'other' %}selected{% endif %}>{{ t('opt_other') }}</option>
                         </select>
                     </div>
                     <div class="field">
-                        <label>Data</label>
+                        <label>{{ tx('Data','Date') }}</label>
                         <input type="date" name="date" value="{{ activity.start_time.strftime('%Y-%m-%d') if activity.start_time else '' }}">
                     </div>
                     <div class="field">
-                        <label>Godzina</label>
+                        <label>{{ tx('Godzina','Time') }}</label>
                         <input type="time" name="time" value="{{ activity.start_time.strftime('%H:%M') if activity.start_time else '' }}">
                     </div>
                     <div class="field">
-                        <label>Czas (min)</label>
+                        <label>{{ tx('Czas (min)','Duration (min)') }}</label>
                         <input type="number" name="duration_min" min="0" step="1" value="{{ (activity.duration / 60)|int if activity.duration else '' }}">
                     </div>
                     <div class="field">
-                        <label>Dystans (km)</label>
+                        <label>{{ tx('Dystans (km)','Distance (km)') }}</label>
                         <input type="number" name="distance_km" min="0" step="0.1" value="{{ (activity.distance / 1000)|round(2) if activity.distance else '' }}">
                     </div>
                     <div class="field">
-                        <label>Śr. tętno (bpm)</label>
+                        <label>{{ tx('Śr. tętno (bpm)','Avg HR (bpm)') }}</label>
                         <input type="number" name="avg_hr" min="0" step="1" value="{{ activity.avg_hr if activity.avg_hr else '' }}">
                     </div>
                 </div>
 
                 <div class="field field-spaced">
-                    <label>Notatka</label>
-                    <textarea name="notes" placeholder="Jak poszło?">{{ activity.notes or '' }}</textarea>
+                    <label>{{ tx('Notatka','Notes') }}</label>
+                    <textarea name="notes" placeholder="{{ tx('Jak poszło?','How did it go?') }}">{{ activity.notes or '' }}</textarea>
                 </div>
 
                 <div class="edit-actions">
-                    <button type="submit" class="add-btn">Zapisz zmiany</button>
+                    <button type="submit" class="add-btn">{{ tx('Zapisz zmiany','Save changes') }}</button>
                 </div>
             </form>
-            <form action="/activity/{{activity.id}}/delete" method="POST" onsubmit="return confirm('Usunąć ten trening?')" class="delete-form">
-                <button type="submit" class="del-btn">Usuń trening</button>
+            <form action="/activity/{{activity.id}}/delete" method="POST" onsubmit="return confirm('{{ tx('Usunąć ten trening?','Delete this workout?') }}')" class="delete-form">
+                <button type="submit" class="del-btn">{{ tx('Usuń trening','Delete workout') }}</button>
             </form>
         </div>
 
         {% if activity.activity_type in ['weighttraining', 'workout', 'crossfit', 'circuit', 'yoga'] %}
         <div class="gym-section">
             <div class="section-header-mobile">
-                <h3 class="section-title gym-title">Dziennik ćwiczeń</h3>
+                <h3 class="section-title gym-title">{{ tx('Dziennik ćwiczeń','Exercise log') }}</h3>
 
                 {% if plans %}
                 <form action="/activity/{{activity.id}}/apply_plan" method="POST" class="plan-apply-form">
                     <select name="plan_id"
                             onchange="this.form.submit()"
                             class="plan-select">
-                        <option value="" disabled selected>📂 Wybierz plan...</option>
+                        <option value="" disabled selected>{{ tx('📂 Wybierz plan...','📂 Choose plan...') }}</option>
                         {% for p in plans %}
                         <option value="{{p.id}}">{{p.name}}</option>
                         {% endfor %}
                     </select>
-                    <noscript><button type="submit" class="add-btn">Wczytaj</button></noscript>
+                    <noscript><button type="submit" class="add-btn">{{ tx('Wczytaj','Load') }}</button></noscript>
                 </form>
                 {% endif %}
             </div>
@@ -158,8 +159,8 @@
                 <table class="exercise-table">
                     <thead>
                         <tr>
-                            <th width="40%">Ćwiczenie</th> <th width="15%">Serie</th>
-                            <th width="15%">Powt.</th>
+                            <th width="40%">{{ tx('Ćwiczenie','Exercise') }}</th> <th width="15%">{{ tx('Serie','Sets') }}</th>
+                            <th width="15%">{{ tx('Powt.','Reps') }}</th>
                             <th width="20%">kg</th>
                             <th width="10%"></th>
                         </tr>
@@ -175,7 +176,7 @@
                             <td><input type="number" step="0.5" class="edit-input" value="{{ ex.weight }}" placeholder="0" onblur="updateEx({{ ex.id }}, 'weight', this)"></td>
                             <td class="exercise-delete-cell">
                                 <form action="/exercise/{{ex.id}}/delete" method="POST" class="inline-form">
-                                    <button type="submit" class="del-btn" title="Usuń">&times;</button>
+                                    <button type="submit" class="del-btn" title="{{ tx('Usuń','Delete') }}">&times;</button>
                                 </form>
                             </td>
                         </tr>
@@ -185,14 +186,14 @@
             </div>
             {% else %}
                 <div class="empty-note">
-                    Wybierz plan powyżej lub dodaj ćwiczenia ręcznie poniżej.
+                    {{ tx('Wybierz plan powyżej lub dodaj ćwiczenia ręcznie poniżej.','Choose a plan above or add exercises manually below.') }}
                 </div>
             {% endif %}
 
             <div class="add-form">
-                <input type="text" id="exName" class="form-input" placeholder="Ćwiczenie">
-                <input type="number" id="exSets" class="form-input" placeholder="Serie">
-                <input type="number" id="exReps" class="form-input" placeholder="Powt.">
+                <input type="text" id="exName" class="form-input" placeholder="{{ tx('Ćwiczenie','Exercise') }}">
+                <input type="number" id="exSets" class="form-input" placeholder="{{ tx('Serie','Sets') }}">
+                <input type="number" id="exReps" class="form-input" placeholder="{{ tx('Powt.','Reps') }}">
                 <input type="number" id="exWeight" class="form-input" placeholder="kg">
                 <button onclick="addExercise()" class="add-btn">+</button>
             </div>
@@ -225,7 +226,7 @@
             }
         } catch (e) {
             console.error(e);
-            alert("Błąd połączenia z serwerem");
+            alert({{ tx('Błąd połączenia z serwerem','Connection error')|tojson }});
         } finally {
             inputElement.style.opacity = '1';
         }
@@ -238,7 +239,7 @@
         const weight = parseFloat(document.getElementById('exWeight').value);
 
         if(!name || !sets || !reps) {
-            alert("Uzupełnij nazwę, serie i powtórzenia");
+            alert({{ tx('Uzupełnij nazwę, serie i powtórzenia','Fill in name, sets and reps')|tojson }});
             return;
         }
 

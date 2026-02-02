@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Profil</title>
+    <title>{{ tx('Profil','Profile') }}</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/png" href="/static/icons/icon-512.png">
@@ -12,15 +12,16 @@
 <div class="container">
     <header>
         <div class="header-row">
-            <h1>👤 Profil</h1>
+            <h1>👤 {{ tx('Profil','Profile') }}</h1>
         </div>
         <div class="header-actions">
-            <a class="btn btn-outline" href="/">Panel</a>
-            <a class="btn btn-outline" href="/logout">Wyloguj</a>
+            {% include "_lang_toggle.html" %}
+            <a class="btn btn-outline" href="/">{{ t('nav_panel') }}</a>
+            <a class="btn btn-outline" href="/logout">{{ t('nav_logout') }}</a>
         </div>
     </header>
 
-    <p class="page-sub">Te dane są używane przez AI jako kontekst: <b>FAKTY</b> (stałe), <b>CELE</b> (cele) i <b>STAN</b> (czasowo wrażliwe, np. uraz). Możesz też ponownie zaimportować ZIP ze Stravy.</p>
+    <p class="page-sub">{{ tx('Te dane są używane przez AI jako kontekst:','This data is used by AI as context:') }} <b>{{ tx('FAKTY','FACTS') }}</b> {{ tx('(stałe),','(stable),') }} <b>{{ tx('CELE','GOALS') }}</b> {{ tx('(cele) i','(goals) and') }} <b>{{ tx('STAN','STATE') }}</b> {{ tx('(czasowo wrażliwe, np. uraz). Możesz też ponownie zaimportować ZIP ze Stravy.','(time-sensitive, e.g., injury). You can also re-import your Strava ZIP.') }}</p>
 
     {% with messages = get_flashed_messages() %}
       {% if messages %}
@@ -31,75 +32,75 @@
     {% endwith %}
 
     <div class="card">
-        <div class="section-title">📦 Ponowny import ZIP (opcjonalnie)</div>
-        <p class="help-text">Strava: strava.com/account → Download or delete your account → Request your archive.</p>
+        <div class="section-title">📦 {{ tx('Ponowny import ZIP (opcjonalnie)','Re-import ZIP (optional)') }}</div>
+        <p class="help-text">{{ tx('Strava: strava.com/account → Pobierz lub usuń konto → Poproś o archiwum.','Strava: strava.com/account -> Download or delete your account -> Request your archive.') }}</p>
         <form method="POST" action="/profile" enctype="multipart/form-data">
             <input type="hidden" name="action" value="reimport_zip">
             <div class="field">
-                <label>Archiwum Strava (ZIP)</label>
+                <label>{{ tx('Archiwum Strava (ZIP)','Strava archive (ZIP)') }}</label>
                 <input type="file" name="strava_zip" accept=".zip" required>
             </div>
             <div class="actions">
-                <button class="btn" type="submit">Zaimportuj ZIP</button>
+                <button class="btn" type="submit">{{ tx('Zaimportuj ZIP','Import ZIP') }}</button>
             </div>
         </form>
     </div>
 
     <div class="card">
-        <div class="section-title">🧠 Dane do personalizacji</div>
+        <div class="section-title">🧠 {{ tx('Dane do personalizacji','Personalization data') }}</div>
         <form method="POST" action="/profile">
             <input type="hidden" name="action" value="save">
 
             <div class="field">
-                <label>FAKTY: Dyscypliny (własnymi słowami)</label>
-                <input type="text" name="primary_sports" placeholder="np. bieganie, rower, siłownia" value="{{ profile.primary_sports or '' }}">
+                <label>{{ tx('FAKTY: Dyscypliny (własnymi słowami)','FACTS: Disciplines (in your own words)') }}</label>
+                <input type="text" name="primary_sports" placeholder="{{ tx('np. bieganie, rower, siłownia','e.g. running, cycling, gym') }}" value="{{ profile.primary_sports or '' }}">
             </div>
 
             <div class="form-row">
                 <div class="field">
-                    <label>FAKTY: Ile masz czasu tygodniowo (h)?</label>
-                    <input type="number" step="0.5" min="0" name="weekly_time_hours" value="{{ profile.weekly_time_hours if profile.weekly_time_hours is not none else '' }}" placeholder="np. 6">
+                    <label>{{ tx('FAKTY: Ile masz czasu tygodniowo (h)?','FACTS: Weekly available time (h)?') }}</label>
+                    <input type="number" step="0.5" min="0" name="weekly_time_hours" value="{{ profile.weekly_time_hours if profile.weekly_time_hours is not none else '' }}" placeholder="{{ tx('np. 6','e.g. 6') }}">
                 </div>
                 <div class="field">
-                    <label>FAKTY: Ile km tygodniowo (opcjonalnie)?</label>
-                    <input type="number" step="1" min="0" name="weekly_distance_km" value="{{ profile.weekly_distance_km if profile.weekly_distance_km is not none else '' }}" placeholder="np. 30">
+                    <label>{{ tx('FAKTY: Ile km tygodniowo (opcjonalnie)?','FACTS: Weekly km (optional)?') }}</label>
+                    <input type="number" step="1" min="0" name="weekly_distance_km" value="{{ profile.weekly_distance_km if profile.weekly_distance_km is not none else '' }}" placeholder="{{ tx('np. 30','e.g. 30') }}">
                 </div>
             </div>
 
             <div class="form-row">
                 <div class="field">
-                    <label>FAKTY: Dni treningowe / tydzień</label>
-                    <input type="number" min="0" name="days_per_week" value="{{ profile.days_per_week if profile.days_per_week is not none else '' }}" placeholder="np. 4">
+                    <label>{{ tx('FAKTY: Dni treningowe / tydzień','FACTS: Training days / week') }}</label>
+                    <input type="number" min="0" name="days_per_week" value="{{ profile.days_per_week if profile.days_per_week is not none else '' }}" placeholder="{{ tx('np. 4','e.g. 4') }}">
                 </div>
                 <div class="field">
-                    <label>FAKTY: Doświadczenie</label>
-                    <input type="text" name="experience_text" value="{{ profile.experience_text or '' }}" placeholder="np. 2 lata biegania, 1 rok siłowni">
+                    <label>{{ tx('FAKTY: Doświadczenie','FACTS: Experience') }}</label>
+                    <input type="text" name="experience_text" value="{{ profile.experience_text or '' }}" placeholder="{{ tx('np. 2 lata biegania, 1 rok siłowni','e.g. 2 years running, 1 year gym') }}">
                 </div>
             </div>
 
             <div class="field">
-                <label>CELE: Główny cel</label>
-                <input type="text" name="goals_text" value="{{ profile.goals_text or '' }}" placeholder="np. 10 km w 45 min">
+                <label>{{ tx('CELE: Główny cel','GOALS: Main goal') }}</label>
+                <input type="text" name="goals_text" value="{{ profile.goals_text or '' }}" placeholder="{{ tx('np. 10 km w 45 min','e.g. 10 km in 45 min') }}">
             </div>
             <div class="field">
-                <label>CELE: Wydarzenie docelowe (opcjonalnie)</label>
-                <input type="text" name="target_event" value="{{ profile.target_event or '' }}" placeholder="np. Półmaraton Warszawski">
+                <label>{{ tx('CELE: Wydarzenie docelowe (opcjonalnie)','GOALS: Target event (optional)') }}</label>
+                <input type="text" name="target_event" value="{{ profile.target_event or '' }}" placeholder="{{ tx('np. Półmaraton Warszawski','e.g. City Half Marathon') }}">
             </div>
             <div class="field">
-                <label>Preferencje</label>
-                <textarea name="preferences_text" placeholder="Co lubisz? Czego unikasz?">{{ profile.preferences_text or '' }}</textarea>
+                <label>{{ tx('Preferencje','Preferences') }}</label>
+                <textarea name="preferences_text" placeholder="{{ tx('Co lubisz? Czego unikasz?','What do you like? What do you avoid?') }}">{{ profile.preferences_text or '' }}</textarea>
             </div>
             <div class="field">
-                <label>Ograniczenia</label>
-                <textarea name="constraints_text" placeholder="Czas, sprzęt, dostępność, kontuzje">{{ profile.constraints_text or '' }}</textarea>
+                <label>{{ tx('Ograniczenia','Constraints') }}</label>
+                <textarea name="constraints_text" placeholder="{{ tx('Czas, sprzęt, dostępność, kontuzje','Time, equipment, availability, injuries') }}">{{ profile.constraints_text or '' }}</textarea>
             </div>
             <div class="field">
-                <label>STAN: Aktualny stan (zmęczenie/urazy)</label>
-                <textarea name="injuries_text" placeholder="Np. ból kolana od tygodnia">{{ profile.injuries_text or '' }}</textarea>
+                <label>{{ tx('STAN: Aktualny stan (zmęczenie/urazy)','STATE: Current status (fatigue/injuries)') }}</label>
+                <textarea name="injuries_text" placeholder="{{ tx('Np. ból kolana od tygodnia','e.g. knee pain for a week') }}">{{ profile.injuries_text or '' }}</textarea>
             </div>
 
             <div class="actions">
-                <button class="btn" type="submit">Zapisz zmiany</button>
+                <button class="btn" type="submit">{{ tx('Zapisz zmiany','Save changes') }}</button>
             </div>
         </form>
     </div>
