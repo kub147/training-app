@@ -426,14 +426,23 @@
 
             // Parsuj HTML planu do mapy: date -> {workout, why}
             const map = {};
-            const rx = /<b>(\d{4}-\d{2}-\d{2})<\/b>\s*<br>\s*<b>\s*Trening:\s*<\/b>\s*([\s\S]*?)<br>\s*<b>\s*Dlaczego:\s*<\/b>\s*([\s\S]*?)<br>/gi;
-            let m;
-            while ((m = rx.exec(planHtml)) !== null) {
-                const date = m[1];
-                const clean = (s) => (s || '').replace(/<[^>]*>/g, '').replace(/\*\*/g, '').replace(/DATA\\s*:/gi, '').trim();
-                const workout = clean(m[2]);
-                const why = clean(m[3]);
-                map[date] = { workout, why };
+            const clean = (s) => (s || '').replace(/<[^>]*>/g, '').replace(/\*\*/g, '').replace(/DATA\\s*:/gi, '').trim();
+            try {
+                const parsed = JSON.parse(planHtml);
+                const days = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.days) ? parsed.days : []);
+                days.forEach((d) => {
+                    if (!d || !d.date) return;
+                    map[d.date] = { workout: clean(d.workout || ''), why: clean(d.why || '') };
+                });
+            } catch (_e) {
+                const rx = /<b>(\d{4}-\d{2}-\d{2})<\/b>\s*<br>\s*<b>\s*Trening:\s*<\/b>\s*([\s\S]*?)<br>\s*<b>\s*Dlaczego:\s*<\/b>\s*([\s\S]*?)<br>/gi;
+                let m;
+                while ((m = rx.exec(planHtml)) !== null) {
+                    const date = m[1];
+                    const workout = clean(m[2]);
+                    const why = clean(m[3]);
+                    map[date] = { workout, why };
+                }
             }
 
             // Aktualizuj kafelki roadmapy (te, które są z planu)

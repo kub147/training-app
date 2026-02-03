@@ -46,6 +46,10 @@ class UserProfile(db.Model):
     weekly_distance_km = db.Column(db.Float)          # declared distance per week
     days_per_week = db.Column(db.Integer)             # training days per week
     weekly_goal_workouts = db.Column(db.Integer)      # target workouts per week (for metrics goal)
+    coach_style = db.Column(db.String(40))            # concise|motivating|technical|balanced
+    risk_tolerance = db.Column(db.String(40))         # conservative|balanced|aggressive
+    training_priority = db.Column(db.String(40))      # performance|consistency|health
+    target_time_text = db.Column(db.String(80))       # e.g. "1:45:00 half marathon"
     experience_text = db.Column(db.Text)              # free-form: experience background
 
     goals_text = db.Column(db.Text)                   # free-form main goal

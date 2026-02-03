@@ -63,6 +63,35 @@
 
             <div class="form-row">
                 <div class="field">
+                    <label>{{ tx('Styl trenera','Coach style') }}</label>
+                    <select name="coach_style">
+                        <option value="">{{ tx('zbalansowany','balanced') }}</option>
+                        <option value="concise">{{ tx('krótko i konkretnie','concise') }}</option>
+                        <option value="motivating">{{ tx('motywująco','motivating') }}</option>
+                        <option value="technical">{{ tx('technicznie','technical') }}</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>{{ tx('Tolerancja ryzyka','Risk tolerance') }}</label>
+                    <select name="risk_tolerance">
+                        <option value="balanced">{{ tx('zbalansowana','balanced') }}</option>
+                        <option value="conservative">{{ tx('konserwatywna','conservative') }}</option>
+                        <option value="aggressive">{{ tx('agresywna','aggressive') }}</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="field">
+                <label>{{ tx('Priorytet treningu','Training priority') }}</label>
+                <select name="training_priority">
+                    <option value="performance">{{ tx('wynik','performance') }}</option>
+                    <option value="consistency">{{ tx('regularność','consistency') }}</option>
+                    <option value="health">{{ tx('zdrowie','health') }}</option>
+                </select>
+            </div>
+
+            <div class="form-row">
+                <div class="field">
                     <label>{{ tx('4) Ile km tygodniowo biegasz / jeździsz (jeśli dotyczy)?','4) Weekly run/ride distance (if applicable)?') }}</label>
                     <input type="number" step="0.1" min="0" name="weekly_distance_km" value="{{ profile.weekly_distance_km if profile.weekly_distance_km is not none else '' }}" placeholder="{{ tx('np. 30','e.g. 30') }}">
                 </div>

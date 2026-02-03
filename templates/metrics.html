@@ -121,6 +121,29 @@
                     </div>
                 </div>
             </div>
+
+            {% if goal_progress %}
+            <div class="chart-card">
+                <div class="chart-title">{{ tx('🏁 Przygotowanie do celu','🏁 Goal preparation') }}</div>
+                <div class="goal-meta">
+                    <p><b>{{ tx('Wydarzenie','Event') }}:</b> {{ goal_progress.event }}</p>
+                    <p><b>{{ tx('Data','Date') }}:</b> {{ goal_progress.target_date }}</p>
+                    <p><b>{{ tx('Dni do startu','Days to event') }}:</b> {{ goal_progress.days_left }}</p>
+                    <p><b>{{ tx('Faza przygotowania','Training phase') }}:</b> {{ goal_progress.phase }}</p>
+                    <p><b>{{ tx('Objętość tygodniowa teraz','Weekly volume now') }}:</b> {{ goal_progress.weekly_volume_now }} km</p>
+                    <p><b>{{ tx('Objętość docelowa','Target weekly volume') }}:</b> {{ goal_progress.weekly_volume_target }} km</p>
+                    <p><b>{{ tx('Prognoza za 4 tygodnie','Projected in 4 weeks') }}:</b> {{ goal_progress.weekly_volume_projected_4w }} km</p>
+                    <p><b>{{ tx('Gotowość objętości','Volume readiness') }}:</b> {{ goal_progress.readiness_pct }}%</p>
+                    <p><b>{{ tx('Realizacja celu treningów','Workout goal completion') }}:</b> {{ goal_progress.completion_pct }}%</p>
+                    {% if goal_progress.target_time_text %}
+                    <p><b>{{ tx('Docelowy czas','Target time') }}:</b> {{ goal_progress.target_time_text }}</p>
+                    {% endif %}
+                </div>
+                <div class="chart-fixed">
+                    <canvas id="goalVolumeChart"></canvas>
+                </div>
+            </div>
+            {% endif %}
         </div>
     </div>
 
@@ -257,6 +280,48 @@
         disciplineSelect.addEventListener('change', (e) => updateKmDiscipline(e.target.value));
         updateKmDiscipline(disciplineSelect.value);
     }
+
+    {% if goal_progress %}
+    const goalLabels = {{ goal_progress.weekly_labels|tojson }};
+    const goalSeries = {{ goal_progress.weekly_series|tojson }};
+    const goalTargetWeekly = {{ goal_progress.weekly_volume_target|tojson }};
+    const goalCtx = document.getElementById('goalVolumeChart').getContext('2d');
+    new Chart(goalCtx, {
+        type: 'line',
+        data: {
+            labels: goalLabels,
+            datasets: [
+                {
+                    label: {{ tx('Objętość tygodniowa (km)','Weekly volume (km)')|tojson }},
+                    data: goalSeries,
+                    borderColor: '#10b981',
+                    backgroundColor: 'rgba(16,185,129,0.14)',
+                    tension: 0.35,
+                    fill: true,
+                    pointRadius: 3
+                },
+                {
+                    label: {{ tx('Cel tygodniowy (km)','Weekly target (km)')|tojson }},
+                    data: goalLabels.map(() => goalTargetWeekly),
+                    borderColor: '#2563eb',
+                    borderDash: [6, 6],
+                    pointRadius: 0,
+                    fill: false
+                }
+            ]
+        },
+        options: {
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { labels: { color: chartText } }
+            },
+            scales: {
+                y: { beginAtZero: true, grid: { color: chartGrid }, ticks: { color: chartText } },
+                x: { grid: { color: chartGrid }, ticks: { color: chartText } }
+            }
+        }
+    });
+    {% endif %}
     </script>
 </body>
 </html>

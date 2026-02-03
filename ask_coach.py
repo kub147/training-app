@@ -44,6 +44,7 @@ def build_chat_prompt(
     profile_state: str,
     weekly_agg: str,
     recent_details: str,
+    recent_checkins: str,
     chat_history: str,
     user_msg: str,
 ) -> str:
@@ -58,6 +59,8 @@ KONTEKST (warstwowo, nie pełna baza):
 
 {recent_details}
 
+{recent_checkins}
+
 {chat_history}
 
 NOWE PYTANIE:
@@ -67,4 +70,5 @@ ZASADY ODPOWIEDZI:
 - Krótko i konkretnie.
 - Jeśli potrzebujesz doprecyzowania (np. ból, dostępność), zadaj 1-2 pytania.
 - Używaj HTML do formatowania (<b>, <br>, <ul><li>). Bez Markdown.
+- Każdą rekomendację uzasadnij: <b>Dlaczego</b> + <b>Na podstawie czego</b> (profil, ostatnie treningi, check-iny).
 """

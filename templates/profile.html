@@ -85,6 +85,43 @@
                 <input type="text" name="experience_text" value="{{ profile.experience_text or '' }}" placeholder="{{ tx('np. 2 lata biegania, 1 rok siłowni','e.g. 2 years running, 1 year gym') }}">
             </div>
 
+            <div class="form-row">
+                <div class="field">
+                    <label>{{ tx('Styl trenera','Coach style') }}</label>
+                    <select name="coach_style">
+                        <option value="" {% if not profile.coach_style %}selected{% endif %}>{{ tx('zbalansowany','balanced') }}</option>
+                        <option value="concise" {% if profile.coach_style == 'concise' %}selected{% endif %}>{{ tx('krótko i konkretnie','concise') }}</option>
+                        <option value="motivating" {% if profile.coach_style == 'motivating' %}selected{% endif %}>{{ tx('motywująco','motivating') }}</option>
+                        <option value="technical" {% if profile.coach_style == 'technical' %}selected{% endif %}>{{ tx('technicznie','technical') }}</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>{{ tx('Tolerancja ryzyka','Risk tolerance') }}</label>
+                    <select name="risk_tolerance">
+                        <option value="" {% if not profile.risk_tolerance %}selected{% endif %}>{{ tx('zbalansowana','balanced') }}</option>
+                        <option value="conservative" {% if profile.risk_tolerance == 'conservative' %}selected{% endif %}>{{ tx('konserwatywna','conservative') }}</option>
+                        <option value="balanced" {% if profile.risk_tolerance == 'balanced' %}selected{% endif %}>{{ tx('zbalansowana','balanced') }}</option>
+                        <option value="aggressive" {% if profile.risk_tolerance == 'aggressive' %}selected{% endif %}>{{ tx('agresywna','aggressive') }}</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="field">
+                    <label>{{ tx('Priorytet treningu','Training priority') }}</label>
+                    <select name="training_priority">
+                        <option value="" {% if not profile.training_priority %}selected{% endif %}>{{ tx('wynik + zdrowie','performance + health') }}</option>
+                        <option value="performance" {% if profile.training_priority == 'performance' %}selected{% endif %}>{{ tx('wynik','performance') }}</option>
+                        <option value="consistency" {% if profile.training_priority == 'consistency' %}selected{% endif %}>{{ tx('regularność','consistency') }}</option>
+                        <option value="health" {% if profile.training_priority == 'health' %}selected{% endif %}>{{ tx('zdrowie','health') }}</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>{{ tx('Docelowy czas (opcjonalnie)','Target time (optional)') }}</label>
+                    <input type="text" name="target_time_text" value="{{ profile.target_time_text or '' }}" placeholder="{{ tx('np. Półmaraton 1:45:00','e.g. Half marathon 1:45:00') }}">
+                </div>
+            </div>
+
             <div class="field">
                 <label>{{ tx('CELE: Główny cel','GOALS: Main goal') }}</label>
                 <input type="text" name="goals_text" value="{{ profile.goals_text or '' }}" placeholder="{{ tx('np. 10 km w 45 min','e.g. 10 km in 45 min') }}">

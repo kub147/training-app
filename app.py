@@ -370,6 +370,10 @@ def ensure_schema() -> None:
             'weekly_distance_km': "weekly_distance_km REAL",
             'days_per_week': "days_per_week INTEGER",
             'weekly_goal_workouts': "weekly_goal_workouts INTEGER",
+            'coach_style': "coach_style TEXT",
+            'risk_tolerance': "risk_tolerance TEXT",
+            'training_priority': "training_priority TEXT",
+            'target_time_text': "target_time_text TEXT",
             'experience_text': "experience_text TEXT",
             'goals_text': "goals_text TEXT",
             'target_event': "target_event TEXT",
@@ -410,8 +414,12 @@ def load_user(user_id):
 
 # --- AI ---
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-CHECKIN_MODEL = os.environ.get("CHECKIN_MODEL", "gemini-2.5-flash-lite")
-model = genai.GenerativeModel(CHECKIN_MODEL)
+VISION_MODEL = os.environ.get("VISION_MODEL", os.environ.get("CHECKIN_MODEL", "gemini-2.5-flash-lite"))
+CHAT_MODEL = os.environ.get("CHAT_MODEL", "gemini-2.5-flash")
+PLAN_MODEL = os.environ.get("PLAN_MODEL", "gemini-2.5-flash")
+vision_model = genai.GenerativeModel(VISION_MODEL)
+chat_model = genai.GenerativeModel(CHAT_MODEL)
+plan_model = genai.GenerativeModel(PLAN_MODEL)
 
 # -------------------- DASHBOARD HELPERS --------------------
 
@@ -531,9 +539,50 @@ def classify_sport(text: str) -> str:
 
 
 def parse_plan_html(html_content: str) -> list[dict]:
-    """Parsuje HTML planu na listę dni - ULEPSZONA WERSJA."""
+    """Parsuje zapis planu na listę dni.
+
+    Obsługuje:
+    - nowy format JSON (preferred)
+    - legacy HTML (<b>YYYY-MM-DD</b> + Trening/Dlaczego)
+    """
     if not html_content:
         return []
+
+    # Preferred: JSON
+    try:
+        parsed = json.loads(html_content)
+        if isinstance(parsed, dict) and isinstance(parsed.get("days"), list):
+            items = parsed["days"]
+        elif isinstance(parsed, list):
+            items = parsed
+        else:
+            items = None
+        if items is not None:
+            out = []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                date_str = (item.get("date") or "").strip() or None
+                workout = (item.get("workout") or "").strip() or None
+                why = (item.get("why") or "").strip() or None
+                sport = (item.get("activity_type") or item.get("sport") or "").strip().lower()
+                sport = sport if sport else classify_sport((workout or "") + " " + (why or ""))
+                source_facts = item.get("source_facts") or []
+                why_with_facts = why
+                if isinstance(source_facts, list) and source_facts:
+                    why_with_facts = (why or "")
+                    why_with_facts += " | " + tr("Na podstawie:", "Based on:") + " " + "; ".join([str(x) for x in source_facts[:3]])
+                out.append({
+                    "date": date_str,
+                    "workout": workout,
+                    "why": why_with_facts,
+                    "sport": sport,
+                    "html": json.dumps(item, ensure_ascii=False),
+                })
+            if out:
+                return out
+    except Exception:
+        pass
 
     # Normalizuj <br> na \n i usuń tagi HTML
     norm = html_content.replace("<br/>", "\n").replace("<br />", "\n").replace("<br>", "\n")
@@ -850,6 +899,129 @@ def get_recent_activity_details(user_id: int, days: int = 21, limit: int = 120) 
     return "\n".join(out)
 
 
+def get_recent_checkins_summary(user_id: int, days: int = 14, limit: int = 30) -> str:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = (
+        TrainingCheckin.query
+        .filter(TrainingCheckin.user_id == user_id, TrainingCheckin.created_at >= cutoff)
+        .order_by(TrainingCheckin.created_at.asc())
+        .limit(limit)
+        .all()
+    )
+    if not rows:
+        return "CHECK-INY: brak ostatnich raportów."
+
+    out = [f"CHECK-INY (ostatnie {days} dni):"]
+    for r in rows:
+        ts = r.created_at.strftime("%Y-%m-%d")
+        note = (r.notes or "").strip()
+        if len(note) > 220:
+            note = note[:220] + "..."
+        out.append(f"- {ts} | {note or 'brak opisu'}")
+    return "\n".join(out)
+
+
+def get_recent_weekly_volume_km(user_id: int, weeks: int = 4) -> dict:
+    """Returns last/previous/average weekly distance in km for recent window."""
+    today = datetime.now().date()
+    monday = today - timedelta(days=today.weekday())
+    start_date = monday - timedelta(weeks=weeks - 1)
+
+    acts = (
+        Activity.query
+        .filter(Activity.user_id == user_id, Activity.start_time >= datetime.combine(start_date, datetime.min.time()))
+        .all()
+    )
+
+    buckets = {}
+    for a in acts:
+        if not a.start_time:
+            continue
+        d = a.start_time.date()
+        ws = d - timedelta(days=d.weekday())
+        buckets[ws] = buckets.get(ws, 0.0) + float(a.distance or 0.0) / 1000.0
+
+    ordered = []
+    cur = start_date
+    for _ in range(weeks):
+        ordered.append(round(buckets.get(cur, 0.0), 1))
+        cur += timedelta(weeks=1)
+
+    avg = round(sum(ordered) / len(ordered), 1) if ordered else 0.0
+    last_week = ordered[-1] if ordered else 0.0
+    prev_week = ordered[-2] if len(ordered) > 1 else 0.0
+    labels = []
+    cur = start_date
+    for _ in range(weeks):
+        labels.append(cur.isoformat())
+        cur += timedelta(weeks=1)
+    return {
+        "weekly_series": ordered,
+        "weekly_labels": labels,
+        "avg_week_km": avg,
+        "last_week_km": last_week,
+        "prev_week_km": prev_week,
+    }
+
+
+def build_goal_progress(user_id: int, profile_obj: UserProfile | None, range_days: int, stats: dict) -> dict | None:
+    if not profile_obj or not profile_obj.target_date:
+        return None
+
+    today = datetime.now().date()
+    days_left = (profile_obj.target_date - today).days
+    vol = get_recent_weekly_volume_km(user_id=user_id, weeks=6)
+    avg_week = float(vol.get("avg_week_km", 0.0) or 0.0)
+    last_week = float(vol.get("last_week_km", 0.0) or 0.0)
+    current_weekly = max(avg_week, last_week, 0.0)
+
+    risk = (profile_obj.risk_tolerance or "balanced").lower()
+    ramp_pct = {"conservative": 0.06, "aggressive": 0.14}.get(risk, 0.10)
+
+    weeks_left = max(0, int(days_left // 7))
+    target_weekly = float(profile_obj.weekly_distance_km or 0.0)
+    if target_weekly <= 0:
+        target_weekly = round(current_weekly * (1.0 + ramp_pct * min(weeks_left, 8)), 1)
+    target_weekly = max(target_weekly, current_weekly)
+
+    weekly_goal = int(profile_obj.weekly_goal_workouts or 3)
+    weekly_goal = max(1, weekly_goal)
+    workouts_done = int(stats.get("count", 0) or 0)
+    goal_target = max(1, int(round((weekly_goal * range_days) / 7)))
+    completion_pct = int(round(min(100.0, (workouts_done / max(1, goal_target)) * 100.0)))
+
+    if days_left <= 0:
+        phase = tr("po starcie", "post-race")
+    elif days_left <= 14:
+        phase = tr("taper", "taper")
+    elif days_left <= 56:
+        phase = tr("build", "build")
+    else:
+        phase = tr("base", "base")
+
+    projected_4w = round(current_weekly * (1.0 + ramp_pct * min(4, weeks_left or 4)), 1)
+    readiness_pct = 0
+    if target_weekly > 0:
+        readiness_pct = int(round(min(100.0, (current_weekly / target_weekly) * 100.0)))
+
+    return {
+        "event": profile_obj.target_event or tr("Cel", "Goal"),
+        "target_date": profile_obj.target_date.isoformat(),
+        "days_left": days_left,
+        "phase": phase,
+        "risk": risk,
+        "weekly_volume_now": round(current_weekly, 1),
+        "weekly_volume_target": round(target_weekly, 1),
+        "weekly_volume_projected_4w": projected_4w,
+        "target_time_text": profile_obj.target_time_text or "",
+        "weekly_labels": vol.get("weekly_labels", []),
+        "weekly_series": vol.get("weekly_series", []),
+        "readiness_pct": readiness_pct,
+        "completion_pct": completion_pct,
+        "weekly_goal": weekly_goal,
+    }
+
+
 def get_profile_and_state_context(user: User) -> str:
     """Kontekst: FACTS + GOALS + STATE (czasowo wrażliwe)."""
     profile = user.profile
@@ -866,6 +1038,8 @@ def get_profile_and_state_context(user: User) -> str:
             facts.append(f"Kilometry tygodniowo: {profile.weekly_distance_km} km")
         if profile.days_per_week is not None:
             facts.append(f"Dni treningowe/tydz.: {profile.days_per_week}")
+        if profile.weekly_goal_workouts is not None:
+            facts.append(f"Cel treningów/tydz.: {profile.weekly_goal_workouts}")
         if profile.experience_text:
             facts.append(f"Doświadczenie: {profile.experience_text}")
         lines.append("FACTS: " + (" | ".join(facts) if facts else "brak"))
@@ -884,6 +1058,14 @@ def get_profile_and_state_context(user: User) -> str:
             lines.append(f"PREFERENCJE: {profile.preferences_text}")
         if profile.constraints_text:
             lines.append(f"OGRANICZENIA: {profile.constraints_text}")
+        if profile.coach_style:
+            lines.append(f"STYL TRENERA: {profile.coach_style}")
+        if profile.risk_tolerance:
+            lines.append(f"TOLERANCJA RYZYKA: {profile.risk_tolerance}")
+        if profile.training_priority:
+            lines.append(f"PRIORYTET: {profile.training_priority}")
+        if profile.target_time_text:
+            lines.append(f"CZAS DOCELOWY: {profile.target_time_text}")
 
         if profile.updated_at:
             lines.append(f"(Profil zaktualizowany: {profile.updated_at.date().isoformat()})")
@@ -1268,6 +1450,10 @@ def onboarding():
         profile.weekly_distance_km = _to_float(request.form.get("weekly_distance_km"))
         profile.days_per_week = _to_int(request.form.get("days_per_week"))
         profile.weekly_goal_workouts = _to_int(request.form.get("weekly_goal_workouts"))
+        profile.coach_style = _clip(request.form.get("coach_style"), 40)
+        profile.risk_tolerance = _clip(request.form.get("risk_tolerance"), 40)
+        profile.training_priority = _clip(request.form.get("training_priority"), 40)
+        profile.target_time_text = _clip(request.form.get("target_time_text"), 80)
         profile.experience_text = _clip(request.form.get("experience_text"), 10000)
 
         # GOALS
@@ -1360,6 +1546,10 @@ def profile():
             profile_obj.weekly_distance_km = _to_float(request.form.get("weekly_distance_km"))
             profile_obj.days_per_week = _to_int(request.form.get("days_per_week"))
             profile_obj.weekly_goal_workouts = _to_int(request.form.get("weekly_goal_workouts"))
+            profile_obj.coach_style = _clip(request.form.get("coach_style"), 40)
+            profile_obj.risk_tolerance = _clip(request.form.get("risk_tolerance"), 40)
+            profile_obj.training_priority = _clip(request.form.get("training_priority"), 40)
+            profile_obj.target_time_text = _clip(request.form.get("target_time_text"), 80)
             profile_obj.experience_text = _clip(request.form.get("experience_text"), 10000)
 
             profile_obj.goals_text = _clip(request.form.get("goals_text"), 10000)
@@ -1601,12 +1791,20 @@ def metrics():
     weekly_goal = max(1, int(weekly_goal))
     goal_target = max(1, int(round((weekly_goal * range_days) / 7)))
 
+    goal_progress = build_goal_progress(
+        user_id=current_user.id,
+        profile_obj=profile_obj,
+        range_days=range_days,
+        stats=stats,
+    )
+
     return render_template(
         "metrics.html",
         stats=stats,
         range_days=range_days,
         weekly_goal=weekly_goal,
         goal_target=goal_target,
+        goal_progress=goal_progress,
     )
 
 
@@ -1663,6 +1861,7 @@ def chat_with_coach():
     profile_state = get_profile_and_state_context(current_user)
     weekly_agg = get_weekly_aggregates(user_id=current_user.id, weeks=12)
     recent_details = get_recent_activity_details(user_id=current_user.id, days=21)
+    recent_checkins = get_recent_checkins_summary(user_id=current_user.id, days=14)
 
     today_iso = datetime.now().strftime("%Y-%m-%d")
 
@@ -1671,6 +1870,7 @@ def chat_with_coach():
         profile_state=profile_state,
         weekly_agg=weekly_agg,
         recent_details=recent_details,
+        recent_checkins=recent_checkins,
         chat_history=chat_history_text,
         user_msg=user_msg,
     )
@@ -1680,7 +1880,7 @@ def chat_with_coach():
     )
 
     try:
-        response = model.generate_content(full_prompt)
+        response = chat_model.generate_content(full_prompt)
         clean_text = (response.text or "").replace("```html", "").replace("```", "").replace("**", "")
 
         ai_message_db = ChatMessage(user_id=current_user.id, sender="ai", content=clean_text)
@@ -1696,9 +1896,17 @@ def chat_with_coach():
 @login_required
 def generate_forecast():
     """Generuje plan na najbliższe 4 dni i zapisuje go jako aktywny (stan), żeby dashboard był stabilny."""
+    profile_obj = UserProfile.query.filter_by(user_id=current_user.id).first()
     profile_state = get_profile_and_state_context(current_user)
     weekly_agg = get_weekly_aggregates(user_id=current_user.id, weeks=12)
     recent_details = get_recent_activity_details(user_id=current_user.id, days=21)
+    recent_checkins = get_recent_checkins_summary(user_id=current_user.id, days=14)
+    goal_progress = build_goal_progress(
+        user_id=current_user.id,
+        profile_obj=profile_obj,
+        range_days=30,
+        stats=compute_stats(current_user.id, 30),
+    )
 
     today = datetime.now().strftime("%Y-%m-%d")
 
@@ -1706,6 +1914,100 @@ def generate_forecast():
         "Opis i uzasadnienie pisz po polsku.",
         "Write workout description and rationale in English.",
     )
+
+    def _apply_plan_rules(days: list[dict]) -> list[dict]:
+        """Rule layer: avoid obvious overload and improve consistency."""
+        risk = (profile_obj.risk_tolerance or "balanced").lower() if profile_obj else "balanced"
+        ramp_pct = {"conservative": 0.06, "aggressive": 0.14}.get(risk, 0.10)
+        vol = get_recent_weekly_volume_km(user_id=current_user.id, weeks=4)
+        base_week_km = max(float(vol.get("avg_week_km", 0.0) or 0.0), float(vol.get("last_week_km", 0.0) or 0.0))
+        if profile_obj and profile_obj.weekly_distance_km:
+            base_week_km = max(base_week_km, float(profile_obj.weekly_distance_km))
+        allowed_week_km = max(6.0, round(base_week_km * (1.0 + ramp_pct), 1))
+        allowed_4d_km = round((allowed_week_km * 4.0) / 7.0, 1)
+
+        def parse_km(workout: str | None) -> float:
+            txt = (workout or "").lower()
+            vals = re.findall(r'(\d+(?:[.,]\d+)?)\s*km', txt)
+            out = 0.0
+            for raw in vals:
+                try:
+                    out += float(raw.replace(",", "."))
+                except Exception:
+                    continue
+            return out
+
+        def scale_first_km(workout: str | None, factor: float) -> str:
+            if not workout:
+                return ""
+            def repl(match):
+                raw = match.group(1)
+                try:
+                    val = float(raw.replace(",", "."))
+                    scaled = max(2.0, round(val * factor, 1))
+                    return f"{scaled} km"
+                except Exception:
+                    return match.group(0)
+            return re.sub(r'(\d+(?:[.,]\d+)?)\s*km', repl, workout, count=1, flags=re.IGNORECASE)
+
+        def is_hard(item: dict) -> bool:
+            txt = " ".join([
+                str(item.get("intensity") or ""),
+                str(item.get("workout") or ""),
+                str(item.get("why") or ""),
+            ]).lower()
+            hard_tokens = ["hard", "wysoka", "interwa", "interwał", "tempo", "threshold", "vo2", "maks", "max"]
+            return any(t in txt for t in hard_tokens)
+
+        out = []
+        hard_count = 0
+        for idx, day in enumerate(days):
+            item = dict(day)
+            km = parse_km(item.get("workout"))
+            item["_km"] = km
+
+            if idx > 0 and is_hard(out[-1]) and is_hard(item):
+                # Soften consecutive hard session by changing intensity and adding rationale.
+                item["intensity"] = "easy"
+                why = (item.get("why") or "").strip()
+                why += " " + tr(
+                    "Skorygowano automatycznie: unikamy dwóch ciężkich jednostek dzień po dniu.",
+                    "Auto-adjusted: avoid two hard sessions on consecutive days.",
+                )
+                item["why"] = why.strip()
+            if is_hard(item):
+                hard_count += 1
+            out.append(item)
+
+        # If event is close, keep max one hard day in a 4-day block.
+        if profile_obj and profile_obj.target_date:
+            days_left = (profile_obj.target_date - datetime.now().date()).days
+            if days_left <= 14 and hard_count > 1:
+                kept_hard = 0
+                for item in out:
+                    if is_hard(item):
+                        kept_hard += 1
+                        if kept_hard > 1:
+                            item["intensity"] = "easy"
+                            item["why"] = ((item.get("why") or "").strip() + " " + tr(
+                                "Taper: zmniejszona intensywność przed startem.",
+                                "Taper: lowered intensity before race day.",
+                            )).strip()
+
+        # Keep 4-day km load near safe ramp based on recent weeks.
+        total_plan_km = sum(float(x.get("_km", 0.0) or 0.0) for x in out)
+        if total_plan_km > 0 and total_plan_km > allowed_4d_km:
+            factor = max(0.55, allowed_4d_km / total_plan_km)
+            for item in out:
+                item["workout"] = scale_first_km(item.get("workout"), factor)
+                item["why"] = ((item.get("why") or "").strip() + " " + tr(
+                    f"Dopasowano obciążenie (limit 4 dni: {allowed_4d_km} km).",
+                    f"Load adjusted (4-day cap: {allowed_4d_km} km).",
+                )).strip()
+
+        for item in out:
+            item.pop("_km", None)
+        return out
 
     prompt = f"""
 Jesteś trenerem sportowym. Stwórz plan treningowy na 4 dni (start: {today}).
@@ -1720,21 +2022,45 @@ WAŻNE:
 
 {recent_details}
 
+{recent_checkins}
+
+KONTEKST CELU:
+{json.dumps(goal_progress, ensure_ascii=False) if goal_progress else "Brak aktywnego celu z datą."}
+
 FORMAT (BARDZO WAŻNE):
-- Bez Markdown. Tylko HTML.
-- Każdy dzień musi mieć 3 linie:
-  <b>YYYY-MM-DD</b><br>
-  <b>Trening:</b> ...<br>
-  <b>Dlaczego:</b> ...<br><br>
-- Trening ma być konkretny: intensywność, czas/dystans, ewentualnie rozgrzewka/schłodzenie.
+- Zwróć WYŁĄCZNIE JSON (bez markdown, bez komentarzy) w formie:
+  {{
+    "days": [
+      {{
+        "date": "YYYY-MM-DD",
+        "activity_type": "run|ride|swim|weighttraining|yoga|walk|other",
+        "workout": "konkretna jednostka z czasem/dystansem",
+        "intensity": "easy|moderate|hard",
+        "why": "krótkie uzasadnienie",
+        "source_facts": ["3 krótkie fakty użyte do decyzji"]
+      }}
+    ]
+  }}
+- Dokładnie 4 dni.
 - {language_hint}
 """
 
     try:
-        response = model.generate_content(prompt)
-        text = (response.text or "").replace("```html", "").replace("```", "").replace("**", "")
-        if "<br>" not in text:
-            text = text.replace("\n", "<br>")
+        response = plan_model.generate_content(prompt)
+        raw = (response.text or "").replace("```json", "").replace("```", "").strip()
+        try:
+            plan_json = json.loads(raw)
+        except Exception:
+            return jsonify({"plan": tr("Nie udało się wygenerować planu.", "Could not generate plan.")})
+
+        days = []
+        if isinstance(plan_json, dict) and isinstance(plan_json.get("days"), list):
+            days = [d for d in plan_json["days"] if isinstance(d, dict)]
+        if len(days) < 1:
+            return jsonify({"plan": tr("Nie udało się wygenerować planu.", "Could not generate plan.")})
+
+        days = _apply_plan_rules(days)[:4]
+        text = json.dumps({"days": days}, ensure_ascii=False)
 
         # Zapisz jako aktywny plan (wyłącz poprzedni)
         GeneratedPlan.query.filter_by(user_id=current_user.id, is_active=True).update({"is_active": False})
@@ -1798,7 +2124,7 @@ Zasady:
 - jeśli nie widzisz wartości, daj null
         """.strip()
 
-        resp = model.generate_content([
+        resp = vision_model.generate_content([
             prompt,
             {"mime_type": _guess_mime(image_path), "data": img_bytes}
         ])
