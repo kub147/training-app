@@ -29,7 +29,7 @@
                 {% set act_date = act.start_time.strftime('%Y-%m-%d') %}
                 {% if current_date.value != act_date %}
                     <div class="date-header">
-                        {{ act.start_time.strftime('%d.%m.%Y (%A)') }}
+                        {{ format_dt(act.start_time, 'list') }}
                     </div>
                     {% set current_date.value = act_date %}
                 {% endif %}

@@ -269,7 +269,7 @@
                             {% if current_date.value != act_date %}
                                 <div class="date-header">
                                     {% if act_date == today_str %} {{ tx('DZISIAJ','TODAY') }}
-                                    {% else %} {{ act.start_time.strftime('%d.%m.%Y (%A)') }}
+                                    {% else %} {{ format_dt(act.start_time, 'list') }}
                                     {% endif %}
                                 </div>
                                 {% set current_date.value = act_date %}
@@ -490,7 +490,7 @@
       return;
     }
 
-    const weekShort = {{ tx(["niedz", "pon", "wto", "sro", "czw", "pia", "sob"], ["sun", "mon", "tue", "wed", "thu", "fri", "sat"])|tojson }};
+    const weekShort = {{ tx(["niedz.", "pon.", "wt.", "śr.", "czw.", "pt.", "sob."], ["sun", "mon", "tue", "wed", "thu", "fri", "sat"])|tojson }};
 
     function formatDate(isoDate) {
       // isoDate: YYYY-MM-DD

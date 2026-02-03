@@ -34,7 +34,7 @@
                     {% else %}🏅{% endif %}
                 </span>
                 <h1 class="activity-title">{{ activity_label(activity.activity_type) }}</h1>
-                <div class="activity-date">{{ activity.start_time.strftime('%A, %d %B %Y') }} • {{ activity.start_time.strftime('%H:%M') }}</div>
+                <div class="activity-date">{{ format_dt(activity.start_time, 'long') }} • {{ activity.start_time.strftime('%H:%M') }}</div>
             </div>
 
             <div class="stats-grid">

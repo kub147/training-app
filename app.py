@@ -458,6 +458,16 @@ ACTIVITY_LABELS = {
     },
 }
 
+WEEKDAYS_FULL = {
+    "pl": ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"],
+    "en": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+}
+
+MONTHS_FULL = {
+    "pl": ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września", "października", "listopada", "grudnia"],
+    "en": ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+}
+
 
 def activity_label(activity_type: str | None) -> str:
     label_key = (activity_type or "").lower()
@@ -468,6 +478,26 @@ def activity_label(activity_type: str | None) -> str:
 
 
 app.jinja_env.globals["activity_label"] = activity_label
+
+
+def format_dt(value: datetime | date | None, style: str = "list") -> str:
+    if not value:
+        return ""
+    if isinstance(value, date) and not isinstance(value, datetime):
+        value = datetime.combine(value, datetime.min.time())
+
+    lang = session.get("lang", "pl")
+    if lang not in ("pl", "en"):
+        lang = "pl"
+
+    weekday = WEEKDAYS_FULL[lang][value.weekday()]
+    if style == "long":
+        month = MONTHS_FULL[lang][value.month - 1]
+        return f"{weekday}, {value.day:02d} {month} {value.year}"
+    return f"{value.day:02d}.{value.month:02d}.{value.year} ({weekday})"
+
+
+app.jinja_env.globals["format_dt"] = format_dt
 
 
 def classify_sport(text: str) -> str:
