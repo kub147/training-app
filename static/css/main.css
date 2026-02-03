@@ -1558,6 +1558,10 @@ textarea {
     .charts-container {
         grid-template-columns: 2fr 1fr;
     }
+
+    .charts-container.charts-top {
+        grid-template-columns: 3fr 1fr;
+    }
 }
 
 @media (min-width: 980px) {
