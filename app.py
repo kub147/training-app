@@ -1736,8 +1736,13 @@ def _guess_mime(path: str) -> str:
     return "application/octet-stream"
 
 
-def parse_strava_screenshot_to_activity(image_path: str) -> dict:
-    """Próbuje wyciągnąć zrzutu Stravy: typ, dystans, czas, tętno, data/godzina. Zwraca dict."""
+def parse_strava_screenshot_to_activity_detailed(image_path: str) -> tuple[dict, str | None]:
+    """Próbuje wyciągnąć zrzutu Stravy: typ, dystans, czas, tętno, data/godzina.
+
+    Returns:
+      (data, None) on success
+      ({}, error_message) on failure
+    """
     try:
         with open(image_path, "rb") as f:
             img_bytes = f.read()
@@ -1769,7 +1774,13 @@ Zasady:
         ])
 
         raw = (getattr(resp, "text", None) or "").strip()
-        data = json.loads(raw)
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return {}, tr(
+                "Model zwrócił nieczytelny format odpowiedzi (nie-JSON). Spróbuj wyraźniejszy screenshot.",
+                "Model returned an unreadable response format (non-JSON). Try a clearer screenshot.",
+            )
 
         # minimalna walidacja / normalizacja
         out = {}
@@ -1789,9 +1800,36 @@ Zasady:
         out["start_date"] = (data.get("start_date") or "").strip() or None
         out["start_time"] = (data.get("start_time") or "").strip() or None
 
-        return out
-    except Exception:
-        return {}
+        has_any = (
+            (out.get("distance_km") is not None and out.get("distance_km", 0) > 0)
+            or (out.get("duration_min") is not None and out.get("duration_min", 0) > 0)
+            or (out.get("avg_hr") is not None and out.get("avg_hr", 0) > 0)
+            or (out.get("activity_type") and out.get("activity_type") != "other")
+            or bool(out.get("start_date"))
+            or bool(out.get("start_time"))
+        )
+        if not has_any:
+            return {}, tr(
+                "Nie udało się odczytać danych treningowych z tego screenshotu.",
+                "Could not read training data from this screenshot.",
+            )
+        return out, None
+    except Exception as e:
+        msg = str(e).lower()
+        if "429" in msg or "quota" in msg or "rate limit" in msg or "resource_exhausted" in msg:
+            return {}, tr(
+                "Limit modelu AI został chwilowo wyczerpany. Spróbuj ponownie za chwilę.",
+                "AI model quota is temporarily exhausted. Please try again shortly.",
+            )
+        return {}, tr(
+            "Błąd odczytu screenshotu (AI/API). Spróbuj ponownie za chwilę.",
+            "Screenshot parsing failed (AI/API). Please try again shortly.",
+        )
+
+
+def parse_strava_screenshot_to_activity(image_path: str) -> dict:
+    data, _err = parse_strava_screenshot_to_activity_detailed(image_path)
+    return data
 
 
 @app.route("/api/checkin/parse", methods=["POST"])
@@ -1807,7 +1845,9 @@ def parse_checkin_screenshot():
 
     try:
         f.save(image_path)
-        parsed = parse_strava_screenshot_to_activity(image_path) or {}
+        parsed, parse_error = parse_strava_screenshot_to_activity_detailed(image_path)
+        if parse_error:
+            return jsonify({"ok": False, "error": parse_error}), 422
 
         dist = parsed.get("distance_km")
         dur = parsed.get("duration_min")
@@ -2004,10 +2044,11 @@ def add_checkin():
     # === PRÓBA UTWORZENIA ACTIVITY ===
     created_activity = False
     screenshot_failed = False
+    screenshot_error_msg = None
 
     if image_path:
         try:
-            parsed = parse_strava_screenshot_to_activity(image_path)
+            parsed, screenshot_error_msg = parse_strava_screenshot_to_activity_detailed(image_path)
             act_type = (parsed.get("activity_type") or "").strip().lower()
             dur_min = parsed.get("duration_min")
             dist_km = parsed.get("distance_km")
@@ -2057,6 +2098,10 @@ def add_checkin():
         except Exception as e:
             # Błąd parsowania (np. plik uszkodzony)
             print(f"⚠️ Błąd parsowania screenshota: {e}")
+            screenshot_error_msg = tr(
+                "Błąd techniczny podczas odczytu screenshotu.",
+                "Technical error while parsing screenshot.",
+            )
             screenshot_failed = True
 
     # Fallback: Utwórz Activity "other" jeśli screenshot się nie powiódł
@@ -2095,9 +2140,12 @@ def add_checkin():
     elif created_activity and screenshot_failed:
         # Częściowy sukces: Screenshot nie zadziałał, ale tekst zapisany
         flash(
-            tr(
-                "⚠️ Screenshot nie zawierał danych treningowych. Zapisano check-in jako trening 'other' - uzupełnij dane ręcznie.",
-                "⚠️ Screenshot did not contain workout data. Check-in was saved as 'other' workout - complete details manually.",
+            (
+                tr(
+                    "⚠️ Screenshot nie zawierał danych treningowych. Zapisano check-in jako trening 'other' - uzupełnij dane ręcznie.",
+                    "⚠️ Screenshot did not contain workout data. Check-in was saved as 'other' workout - complete details manually.",
+                )
+                + (f" ({screenshot_error_msg})" if screenshot_error_msg else "")
             ),
             "warning")
 

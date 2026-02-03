@@ -1033,12 +1033,35 @@ textarea {
         bottom: calc(14px + env(safe-area-inset-bottom));
     }
 
+    .chat-fab {
+        width: 60px;
+        height: 60px;
+        font-size: 24px;
+    }
+
     .chat-panel {
-        right: 12px;
-        left: 12px;
+        right: 8px;
+        left: 8px;
         width: auto;
-        bottom: calc(78px + env(safe-area-inset-bottom));
-        max-height: 65vh;
+        top: calc(64px + env(safe-area-inset-top));
+        bottom: calc(12px + env(safe-area-inset-bottom));
+        max-height: none;
+        border-radius: 14px;
+        padding: 12px;
+    }
+
+    .chat-title {
+        font-size: 16px;
+    }
+
+    .chat-history .msg,
+    .msg {
+        font-size: 14px;
+        line-height: 1.45;
+    }
+
+    #chatInput {
+        font-size: 16px;
     }
 }
 
