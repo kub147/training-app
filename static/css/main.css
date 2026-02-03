@@ -947,8 +947,6 @@ textarea {
     right: 24px;
     bottom: calc(24px + env(safe-area-inset-bottom));
     z-index: 1200;
-    transform: translateZ(0);
-    will-change: transform;
 }
 
 .chat-fab {
@@ -963,6 +961,7 @@ textarea {
     box-shadow: 0 18px 30px rgba(239, 68, 68, 0.35);
     display: grid;
     place-items: center;
+    z-index: 1201;
 }
 
 .chat-panel {
@@ -982,6 +981,7 @@ textarea {
     transform: translateY(12px) scale(0.98);
     pointer-events: none;
     transition: transform 0.2s ease, opacity 0.2s ease;
+    z-index: 1202;
 }
 
 .chat-panel.open {
