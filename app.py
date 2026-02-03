@@ -12,6 +12,7 @@ import smtplib
 import ssl
 import zipfile
 from email.message import EmailMessage
+from uuid import uuid4
 from urllib.parse import urlencode
 from datetime import datetime, timedelta, date, timezone
 
@@ -80,6 +81,12 @@ I18N = {
         "label_notes": "Notatka",
         "btn_add": "Dodaj",
         "label_screenshot": "Zrzut ekranu (opcjonalnie)",
+        "label_screenshot_read": "Odczytaj dane ze zdjęcia",
+        "label_screenshot_apply_ok": "Dane ze zrzutu wczytane. Sprawdź i zatwierdź.",
+        "label_screenshot_apply_fail": "Nie udało się odczytać danych ze zrzutu.",
+        "label_confirm_data": "Potwierdź dane",
+        "label_avg_hr": "Średnie tętno (opcjonalnie)",
+        "label_avg_pace": "Średnie tempo min/km (opcjonalnie)",
         "label_checkin_desc": "Opis (2–3 zdania)",
         "btn_speak": "🎤 Mów",
         "btn_save": "Zapisz",
@@ -154,6 +161,12 @@ I18N = {
         "label_notes": "Notes",
         "btn_add": "Add",
         "label_screenshot": "Screenshot (optional)",
+        "label_screenshot_read": "Read data from screenshot",
+        "label_screenshot_apply_ok": "Screenshot data loaded. Review and confirm.",
+        "label_screenshot_apply_fail": "Could not read data from screenshot.",
+        "label_confirm_data": "Confirm data",
+        "label_avg_hr": "Average heart rate (optional)",
+        "label_avg_pace": "Average pace min/km (optional)",
         "label_checkin_desc": "Description (2–3 sentences)",
         "btn_speak": "🎤 Speak",
         "btn_save": "Save",
@@ -908,6 +921,41 @@ def set_or_refresh_injury_state(user_id: int, injuries_text: str) -> None:
         db.session.add(st)
 
 
+def clear_active_injury_states(user_id: int) -> None:
+    rows = (
+        UserState.query
+        .filter_by(user_id=user_id, kind="injury", is_active=True)
+        .all()
+    )
+    now = datetime.now(timezone.utc)
+    for row in rows:
+        row.is_active = False
+        row.updated_at = now
+        row.expires_at = now
+
+
+def get_current_injury_text(user_id: int) -> str:
+    state = (
+        UserState.query
+        .filter_by(user_id=user_id, kind="injury", is_active=True)
+        .order_by(UserState.updated_at.desc())
+        .first()
+    )
+    if not state:
+        return ""
+
+    exp = state.expires_at
+    if exp:
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+        exp_cmp = exp.astimezone(timezone.utc).replace(tzinfo=None) if getattr(exp, "tzinfo", None) else exp
+        if exp_cmp < now_utc:
+            state.is_active = False
+            db.session.commit()
+            return ""
+
+    return (state.details or state.summary or "").strip()
+
+
 def import_strava_zip_for_user(zip_file, user_id: int) -> tuple[int, int]:
     """Importuje activities.csv z archiwum Stravy dla wskazanego usera.
 
@@ -1300,6 +1348,8 @@ def profile():
             injuries_text = (request.form.get("injuries_text") or "").strip()
             if injuries_text:
                 set_or_refresh_injury_state(current_user.id, injuries_text)
+            else:
+                clear_active_injury_states(current_user.id)
 
             db.session.commit()
         except Exception as e:
@@ -1312,7 +1362,7 @@ def profile():
         return redirect(url_for("profile"))
 
     try:
-        return render_template("profile.html", profile=profile_obj)
+        return render_template("profile.html", profile=profile_obj, current_injury_text=get_current_injury_text(current_user.id))
     except Exception as e:
         app.logger.exception("Profile render failed for user %s: %s", current_user.id, e)
         return (
@@ -1732,6 +1782,48 @@ Zasady:
     except Exception:
         return {}
 
+
+@app.route("/api/checkin/parse", methods=["POST"])
+@login_required
+def parse_checkin_screenshot():
+    f = request.files.get("checkin_image")
+    if not f or not f.filename:
+        return jsonify({"ok": False, "error": tr("Brak pliku obrazu.", "Missing image file.")}), 400
+
+    os.makedirs("uploads", exist_ok=True)
+    safe_name = f"parse_{current_user.id}_{int(datetime.now(timezone.utc).timestamp())}_{uuid4().hex[:8]}.png"
+    image_path = os.path.join("uploads", safe_name)
+
+    try:
+        f.save(image_path)
+        parsed = parse_strava_screenshot_to_activity(image_path) or {}
+
+        dist = parsed.get("distance_km")
+        dur = parsed.get("duration_min")
+        pace = None
+        try:
+            if dist and dist > 0 and dur and dur > 0:
+                pace = round(float(dur) / float(dist), 2)
+        except Exception:
+            pace = None
+
+        data = {
+            "activity_type": parsed.get("activity_type") or "other",
+            "date": parsed.get("start_date") or "",
+            "time": parsed.get("start_time") or "",
+            "duration_min": parsed.get("duration_min"),
+            "distance_km": parsed.get("distance_km"),
+            "avg_hr": parsed.get("avg_hr"),
+            "avg_pace_min_km": pace,
+        }
+        return jsonify({"ok": True, "data": data})
+    finally:
+        try:
+            if os.path.exists(image_path):
+                os.remove(image_path)
+        except Exception:
+            pass
+
 # -------------------- QUICK ADD --------------------
 
 def _parse_date_time(date_str: str, time_str: str) -> datetime:
@@ -1787,15 +1879,58 @@ def _looks_like_duplicate_activity(
 @app.route("/activity/manual", methods=["POST"])
 @login_required
 def add_activity_manual():
-    """Szybkie dodanie treningu ręcznie (bez Stravy)."""
+    """Szybkie dodanie treningu ręcznie lub po odczycie screenshotu."""
     act_type = (request.form.get("activity_type") or "other").strip().lower()
-
     date_str = (request.form.get("date") or "").strip()
-    time_str = (request.form.get("time") or "").strip()  # NOWE
-
-    duration_min = int(float(request.form.get("duration_min") or 0))
-    distance_km = float(request.form.get("distance_km") or 0)
+    time_str = (request.form.get("time") or "").strip()
     notes = (request.form.get("notes") or "").strip()
+
+    def _to_float(v):
+        try:
+            if v in (None, ""):
+                return None
+            return float(str(v).replace(",", "."))
+        except Exception:
+            return None
+
+    duration_min = _to_float(request.form.get("duration_min"))
+    distance_km = _to_float(request.form.get("distance_km"))
+    avg_hr = _to_float(request.form.get("avg_hr"))
+    avg_pace = _to_float(request.form.get("avg_pace_min_km"))
+
+    # Optional screenshot: if provided, fill only missing fields from AI parse
+    image_file = request.files.get("activity_image")
+    if image_file and image_file.filename:
+        os.makedirs("uploads", exist_ok=True)
+        safe_name = f"manual_{current_user.id}_{int(datetime.now(timezone.utc).timestamp())}_{uuid4().hex[:8]}.png"
+        image_path = os.path.join("uploads", safe_name)
+        try:
+            image_file.save(image_path)
+            parsed = parse_strava_screenshot_to_activity(image_path) or {}
+            act_type = act_type if act_type != "other" else (parsed.get("activity_type") or act_type)
+            if not date_str and parsed.get("start_date"):
+                date_str = parsed["start_date"]
+            if not time_str and parsed.get("start_time"):
+                time_str = parsed["start_time"]
+            if duration_min is None and parsed.get("duration_min") is not None:
+                duration_min = float(parsed["duration_min"])
+            if distance_km is None and parsed.get("distance_km") is not None:
+                distance_km = float(parsed["distance_km"])
+            if avg_hr is None and parsed.get("avg_hr") is not None:
+                avg_hr = float(parsed["avg_hr"])
+        finally:
+            try:
+                if os.path.exists(image_path):
+                    os.remove(image_path)
+            except Exception:
+                pass
+
+    if duration_min is None and avg_pace is not None and distance_km and distance_km > 0:
+        duration_min = float(avg_pace) * float(distance_km)
+
+    duration_min = max(0.0, float(duration_min or 0.0))
+    distance_km = max(0.0, float(distance_km or 0.0))
+    avg_hr_int = int(round(avg_hr)) if avg_hr and avg_hr > 0 else None
 
     # data + godzina -> datetime aware (UTC)
     dt = _parse_date_time(date_str, time_str)
@@ -1804,9 +1939,9 @@ def add_activity_manual():
         user_id=current_user.id,
         activity_type=act_type,
         start_time=dt,
-        duration=max(0, duration_min) * 60,
-        distance=max(0.0, distance_km) * 1000.0,
-        avg_hr=None,
+        duration=int(round(duration_min * 60)),
+        distance=distance_km * 1000.0,
+        avg_hr=avg_hr_int,
         notes=notes,
     )
     if _looks_like_duplicate_activity(

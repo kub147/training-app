@@ -182,88 +182,78 @@
 
                 <div class="card">
                     <div class="card-title">{{ t('add_title') }}</div>
+                    <form id="activityForm" action="/activity/manual" method="POST" enctype="multipart/form-data">
+                        <div class="field">
+                            <label>{{ t('label_screenshot') }}</label>
+                            <input id="activity_image" type="file" name="activity_image" accept="image/*">
+                        </div>
+                        <div class="actions actions-row">
+                            <button class="btn btn-soft" type="button" id="parseScreenshotBtn">{{ t('label_screenshot_read') }}</button>
+                            <span id="parseStatus" class="mini-status" aria-live="polite"></span>
+                        </div>
 
-                    <div class="tab-row">
-                        <button class="tab active" id="tabManual" onclick="showTab('manual')">{{ t('tab_manual') }}</button>
-                        <button class="tab" id="tabCheckin" onclick="showTab('checkin')">{{ t('tab_checkin') }}</button>
-                    </div>
-
-                    <div id="manualForm">
-                    <form action="/activity/manual" method="POST">
-                        <!-- Wiersz 1: Typ + Data (2 kolumny na desktop, 1 na mobile) -->
                         <div class="form-row">
                             <div class="field">
                                 <label>{{ t('label_type') }}</label>
-                                <select name="activity_type">
-                                <option value="run">{{ t('opt_run') }}</option>
-                                <option value="ride">{{ t('opt_ride') }}</option>
-                                <option value="swim">{{ t('opt_swim') }}</option>
-                                <option value="weighttraining">{{ t('opt_gym') }}</option>
-                                <option value="yoga">{{ t('opt_yoga') }}</option>
-                                <option value="hike">{{ t('opt_hike') }}</option>
-                                <option value="walk">{{ t('opt_walk') }}</option>
-                                <option value="other">{{ t('opt_other') }}</option>
-                            </select>
-                        </div>
+                                <select name="activity_type" id="activity_type">
+                                    <option value="run">{{ t('opt_run') }}</option>
+                                    <option value="ride">{{ t('opt_ride') }}</option>
+                                    <option value="swim">{{ t('opt_swim') }}</option>
+                                    <option value="weighttraining">{{ t('opt_gym') }}</option>
+                                    <option value="yoga">{{ t('opt_yoga') }}</option>
+                                    <option value="hike">{{ t('opt_hike') }}</option>
+                                    <option value="walk">{{ t('opt_walk') }}</option>
+                                    <option value="other">{{ t('opt_other') }}</option>
+                                </select>
+                            </div>
                             <div class="field">
                                 <label>{{ t('label_date') }}</label>
-                                <input type="date" name="date" value="{{ today_str }}">
+                                <input id="activity_date" type="date" name="date" value="{{ today_str }}">
                             </div>
                         </div>
 
-                        <!-- Wiersz 2: Godzina + Czas (2 kolumny) -->
                         <div class="form-row">
                             <div class="field">
                                 <label>{{ t('label_time') }}</label>
-                                <input type="time" name="time" value="">
+                                <input id="activity_time" type="time" name="time" value="">
                             </div>
                             <div class="field">
                                 <label>{{ t('label_duration') }}</label>
-                                <input type="number" name="duration_min" min="0" step="1" placeholder="{{ tx('np. 45','e.g. 45') }}">
+                                <input id="duration_min" type="number" name="duration_min" min="0" step="1" placeholder="{{ tx('np. 45','e.g. 45') }}">
                             </div>
                         </div>
 
-                        <!-- Wiersz 3: Dystans (pojedyncze pole) -->
                         <div class="form-row">
                             <div class="field">
                                 <label>{{ t('label_distance') }}</label>
-                                <input type="number" name="distance_km" min="0" step="0.1" placeholder="{{ tx('np. 8.0','e.g. 8.0') }}">
+                                <input id="distance_km" type="number" name="distance_km" min="0" step="0.01" placeholder="{{ tx('np. 8.25','e.g. 8.25') }}">
+                            </div>
+                            <div class="field">
+                                <label>{{ t('label_avg_hr') }}</label>
+                                <input id="avg_hr" type="number" name="avg_hr" min="0" step="1" placeholder="{{ tx('np. 150','e.g. 150') }}">
                             </div>
                         </div>
 
-                        <!-- Notatka -->
+                        <div class="form-row">
+                            <div class="field">
+                                <label>{{ t('label_avg_pace') }}</label>
+                                <input id="avg_pace_min_km" type="number" name="avg_pace_min_km" min="0" step="0.01" placeholder="{{ tx('np. 5.30','e.g. 5.30') }}">
+                            </div>
+                            <div class="field"></div>
+                        </div>
+
                         <div class="field field-spaced">
                             <label>{{ t('label_notes') }}</label>
-                            <textarea name="notes" placeholder="{{ tx('Jak poszło? (opcjonalnie)','How did it go? (optional)') }}"></textarea>
+                            <textarea id="activity_notes" name="notes" placeholder="{{ tx('Jak poszło? (opcjonalnie)','How did it go? (optional)') }}"></textarea>
                         </div>
 
-                        <div class="actions">
-                            <button class="btn" type="submit">{{ t('btn_add') }}</button>
-                        </div>
-                    </form>
-                </div>
+                        <input type="hidden" id="parsed_applied" name="parsed_applied" value="0">
 
-                <div id="checkinForm" class="is-hidden">
-                        <form action="/checkin" method="POST" enctype="multipart/form-data">
-                            <div class="field">
-                            <label>{{ t('label_screenshot') }}</label>
-                                <input type="file" name="checkin_image" accept="image/*">
-                            </div>
-                        <div class="field field-spaced">
-                                <label>{{ t('label_checkin_desc') }}</label>
-                            <textarea id="checkin_text" name="checkin_text" class="checkin-textarea" placeholder="{{ tx('Jak się czułeś? Co poszło dobrze/źle?','How did you feel? What went well/badly?') }}"></textarea>
-                        </div>
                         <div class="actions actions-row">
-                            <button class="btn btn-soft btn-fixed" type="button" onclick="dictateTo('checkin_text')">{{ t('btn_speak') }}</button>
-                            <button class="btn btn-grow" type="submit">{{ t('btn_save') }}</button>
+                            <button class="btn btn-soft btn-fixed" type="button" onclick="dictateTo('activity_notes')">{{ t('btn_speak') }}</button>
+                            <button class="btn btn-grow" type="submit">{{ t('label_confirm_data') }}</button>
                         </div>
                     </form>
-
-                    <div class="small-note">
-                        {{ t('checkin_tip') }}
-                    </div>
-                </div>
-
                 </div>
 
                 <div class="card">
@@ -322,23 +312,6 @@
     </div>
 
     <script>
-    // --- Tabs (quick add) ---
-    function showTab(which) {
-        const manual = document.getElementById('manualForm');
-        const checkin = document.getElementById('checkinForm');
-        const t1 = document.getElementById('tabManual');
-        const t2 = document.getElementById('tabCheckin');
-        if (which === 'manual') {
-            manual.classList.remove('is-hidden');
-            checkin.classList.add('is-hidden');
-            t1.classList.add('active'); t2.classList.remove('active');
-        } else {
-            manual.classList.add('is-hidden');
-            checkin.classList.remove('is-hidden');
-            t2.classList.add('active'); t1.classList.remove('active');
-        }
-    }
-
     // --- Voice dictation ---
     function dictateTo(inputId) {
         const el = document.getElementById(inputId);
@@ -361,6 +334,64 @@
         rec.onerror = () => {};
         rec.start();
     }
+
+    async function parseScreenshotIntoForm() {
+        const fileInput = document.getElementById('activity_image');
+        const status = document.getElementById('parseStatus');
+        const btn = document.getElementById('parseScreenshotBtn');
+        const parsedApplied = document.getElementById('parsed_applied');
+        if (!fileInput || !fileInput.files || !fileInput.files[0]) {
+            if (status) status.textContent = {{ tx('Wybierz najpierw zdjęcie.', 'Choose an image first.')|tojson }};
+            return;
+        }
+
+        if (btn) {
+            btn.disabled = true;
+            btn.classList.add('loading');
+        }
+        if (status) status.textContent = {{ tx('Odczytuję dane...', 'Reading data...')|tojson }};
+
+        try {
+            const fd = new FormData();
+            fd.append('checkin_image', fileInput.files[0]);
+            const res = await fetch('/api/checkin/parse', { method: 'POST', body: fd });
+            const data = await res.json();
+            if (!res.ok || !data || !data.ok) {
+                if (status) status.textContent = {{ t('label_screenshot_apply_fail')|tojson }};
+                return;
+            }
+
+            const parsed = data.data || {};
+            const setVal = (id, v) => {
+                if (v === null || v === undefined || v === '') return;
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.value = v;
+            };
+
+            setVal('activity_type', parsed.activity_type);
+            setVal('activity_date', parsed.date);
+            setVal('activity_time', parsed.time);
+            setVal('duration_min', parsed.duration_min);
+            setVal('distance_km', parsed.distance_km);
+            setVal('avg_hr', parsed.avg_hr);
+            setVal('avg_pace_min_km', parsed.avg_pace_min_km);
+            if (parsedApplied) parsedApplied.value = '1';
+            if (status) status.textContent = {{ t('label_screenshot_apply_ok')|tojson }};
+        } catch (e) {
+            if (status) status.textContent = {{ t('label_screenshot_apply_fail')|tojson }};
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('loading');
+            }
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const parseBtn = document.getElementById('parseScreenshotBtn');
+        if (parseBtn) parseBtn.addEventListener('click', parseScreenshotIntoForm);
+    });
 
     async function loadPlan() {
         const btn = document.getElementById('refreshPlanBtn');
@@ -421,7 +452,9 @@
             });
 
             setStatus({{ t('status_plan_updated')|tojson }}, 'ok');
-            setTimeout(() => setStatus('', ''), 2500);
+            setTimeout(() => {
+                window.location.reload();
+            }, 1200);
         } catch (e) {
             console.error('loadPlan exception:', e);
             setStatus({{ t('status_connection_error')|tojson }}, 'err');
@@ -593,7 +626,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
     lockSubmit(document.querySelector('form[action="/activity/manual"]'));
-    lockSubmit(document.querySelector('form[action="/checkin"]'));
 
     const flashes = document.querySelectorAll('.flash');
     flashes.forEach(flash => {

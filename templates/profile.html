@@ -103,7 +103,7 @@
             </div>
             <div class="field">
                 <label>{{ tx('STAN: Aktualny stan (zmęczenie/urazy)','STATE: Current status (fatigue/injuries)') }}</label>
-                <textarea name="injuries_text" placeholder="{{ tx('Np. ból kolana od tygodnia','e.g. knee pain for a week') }}">{{ profile.injuries_text or '' }}</textarea>
+                <textarea name="injuries_text" placeholder="{{ tx('Np. ból kolana od tygodnia','e.g. knee pain for a week') }}">{{ current_injury_text or '' }}</textarea>
             </div>
 
             <div class="actions">
