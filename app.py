@@ -1732,13 +1732,20 @@ def index():
     plan_days = parse_plan_html(active_plan.html_content) if active_plan else []
     today_str = datetime.now().strftime("%Y-%m-%d")
 
-    # Future: kolejne 3 dni od dziś (włącznie), jeśli są w planie
+    # Future: bierz najbliższe dni z planu (max 4, z dziś), żeby sekcja "najbliższe 3 dni" miała dane
+    # nawet gdy model zwróci daty nieidealnie po kolei.
+    candidate_future = [x for x in plan_days if x.get("date") and x.get("date") >= today_str]
+    candidate_future.sort(key=lambda x: x.get("date"))
+    seen_dates = set()
     future_days = []
-    for offset in range(0, 3):
-        d = (datetime.now() + timedelta(days=offset)).strftime("%Y-%m-%d")
-        item = next((x for x in plan_days if x.get("date") == d), None)
-        if item:
-            future_days.append(item)
+    for item in candidate_future:
+        d = item.get("date")
+        if d in seen_dates:
+            continue
+        seen_dates.add(d)
+        future_days.append(item)
+        if len(future_days) >= 4:
+            break
 
     # Past roadmap: 7 dni wstecz (agregujemy per dzień po top aktywności)
     past_cutoff = datetime.now() - timedelta(days=7)
@@ -2060,6 +2067,9 @@ FORMAT (BARDZO WAŻNE):
             return jsonify({"plan": tr("Nie udało się wygenerować planu.", "Could not generate plan.")})
 
         days = _apply_plan_rules(days)[:4]
+        # Normalizuj daty do kolejnych dni od dziś, żeby roadmap miał stabilnie dziś + 3 kolejne.
+        for idx, item in enumerate(days):
+            item["date"] = (datetime.now() + timedelta(days=idx)).strftime("%Y-%m-%d")
         text = json.dumps({"days": days}, ensure_ascii=False)
 
         # Zapisz jako aktywny plan (wyłącz poprzedni)
