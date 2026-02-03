@@ -114,7 +114,7 @@
                         </select>
                     </div>
                     <div class="goal-meta km-summary">
-                        <p><b>{{ t('km_total_label') }}:</b> {{ stats.distance_km }} km</p>
+                        <p><b>{{ t('km_total_label') }}:</b> <span id="disciplineTotalValue">{{ stats.distance_km }}</span> <span id="disciplineTotalUnit">km</span></p>
                     </div>
                     <div class="chart-fixed">
                         <canvas id="kmChart"></canvas>
@@ -179,7 +179,10 @@
     const ctxKm = document.getElementById('kmChart').getContext('2d');
     const dayLabels = {{ stats.daily_labels|tojson }};
     const kmBySport = {{ stats.daily_km_by_sport|tojson }};
+    const hoursBySport = {{ stats.daily_hours_by_sport|tojson }};
     const disciplineSelect = document.getElementById('disciplineSelect');
+    const totalValueEl = document.getElementById('disciplineTotalValue');
+    const totalUnitEl = document.getElementById('disciplineTotalUnit');
     const disciplineNames = {
         run: {{ t('run_label')|tojson }},
         ride: {{ t('ride_label')|tojson }},
@@ -234,15 +237,25 @@
 
     function updateKmDiscipline(sport) {
         const safeSport = kmBySport[sport] ? sport : 'run';
+        const isGym = safeSport === 'gym';
+        const series = isGym ? (hoursBySport[safeSport] || []) : (kmBySport[safeSport] || []);
+        const total = series.reduce((acc, n) => acc + (Number(n) || 0), 0);
         kmChart.data.datasets[0].label = disciplineNames[safeSport];
-        kmChart.data.datasets[0].data = kmBySport[safeSport] || [];
+        kmChart.data.datasets[0].data = series;
         kmChart.data.datasets[0].borderColor = kmColors[safeSport];
         kmChart.data.datasets[0].backgroundColor = safeSport === 'total' ? 'rgba(37,99,235,0.14)' : 'rgba(15,23,42,0.10)';
+        kmChart.options.plugins.tooltip.callbacks.label = (ctx) => {
+            const val = ctx.parsed.y || 0;
+            return isGym ? `${val} h` : `${val} km`;
+        };
+        if (totalValueEl) totalValueEl.textContent = total.toFixed(2);
+        if (totalUnitEl) totalUnitEl.textContent = isGym ? 'h' : 'km';
         kmChart.update();
     }
 
     if (disciplineSelect) {
         disciplineSelect.addEventListener('change', (e) => updateKmDiscipline(e.target.value));
+        updateKmDiscipline(disciplineSelect.value);
     }
     </script>
 </body>

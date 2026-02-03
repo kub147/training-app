@@ -1409,6 +1409,7 @@ def compute_stats(user_id: int, range_days: int) -> dict:
 
     totals = {"count": 0, "distance": 0.0, "duration": 0}
     daily_bucket = {}
+    daily_duration_bucket = {}
 
     for a in acts:
         b = bucket(a.activity_type)
@@ -1424,20 +1425,29 @@ def compute_stats(user_id: int, range_days: int) -> dict:
             day_key = a.start_time.date().isoformat()
             day_entry = daily_bucket.setdefault(day_key, {"run": 0.0, "ride": 0.0, "swim": 0.0, "gym": 0.0, "other": 0.0})
             day_entry[b] += float(a.distance or 0.0) / 1000.0
+            dur_entry = daily_duration_bucket.setdefault(day_key, {"run": 0, "ride": 0, "swim": 0, "gym": 0, "other": 0})
+            dur_entry[b] += int(a.duration or 0)
 
     daily_labels = []
     daily_km_by_sport = {"run": [], "ride": [], "swim": [], "gym": [], "other": [], "total": []}
+    daily_hours_by_sport = {"run": [], "ride": [], "swim": [], "gym": [], "other": [], "total": []}
     cur = start_date
     for _ in range(range_days):
         key = cur.isoformat()
         daily_labels.append(key)
         row = daily_bucket.get(key, {})
+        row_dur = daily_duration_bucket.get(key, {})
         total_km = 0.0
+        total_h = 0.0
         for sport_key in ("run", "ride", "swim", "gym", "other"):
             v = round(float(row.get(sport_key, 0.0)), 2)
             daily_km_by_sport[sport_key].append(v)
             total_km += v
+            h = round(float(row_dur.get(sport_key, 0)) / 3600.0, 2)
+            daily_hours_by_sport[sport_key].append(h)
+            total_h += h
         daily_km_by_sport["total"].append(round(total_km, 2))
+        daily_hours_by_sport["total"].append(round(total_h, 2))
         cur = cur + timedelta(days=1)
 
     # POPRAWKA: Dodaj bezpośrednie klucze dla szablonu
@@ -1476,6 +1486,7 @@ def compute_stats(user_id: int, range_days: int) -> dict:
         },
         "daily_labels": daily_labels,
         "daily_km_by_sport": daily_km_by_sport,
+        "daily_hours_by_sport": daily_hours_by_sport,
     }
     return stats
 
