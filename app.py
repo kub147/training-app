@@ -13,7 +13,6 @@ import ssl
 import zipfile
 from email.message import EmailMessage
 from uuid import uuid4
-from urllib.parse import urlencode
 from datetime import datetime, timedelta, date, timezone
 
 from dotenv import load_dotenv
@@ -223,13 +222,7 @@ def inject_lang():
         except Exception:
             return text
 
-    def lang_url(target_lang: str) -> str:
-        args = dict(request.args)
-        args["lang"] = target_lang
-        query = urlencode({k: v for k, v in args.items() if v is not None and v != ""})
-        return f"{request.path}?{query}" if query else request.path
-
-    return {"lang": session.get("lang", "pl"), "t": t, "tx": tx, "lang_url": lang_url}
+    return {"lang": session.get("lang", "pl"), "t": t, "tx": tx}
 
 
 def tr(pl: str, en: str) -> str:
@@ -747,79 +740,6 @@ def enforce_onboarding():
         return redirect(url_for("onboarding"))
 
 
-def get_user_profile_text(user: User) -> str:
-    """Buduje tekst profilu do promptu na podstawie danych użytkownika i ankiety."""
-    profile = UserProfile.query.filter_by(user_id=user.id).first()
-
-    parts = []
-    name = f"{user.first_name or ''} {user.last_name or ''}".strip()
-    if name:
-        parts.append(f"Imię i nazwisko: {name}")
-    parts.append(f"Email: {user.email}")
-
-    if profile:
-        if profile.about:
-            parts.append(f"O mnie: {profile.about}")
-        if profile.goal:
-            parts.append(f"Cel: {profile.goal}")
-        if profile.target_date:
-            parts.append(f"Data docelowa: {profile.target_date.isoformat()}")
-        if profile.primary_sport:
-            parts.append(f"Główna dyscyplina: {profile.primary_sport}")
-        if profile.weekly_distance_km is not None:
-            parts.append(f"Deklarowany kilometraż/tydzień: {profile.weekly_distance_km} km")
-        if profile.days_per_week is not None:
-            parts.append(f"Dostępne dni treningowe/tydzień: {profile.days_per_week}")
-        if profile.experience_years is not None:
-            parts.append(f"Staż treningowy: {profile.experience_years} lat")
-        if profile.injuries:
-            parts.append(f"Kontuzje/ograniczenia: {profile.injuries}")
-        if profile.preferences:
-            parts.append(f"Preferencje: {profile.preferences}")
-        if profile.answers_json:
-            parts.append(f"Dodatkowe informacje (JSON): {profile.answers_json}")
-
-    return "\n".join([p for p in parts if p])
-
-
-def get_data_from_db(user_id: int, days: int = 30) -> str:
-    """Pobiera dane użytkownika z bazy i formatuje do tekstu dla AI."""
-    cutoff_date = datetime.now() - timedelta(days=days)
-
-    activities = (
-        Activity.query
-        .filter(Activity.user_id == user_id, Activity.start_time >= cutoff_date)
-        .order_by(Activity.start_time.asc())
-        .all()
-    )
-
-    if not activities:
-        return "Brak treningów w tym okresie."
-
-    data_text = "HISTORIA TRENINGÓW:\n"
-    for act in activities:
-        if not act.start_time:
-            continue
-
-        date_str = act.start_time.strftime("%Y-%m-%d")
-        hr_info = f" | Śr. HR: {act.avg_hr} bpm" if act.avg_hr else ""
-
-        dist_km = (act.distance or 0) / 1000
-        dur_min = int((act.duration or 0) // 60)
-        data_text += f"- {date_str} | {act.activity_type} | {dist_km:.1f}km | {dur_min}min{hr_info}\n"
-
-        if act.notes:
-            data_text += f"  Notatka: {act.notes}\n"
-
-        if act.exercises:
-            cwiczenia_str = ", ".join(
-                [f"{e.name} ({e.sets}x{e.reps}, {e.weight}kg)" for e in act.exercises]
-            )
-            data_text += f"  Siłownia: {cwiczenia_str}\n"
-
-    return data_text
-
-
 def get_weekly_aggregates(user_id: int, weeks: int = 12) -> str:
     """Agregaty tygodniowe zamiast wysyłania całej historii do AI."""
     # bierzemy okno tygodniowe (rolling): ostatnie N tygodni licząc od poniedziałku
@@ -1094,6 +1014,28 @@ def get_profile_and_state_context(user: User) -> str:
             exp = exp.astimezone(timezone.utc).replace(tzinfo=None)
 
         return exp < now_utc
+
+    changed = False
+    active_lines = []
+    for st in active_states:
+        if is_expired(st):
+            st.is_active = False
+            changed = True
+            continue
+        active_lines.append(
+            f"- {st.kind}: {st.summary}"
+            + (f" | severity={st.severity}" if st.severity is not None else "")
+        )
+
+    if changed:
+        db.session.commit()
+
+    if active_lines:
+        lines.append("STATE:\n" + "\n".join(active_lines))
+    else:
+        lines.append("STATE: brak aktywnych wpisów.")
+
+    return "\n".join(lines)
 
 
 def set_or_refresh_injury_state(user_id: int, injuries_text: str) -> None:
@@ -2546,93 +2488,17 @@ def import_zip():
         return redirect(url_for("index"))
 
     try:
-        with zipfile.ZipFile(file) as z:
-            csv_filename = next((name for name in z.namelist() if name.endswith("activities.csv")), None)
-            if not csv_filename:
-                flash(tr("Nie znaleziono pliku activities.csv w archiwum!", "Could not find activities.csv in the archive!"))
-                return redirect(url_for("index"))
-
-            with z.open(csv_filename) as f:
-                csv_content = io.TextIOWrapper(f, encoding="utf-8")
-                reader = csv.DictReader(csv_content)
-
-                added_count = 0
-                skipped_count = 0
-
-                formats = [
-                    "%b %d, %Y, %I:%M:%S %p",
-                    "%Y-%m-%d %H:%M:%S",
-                ]
-
-                def clean_float(val):
-                    if val in (None, "", "nan"):
-                        return 0.0
-                    return float(str(val).replace(",", ""))
-
-                for row in reader:
-                    try:
-                        date_str = row.get("Activity Date", "")
-                        start_time_obj = None
-                        for fmt in formats:
-                            try:
-                                start_time_obj = datetime.strptime(date_str, fmt)
-                                break
-                            except ValueError:
-                                continue
-                        if not start_time_obj:
-                            continue
-
-                        existing = Activity.query.filter_by(user_id=current_user.id, start_time=start_time_obj).first()
-                        if existing:
-                            skipped_count += 1
-                            continue
-
-                        dist = clean_float(row.get("Distance", "0"))
-                        elapsed = clean_float(row.get("Elapsed Time", "0"))
-                        if dist < 500 and elapsed > 300:
-                            dist = dist * 1000
-
-                        moving = clean_float(row.get("Moving Time", "0"))
-                        if moving == 0:
-                            moving = elapsed
-
-                        avg_hr_val = row.get("Average Heart Rate", None)
-                        if avg_hr_val in (None, "", "nan"):
-                            avg_hr = None
-                        else:
-                            avg_hr = int(float(avg_hr_val))
-
-                        desc = row.get("Activity Description", "")
-                        if desc == "nan":
-                            desc = ""
-
-                        new_activity = Activity(
-                            user_id=current_user.id,
-                            activity_type=row.get("Activity Type", "Run"),
-                            start_time=start_time_obj,
-                            duration=int(moving),
-                            distance=dist,
-                            avg_hr=avg_hr,
-                            notes=desc,
-                        )
-                        db.session.add(new_activity)
-                        added_count += 1
-
-                    except Exception:
-                        continue
-
-                db.session.commit()
-                flash(
-                    tr(
-                        f"Sukces! Zaimportowano {added_count} treningów. Pominięto {skipped_count}.",
-                        f"Success! Imported {added_count} workouts. Skipped {skipped_count}.",
-                    )
-                )
-                try:
-                    compute_profile_defaults_from_history(current_user.id)
-                except Exception:
-                    pass
-
+        added_count, skipped_count = import_strava_zip_for_user(file, current_user.id)
+        flash(
+            tr(
+                f"Sukces! Zaimportowano {added_count} treningów. Pominięto {skipped_count}.",
+                f"Success! Imported {added_count} workouts. Skipped {skipped_count}.",
+            )
+        )
+        try:
+            compute_profile_defaults_from_history(current_user.id)
+        except Exception:
+            pass
     except Exception as e:
         app.logger.exception("ZIP import endpoint error for user %s: %s", current_user.id, e)
         flash(tr("Błąd pliku ZIP.", "ZIP file error."))
