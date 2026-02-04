@@ -91,6 +91,9 @@
                                                 data-intensity="{{ day.plan.intensity or '' }}"
                                                 data-phase="{{ day.plan.phase or '' }}"
                                                 data-goal-link="{{ (day.plan.goal_link or '') | e }}"
+                                                data-warmup="{{ (day.plan.warmup or '') | e }}"
+                                                data-main-set="{{ (day.plan.main_set or '') | e }}"
+                                                data-cooldown="{{ (day.plan.cooldown or '') | e }}"
                                                 data-workout="{{ (day.plan.workout or '') | e }}"
                                                 data-why="{{ (day.plan.why or '') | e }}"
                                                 data-details="{{ (day.plan.details or '') | e }}"
@@ -510,9 +513,15 @@
 
         if (payload.kind === 'planned') {
           const why = payload.why ? `<p><b>{{ tx('Dlaczego','Why') }}:</b> ${escapeHtml(payload.why)}</p>` : '';
-          const details = payload.details ? `<p><b>{{ tx('Szczegóły','Details') }}:</b><br>${escapeHtml(payload.details).replaceAll('\n', '<br>')}</p>` : '';
           const phase = payload.phase ? `<p><b>{{ tx('Faza','Phase') }}:</b> ${escapeHtml(payload.phase)}</p>` : '';
           const goalLink = payload.goalLink ? `<p><b>{{ tx('Powiązanie z celem','Goal link') }}:</b> ${escapeHtml(payload.goalLink)}</p>` : '';
+          const warmup = payload.warmup ? `<div class="plan-step"><b>{{ t('plan_warmup') }}</b><br>${escapeHtml(payload.warmup)}</div>` : '';
+          const mainSet = payload.mainSet ? `<div class="plan-step"><b>{{ t('plan_main') }}</b><br>${escapeHtml(payload.mainSet)}</div>` : '';
+          const cooldown = payload.cooldown ? `<div class="plan-step"><b>{{ t('plan_cooldown') }}</b><br>${escapeHtml(payload.cooldown)}</div>` : '';
+          const structured = (warmup || mainSet || cooldown) ? `<div class="plan-structured">${warmup}${mainSet}${cooldown}</div>` : '';
+          const details = (payload.details && !structured)
+            ? `<p><b>{{ tx('Szczegóły','Details') }}:</b><br>${escapeHtml(payload.details).replaceAll('\n', '<br>')}</p>`
+            : '';
           const facts = Array.isArray(payload.sourceFacts) && payload.sourceFacts.length
             ? `<p><b>{{ tx('Na podstawie','Based on') }}:</b> ${payload.sourceFacts.map((x) => escapeHtml(String(x))).join('; ')}</p>`
             : '';
@@ -522,11 +531,36 @@
             ${phase}
             ${goalLink}
             ${why}
+            ${structured}
             ${details}
             ${facts}
           `;
 
           modalActions.innerHTML = '';
+          const copyBtn = document.createElement('button');
+          copyBtn.type = 'button';
+          copyBtn.className = 'btn btn-soft btn-small';
+          copyBtn.textContent = {{ t('calendar_copy_garmin')|tojson }};
+          copyBtn.addEventListener('click', async () => {
+            const lines = [];
+            lines.push({{ tx('Trening','Workout')|tojson }} + ': ' + (payload.workout || ''));
+            if (payload.warmup) lines.push({{ t('plan_warmup')|tojson }} + ': ' + payload.warmup);
+            if (payload.mainSet) lines.push({{ t('plan_main')|tojson }} + ': ' + payload.mainSet);
+            if (payload.cooldown) lines.push({{ t('plan_cooldown')|tojson }} + ': ' + payload.cooldown);
+            if (payload.dist || payload.dur) {
+              lines.push((payload.dist ? `${payload.dist} km` : '') + ((payload.dist && payload.dur) ? ' • ' : '') + (payload.dur ? `${payload.dur} min` : ''));
+            }
+            try {
+              await navigator.clipboard.writeText(lines.filter(Boolean).join('\n'));
+              const status = document.getElementById('forecastStatus');
+              if (status) {
+                status.className = 'mini-status ok';
+                status.textContent = {{ t('calendar_copied')|tojson }};
+              }
+            } catch (_e) {}
+          });
+          modalActions.appendChild(copyBtn);
+
           const discussBtn = document.createElement('button');
           discussBtn.type = 'button';
           discussBtn.className = 'btn btn-soft btn-small';
@@ -566,6 +600,9 @@
           details: btn.dataset.details,
           phase: btn.dataset.phase,
           goalLink: btn.dataset.goalLink,
+          warmup: btn.dataset.warmup,
+          mainSet: btn.dataset.mainSet,
+          cooldown: btn.dataset.cooldown,
           dist: btn.dataset.dist,
           dur: btn.dataset.dur,
           count: btn.dataset.count,

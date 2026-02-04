@@ -1521,6 +1521,20 @@ textarea {
     background: #dce9ff;
 }
 
+.plan-structured {
+    display: grid;
+    gap: 10px;
+    margin: 12px 0;
+}
+
+.plan-step {
+    border: 1px solid #dbe3ef;
+    background: #f8fafc;
+    border-radius: 10px;
+    padding: 10px 12px;
+    line-height: 1.45;
+}
+
 /* === FLASH MESSAGES === */
 .flash-messages {
     position: fixed;

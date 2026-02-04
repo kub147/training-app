@@ -76,6 +76,11 @@ I18N = {
         "calendar_city_not_found": "Nie znaleziono miasta",
         "calendar_progress": "Realizacja tygodnia",
         "calendar_goal_missing": "Ustaw cel tygodniowy w profilu, by lepiej śledzić postęp.",
+        "calendar_copy_garmin": "Kopiuj pod Garmin",
+        "calendar_copied": "Skopiowano opis treningu",
+        "plan_warmup": "Rozgrzewka",
+        "plan_main": "Trening główny",
+        "plan_cooldown": "Schłodzenie",
         "add_title": "➕ Dodaj trening / raport",
         "tab_manual": "Ręcznie",
         "tab_checkin": "Raport",
@@ -171,6 +176,11 @@ I18N = {
         "calendar_city_not_found": "City not found",
         "calendar_progress": "Weekly completion",
         "calendar_goal_missing": "Set weekly goal in profile to better track progress.",
+        "calendar_copy_garmin": "Copy for Garmin",
+        "calendar_copied": "Workout description copied",
+        "plan_warmup": "Warm-up",
+        "plan_main": "Main set",
+        "plan_cooldown": "Cool-down",
         "add_title": "➕ Add workout / check-in",
         "tab_manual": "Manual",
         "tab_checkin": "Check-in",
@@ -659,6 +669,28 @@ def _extract_estimates_from_text(text: str | None) -> tuple[float | None, int | 
     return dist_km, dur_min
 
 
+def _split_details_sections(details: str | None) -> tuple[str | None, str | None, str | None]:
+    txt = (details or "").strip()
+    if not txt:
+        return None, None, None
+
+    def _part(pattern: str) -> str | None:
+        m = re.search(pattern, txt, re.IGNORECASE | re.DOTALL)
+        if not m:
+            return None
+        val = " ".join((m.group(1) or "").strip().split())
+        return val or None
+
+    warm = _part(
+        r'(?:rozgrzewka|warm[\s-]?up)\s*[:\-]\s*(.+?)(?=(?:\n|\r|$)\s*(?:trening\s*główny|cz[eę][śs][ćc]\s*gł[óo]wna|main(?:\s*set)?|sch[łl]odzenie|cool[\s-]?down)\s*[:\-]|$)'
+    )
+    main = _part(
+        r'(?:trening\s*główny|cz[eę][śs][ćc]\s*gł[óo]wna|main(?:\s*set)?)\s*[:\-]\s*(.+?)(?=(?:\n|\r|$)\s*(?:sch[łl]odzenie|cool[\s-]?down)\s*[:\-]|$)'
+    )
+    cool = _part(r'(?:sch[łl]odzenie|cool[\s-]?down)\s*[:\-]\s*(.+)$')
+    return warm, main, cool
+
+
 def parse_plan_html(html_content: str) -> list[dict]:
     """Parsuje zapis planu na listę dni.
 
@@ -690,6 +722,14 @@ def parse_plan_html(html_content: str) -> list[dict]:
                 intensity = (item.get("intensity") or "").strip() or None
                 phase = (item.get("phase") or "").strip() or None
                 goal_link = (item.get("goal_link") or "").strip() or None
+                warmup = (item.get("warmup") or "").strip() or None
+                main_set = (item.get("main_set") or item.get("main") or "").strip() or None
+                cooldown = (item.get("cooldown") or "").strip() or None
+                if details and (not warmup or not main_set or not cooldown):
+                    sw, sm, sc = _split_details_sections(details)
+                    warmup = warmup or sw
+                    main_set = main_set or sm
+                    cooldown = cooldown or sc
                 sport = (item.get("activity_type") or item.get("sport") or "").strip().lower()
                 sport = sport if sport else classify_sport((workout or "") + " " + (why or ""))
                 source_facts = item.get("source_facts") or []
@@ -713,6 +753,9 @@ def parse_plan_html(html_content: str) -> list[dict]:
                     "intensity": intensity,
                     "phase": phase,
                     "goal_link": goal_link,
+                    "warmup": warmup,
+                    "main_set": main_set,
+                    "cooldown": cooldown,
                     "distance_km": dist_km,
                     "duration_min": dur_min,
                     "source_facts": source_facts if isinstance(source_facts, list) else [],
@@ -745,6 +788,9 @@ def parse_plan_html(html_content: str) -> list[dict]:
             "intensity": None,
             "phase": None,
             "goal_link": None,
+            "warmup": None,
+            "main_set": None,
+            "cooldown": None,
             "distance_km": dist_km,
             "duration_min": dur_min,
             "source_facts": [],
@@ -789,6 +835,9 @@ def parse_plan_html(html_content: str) -> list[dict]:
             "intensity": None,
             "phase": None,
             "goal_link": None,
+            "warmup": None,
+            "main_set": None,
+            "cooldown": None,
             "distance_km": dist_km,
             "duration_min": dur_min,
             "source_facts": [],
@@ -2014,6 +2063,9 @@ def index():
             "intensity": (item.get("intensity") or "").lower(),
             "phase": item.get("phase") or "",
             "goal_link": item.get("goal_link") or "",
+            "warmup": item.get("warmup") or "",
+            "main_set": item.get("main_set") or "",
+            "cooldown": item.get("cooldown") or "",
             "distance_km": item.get("distance_km"),
             "duration_min": item.get("duration_min"),
             "source_facts": item.get("source_facts") or [],
@@ -2378,6 +2430,9 @@ FORMAT (BARDZO WAŻNE):
         "activity_type": "run|ride|swim|weighttraining|yoga|walk|other",
         "workout": "konkretna jednostka z czasem/dystansem",
         "details": "dokładny opis: rozgrzewka, część główna, schłodzenie",
+        "warmup": "krótko: czas + tempo/tętno + dystans jeśli dotyczy",
+        "main_set": "krótko: główna część treningu z parametrami",
+        "cooldown": "krótko: schłodzenie z czasem/zakresem",
         "distance_km": number|null,
         "duration_min": number|null,
         "intensity": "easy|moderate|hard",
@@ -2390,6 +2445,7 @@ FORMAT (BARDZO WAŻNE):
   }}
 - Dokładnie {days_to_generate} dni.
 - {language_hint}
+- Każdy dzień MUSI mieć: warmup, main_set, cooldown (bez pustych pól).
 """
 
     try:
@@ -2418,6 +2474,27 @@ FORMAT (BARDZO WAŻNE):
                 )
             if not item.get("goal_link"):
                 item["goal_link"] = build_goal_link_text(profile_obj, day_date)
+            warmup = (item.get("warmup") or "").strip()
+            main_set = (item.get("main_set") or "").strip()
+            cooldown = (item.get("cooldown") or "").strip()
+            details = (item.get("details") or "").strip()
+            if details and (not warmup or not main_set or not cooldown):
+                sw, sm, sc = _split_details_sections(details)
+                warmup = warmup or (sw or "")
+                main_set = main_set or (sm or "")
+                cooldown = cooldown or (sc or "")
+            item["warmup"] = warmup
+            item["main_set"] = main_set
+            item["cooldown"] = cooldown
+            if not details:
+                parts = []
+                if warmup:
+                    parts.append(f"{tr('Rozgrzewka', 'Warm-up')}: {warmup}")
+                if main_set:
+                    parts.append(f"{tr('Trening główny', 'Main set')}: {main_set}")
+                if cooldown:
+                    parts.append(f"{tr('Schłodzenie', 'Cool-down')}: {cooldown}")
+                item["details"] = "\n".join(parts)
         text = json.dumps({"days": days}, ensure_ascii=False)
 
         # Zapisz jako aktywny plan (wyłącz poprzedni)
