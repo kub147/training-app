@@ -688,6 +688,8 @@ def parse_plan_html(html_content: str) -> list[dict]:
                 why = (item.get("why") or "").strip() or None
                 details = (item.get("details") or "").strip() or None
                 intensity = (item.get("intensity") or "").strip() or None
+                phase = (item.get("phase") or "").strip() or None
+                goal_link = (item.get("goal_link") or "").strip() or None
                 sport = (item.get("activity_type") or item.get("sport") or "").strip().lower()
                 sport = sport if sport else classify_sport((workout or "") + " " + (why or ""))
                 source_facts = item.get("source_facts") or []
@@ -702,17 +704,15 @@ def parse_plan_html(html_content: str) -> list[dict]:
                     dur_min = int(round(float(dur_min))) if dur_min is not None else parsed_dur
                 except Exception:
                     dur_min = parsed_dur
-                why_with_facts = why
-                if isinstance(source_facts, list) and source_facts:
-                    why_with_facts = (why or "")
-                    why_with_facts += " | " + tr("Na podstawie:", "Based on:") + " " + "; ".join([str(x) for x in source_facts[:3]])
                 out.append({
                     "date": date_str,
                     "workout": workout,
-                    "why": why_with_facts,
+                    "why": why,
                     "sport": sport,
                     "details": details,
                     "intensity": intensity,
+                    "phase": phase,
+                    "goal_link": goal_link,
                     "distance_km": dist_km,
                     "duration_min": dur_min,
                     "source_facts": source_facts if isinstance(source_facts, list) else [],
@@ -743,6 +743,8 @@ def parse_plan_html(html_content: str) -> list[dict]:
             "sport": sport,
             "details": None,
             "intensity": None,
+            "phase": None,
+            "goal_link": None,
             "distance_km": dist_km,
             "duration_min": dur_min,
             "source_facts": [],
@@ -785,6 +787,8 @@ def parse_plan_html(html_content: str) -> list[dict]:
             "sport": sport,
             "details": None,
             "intensity": None,
+            "phase": None,
+            "goal_link": None,
             "distance_km": dist_km,
             "duration_min": dur_min,
             "source_facts": [],
@@ -1002,6 +1006,77 @@ def get_recent_checkins_summary(user_id: int, days: int = 14, limit: int = 30) -
     return "\n".join(out)
 
 
+def get_checkin_signal_snapshot(user_id: int, days: int = 14, limit: int = 30) -> dict:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = (
+        TrainingCheckin.query
+        .filter(TrainingCheckin.user_id == user_id, TrainingCheckin.created_at >= cutoff)
+        .order_by(TrainingCheckin.created_at.asc())
+        .limit(limit)
+        .all()
+    )
+    if not rows:
+        return {
+            "status": "no_data",
+            "window_days": days,
+            "fatigue": "unknown",
+            "pain": "unknown",
+            "readiness": "unknown",
+            "latest_notes": [],
+        }
+
+    fatigue_score = 0
+    pain_score = 0
+    readiness_score = 0
+
+    fatigue_bad = ["zmęcz", "zmec", "fatigue", "tired", "brak sił", "brak sil", "wyczerp", "zajech"]
+    fatigue_good = ["lekko", "śwież", "swiez", "easy", "dobrze", "dobry trening"]
+    pain_bad = ["ból", "bol", "pain", "kontuz", "injury", "kolano", "achilles", "shin", "piszczel", "back pain"]
+    readiness_good = ["gotow", "ready", "moc", "energia", "energ", "forma", "strong"]
+    readiness_bad = ["słabo", "slabo", "zajech", "przemęcz", "przemecz", "bez energii", "masakra"]
+
+    latest_notes = []
+    for row in rows:
+        note = (row.notes or "").strip()
+        if not note:
+            continue
+        t = note.lower()
+        if any(k in t for k in fatigue_bad):
+            fatigue_score += 1
+        if any(k in t for k in fatigue_good):
+            fatigue_score -= 1
+        if any(k in t for k in pain_bad):
+            pain_score += 2
+        if any(k in t for k in readiness_good):
+            readiness_score += 1
+        if any(k in t for k in readiness_bad):
+            readiness_score -= 1
+        latest_notes.append(note[:160])
+
+    def _level(score: int, *, low: int = 1, high: int = 3) -> str:
+        if score >= high:
+            return "high"
+        if score >= low:
+            return "medium"
+        return "low"
+
+    if readiness_score >= 2:
+        readiness = "up"
+    elif readiness_score <= -2:
+        readiness = "down"
+    else:
+        readiness = "flat"
+
+    return {
+        "status": "ok",
+        "window_days": days,
+        "fatigue": _level(max(0, fatigue_score)),
+        "pain": _level(max(0, pain_score), low=1, high=2),
+        "readiness": readiness,
+        "latest_notes": latest_notes[-3:],
+    }
+
+
 def get_recent_weekly_volume_km(user_id: int, weeks: int = 4) -> dict:
     """Returns last/previous/average weekly distance in km for recent window."""
     today = datetime.now().date()
@@ -1102,6 +1177,33 @@ def build_goal_progress(user_id: int, profile_obj: UserProfile | None, range_day
         "completion_pct": completion_pct,
         "weekly_goal": weekly_goal,
     }
+
+
+def get_training_phase_for_day(target_date: date | None, day_date: date) -> str:
+    if not target_date:
+        return "base"
+    days_left = (target_date - day_date).days
+    if days_left < 0:
+        return "post-race"
+    if days_left <= 14:
+        return "taper"
+    if days_left <= 56:
+        return "build"
+    return "base"
+
+
+def build_goal_link_text(profile_obj: UserProfile | None, day_date: date) -> str:
+    event = (profile_obj.target_event if profile_obj and profile_obj.target_event else tr("cel treningowy", "training goal"))
+    if profile_obj and profile_obj.target_date:
+        days_left = max(0, (profile_obj.target_date - day_date).days)
+        return tr(
+            f"Wspiera przygotowanie do: {event} (do startu: {days_left} dni).",
+            f"Supports preparation for: {event} (days to event: {days_left}).",
+        )
+    return tr(
+        f"Wspiera realizację celu: {event}.",
+        f"Supports progress toward: {event}.",
+    )
 
 
 def get_profile_and_state_context(user: User) -> str:
@@ -1910,6 +2012,8 @@ def index():
             "why": item.get("why") or "",
             "details": item.get("details") or "",
             "intensity": (item.get("intensity") or "").lower(),
+            "phase": item.get("phase") or "",
+            "goal_link": item.get("goal_link") or "",
             "distance_km": item.get("distance_km"),
             "duration_min": item.get("duration_min"),
             "source_facts": item.get("source_facts") or [],
@@ -2073,7 +2177,7 @@ def chat_with_coach():
     recent_messages = (
         ChatMessage.query
         .filter_by(user_id=current_user.id)
-        .order_by(ChatMessage.timestamp.asc())
+        .order_by(ChatMessage.timestamp.desc())
         .limit(20)
         .all()
     )
@@ -2085,6 +2189,13 @@ def chat_with_coach():
     weekly_agg = get_weekly_aggregates(user_id=current_user.id, weeks=12)
     recent_details = get_recent_activity_details(user_id=current_user.id, days=21)
     recent_checkins = get_recent_checkins_summary(user_id=current_user.id, days=14)
+    checkin_signals = get_checkin_signal_snapshot(user_id=current_user.id, days=14)
+    goal_progress = build_goal_progress(
+        user_id=current_user.id,
+        profile_obj=UserProfile.query.filter_by(user_id=current_user.id).first(),
+        range_days=30,
+        stats=compute_stats(current_user.id, 30),
+    )
 
     today_iso = datetime.now().strftime("%Y-%m-%d")
 
@@ -2094,6 +2205,8 @@ def chat_with_coach():
         weekly_agg=weekly_agg,
         recent_details=recent_details,
         recent_checkins=recent_checkins,
+        checkin_signals=json.dumps(checkin_signals, ensure_ascii=False),
+        goal_context=json.dumps(goal_progress, ensure_ascii=False) if goal_progress else "Brak aktywnego celu z datą.",
         chat_history=chat_history_text,
         user_msg=user_msg,
     )
@@ -2124,6 +2237,7 @@ def generate_forecast():
     weekly_agg = get_weekly_aggregates(user_id=current_user.id, weeks=12)
     recent_details = get_recent_activity_details(user_id=current_user.id, days=21)
     recent_checkins = get_recent_checkins_summary(user_id=current_user.id, days=14)
+    checkin_signals = get_checkin_signal_snapshot(user_id=current_user.id, days=14)
     goal_progress = build_goal_progress(
         user_id=current_user.id,
         profile_obj=profile_obj,
@@ -2249,6 +2363,9 @@ WAŻNE:
 
 {recent_checkins}
 
+SYGNAŁY CHECK-IN:
+{json.dumps(checkin_signals, ensure_ascii=False)}
+
 KONTEKST CELU:
 {json.dumps(goal_progress, ensure_ascii=False) if goal_progress else "Brak aktywnego celu z datą."}
 
@@ -2264,6 +2381,8 @@ FORMAT (BARDZO WAŻNE):
         "distance_km": number|null,
         "duration_min": number|null,
         "intensity": "easy|moderate|hard",
+        "phase": "base|build|taper|post-race",
+        "goal_link": "jedno zdanie jak ten trening wspiera cel użytkownika",
         "why": "krótkie uzasadnienie",
         "source_facts": ["3 krótkie fakty użyte do decyzji"]
       }}
@@ -2290,7 +2409,15 @@ FORMAT (BARDZO WAŻNE):
         days = _apply_plan_rules(days)[:days_to_generate]
         # Normalizuj daty do kolejnych dni od dziś, żeby kalendarz miał stabilny układ.
         for idx, item in enumerate(days):
-            item["date"] = (datetime.now() + timedelta(days=idx)).strftime("%Y-%m-%d")
+            day_date = (datetime.now() + timedelta(days=idx)).date()
+            item["date"] = day_date.strftime("%Y-%m-%d")
+            if not item.get("phase"):
+                item["phase"] = get_training_phase_for_day(
+                    profile_obj.target_date if profile_obj else None,
+                    day_date,
+                )
+            if not item.get("goal_link"):
+                item["goal_link"] = build_goal_link_text(profile_obj, day_date)
         text = json.dumps({"days": days}, ensure_ascii=False)
 
         # Zapisz jako aktywny plan (wyłącz poprzedni)

@@ -89,6 +89,8 @@
                                                 data-date="{{ day.date }}"
                                                 data-sport="{{ day.sport }}"
                                                 data-intensity="{{ day.plan.intensity or '' }}"
+                                                data-phase="{{ day.plan.phase or '' }}"
+                                                data-goal-link="{{ (day.plan.goal_link or '') | e }}"
                                                 data-workout="{{ (day.plan.workout or '') | e }}"
                                                 data-why="{{ (day.plan.why or '') | e }}"
                                                 data-details="{{ (day.plan.details or '') | e }}"
@@ -502,18 +504,23 @@
       function openModal(payload) {
         modal.classList.add('open');
         modal.setAttribute('aria-hidden', 'false');
-        modalTitle.textContent = `${{ t('roadmap_details')|tojson }}: ${payload.date || ''}`;
+        const detailsLabel = {{ t('roadmap_details')|tojson }};
+        modalTitle.textContent = detailsLabel + ': ' + (payload.date || '');
         modalMeta.textContent = payload.kind === 'planned' ? {{ t('calendar_planned')|tojson }} : {{ t('calendar_done')|tojson }};
 
         if (payload.kind === 'planned') {
           const why = payload.why ? `<p><b>{{ tx('Dlaczego','Why') }}:</b> ${escapeHtml(payload.why)}</p>` : '';
           const details = payload.details ? `<p><b>{{ tx('Szczegóły','Details') }}:</b><br>${escapeHtml(payload.details).replaceAll('\n', '<br>')}</p>` : '';
+          const phase = payload.phase ? `<p><b>{{ tx('Faza','Phase') }}:</b> ${escapeHtml(payload.phase)}</p>` : '';
+          const goalLink = payload.goalLink ? `<p><b>{{ tx('Powiązanie z celem','Goal link') }}:</b> ${escapeHtml(payload.goalLink)}</p>` : '';
           const facts = Array.isArray(payload.sourceFacts) && payload.sourceFacts.length
             ? `<p><b>{{ tx('Na podstawie','Based on') }}:</b> ${payload.sourceFacts.map((x) => escapeHtml(String(x))).join('; ')}</p>`
             : '';
           modalBody.innerHTML = `
             <p><b>{{ tx('Trening','Workout') }}:</b> ${escapeHtml(payload.workout || {{ t('label_training')|tojson }})}</p>
             <p>${normalizeNumber(payload.dist, ' km')}${payload.dist && payload.dur ? ' • ' : ''}${normalizeNumber(payload.dur, ' min')}</p>
+            ${phase}
+            ${goalLink}
             ${why}
             ${details}
             ${facts}
@@ -557,6 +564,8 @@
           workout: btn.dataset.workout,
           why: btn.dataset.why,
           details: btn.dataset.details,
+          phase: btn.dataset.phase,
+          goalLink: btn.dataset.goalLink,
           dist: btn.dataset.dist,
           dur: btn.dataset.dur,
           count: btn.dataset.count,
@@ -615,26 +624,10 @@
           const toDate = targetCol.dataset.date;
           if (!toDate || toDate === fromDate) return;
 
-          const targetItem = zone.querySelector('.planned-item');
-          const sourceZone = dragItem.closest('.week-col-body');
-          const placeholder = zone.querySelector('.week-empty');
-          if (placeholder) placeholder.remove();
-
           const ok = await movePlanDay(fromDate, toDate);
           if (!ok) return;
-
-          if (targetItem && sourceZone) {
-            sourceZone.appendChild(targetItem);
-            targetItem.dataset.date = fromDate;
-            sourceZone.classList.remove('is-drop-hover');
-          } else if (sourceZone) {
-            sourceZone.innerHTML = '<div class="week-empty">' + {{ t('calendar_empty')|tojson }} + '</div>';
-          }
-
-          zone.innerHTML = '';
-          zone.appendChild(dragItem);
-          dragItem.dataset.date = toDate;
-          checkHardDayConflicts();
+          // Najbezpieczniej po zapisie odświeżyć widok z backendu (eliminuje "znikające" kafelki).
+          window.location.reload();
         });
       });
     }

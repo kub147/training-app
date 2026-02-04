@@ -1853,14 +1853,41 @@ textarea {
     }
 
     .week-calendar {
-        display: flex;
-        gap: 10px;
-        padding-bottom: 10px;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 12px;
+        overflow-x: visible;
+        padding-bottom: 0;
     }
 
     .week-col {
-        min-width: 230px;
-        max-width: 260px;
+        min-width: 0;
+        max-width: none;
+        min-height: 0;
+    }
+
+    .week-col-head {
+        padding: 12px 12px 8px;
+    }
+
+    .week-col-body {
+        padding: 10px;
+    }
+
+    .week-item {
+        padding: 12px;
+    }
+
+    .week-item-title {
+        font-size: 14px;
+    }
+
+    .week-item-sub {
+        font-size: 12px;
+    }
+
+    .day-weather {
+        font-size: 20px;
     }
 
     .week-summary-grid {
@@ -1976,6 +2003,11 @@ textarea {
         overflow-y: auto;
     }
 
+    .modal.modal-wide {
+        width: 100% !important;
+        max-height: 90vh;
+    }
+
     .modal-backdrop {
         align-items: flex-end;
         padding: 0 !important;
@@ -2011,7 +2043,13 @@ textarea {
     }
 
     .week-calendar {
-        grid-template-columns: repeat(4, minmax(170px, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        overflow-x: visible;
+    }
+
+    .week-col {
+        min-width: 0;
+        max-width: none;
     }
 
     .week-summary-grid {

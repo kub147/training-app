@@ -45,6 +45,8 @@ def build_chat_prompt(
     weekly_agg: str,
     recent_details: str,
     recent_checkins: str,
+    checkin_signals: str,
+    goal_context: str,
     chat_history: str,
     user_msg: str,
 ) -> str:
@@ -61,6 +63,12 @@ KONTEKST (warstwowo, nie pełna baza):
 
 {recent_checkins}
 
+SYGNAŁY CHECK-IN (JSON):
+{checkin_signals}
+
+KONTEKST CELU (JSON):
+{goal_context}
+
 {chat_history}
 
 NOWE PYTANIE:
@@ -71,4 +79,11 @@ ZASADY ODPOWIEDZI:
 - Jeśli potrzebujesz doprecyzowania (np. ból, dostępność), zadaj 1-2 pytania.
 - Używaj HTML do formatowania (<b>, <br>, <ul><li>). Bez Markdown.
 - Każdą rekomendację uzasadnij: <b>Dlaczego</b> + <b>Na podstawie czego</b> (profil, ostatnie treningi, check-iny).
+- Trzymaj się stałego kontraktu odpowiedzi (zawsze, w tej kolejności):
+  1) <b>Plan</b> (maks 3 krótkie punkty),
+  2) <b>Faza przygotowania</b> (base/build/taper/post-race + 1 zdanie),
+  3) <b>Dlaczego</b>,
+  4) <b>Na podstawie czego</b> (minimum 3 fakty w <ul><li>),
+  5) <b>Ryzyko / uwaga</b> (1 krótki punkt),
+  6) <b>Pytanie kontrolne</b> (dokładnie 1 pytanie).
 """
