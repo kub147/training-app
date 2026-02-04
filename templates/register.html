@@ -27,14 +27,14 @@
             {% endwith %}
 
             <div class="info-box">
-                <div class="info-title">📦 {{ tx('Skąd wziąć ZIP ze Stravy?','Where to get a Strava ZIP?') }}</div>
+                <div class="info-title">📦 {{ tx('Masz ZIP ze Stravy? (opcjonalnie)','Have a Strava ZIP? (optional)') }}</div>
                 <ol class="info-list">
                     <li>{{ tx('Wejdź na ustawienia konta:','Go to account settings:') }} <code>strava.com/account</code></li>
                     <li>{{ tx('Przejdź do sekcji pobierania danych i wybierz','Go to data export and select') }} <b>{{ tx('Request your archive','Request your archive') }}</b></li>
                     <li>{{ tx('Strava wyśle link do ZIP-a na email. Pobierz ZIP i dodaj go poniżej.','Strava will email you a ZIP link. Download it and upload below.') }}</li>
                 </ol>
                 <div class="help-text">
-                    {{ tx('Bezpośrednia strona:','Direct page:') }} <a href="https://www.strava.com/athlete/delete_your_account" target="_blank" rel="noopener noreferrer">{{ tx('Strava – pobierz lub usuń konto','Strava - download or delete your account') }}</a>
+                    {{ tx('Możesz pominąć ten krok i dodać ZIP później w Profilu.','You can skip this and import ZIP later from Profile.') }}
                 </div>
             </div>
 
@@ -70,9 +70,9 @@
                 </div>
 
                 <div class="field">
-                    <label>{{ tx('Archiwum Strava (ZIP) *','Strava archive (ZIP) *') }}</label>
-                    <input type="file" name="strava_zip" accept=".zip" required>
-                    <div class="help-text">{{ tx('Plik typu','File like') }} <code>export_....zip</code>. {{ tx('Import wykonuje się automatycznie.','Import runs automatically.') }}</div>
+                    <label>{{ tx('Archiwum Strava (ZIP, opcjonalnie)','Strava archive (ZIP, optional)') }}</label>
+                    <input type="file" name="strava_zip" accept=".zip">
+                    <div class="help-text">{{ tx('Plik typu','File like') }} <code>export_....zip</code>. {{ tx('Jeśli dodasz plik, import wykona się automatycznie.','If provided, import runs automatically.') }}</div>
                 </div>
 
                 <div class="actions">

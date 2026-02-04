@@ -14,7 +14,7 @@
 <div class="container">
     <header>
         <div class="header-row">
-            <h1>🧠 {{ tx('Uzupełnij profil (wymagane)','Complete profile (required)') }}</h1>
+            <h1>🧠 {{ tx('Uzupełnij profil','Complete profile') }}</h1>
         </div>
         <div class="header-actions">
                             {% include "_theme_toggle.html" %}
@@ -23,7 +23,7 @@
     </header>
 
     <p class="page-sub">
-        {{ tx('To jest jednorazowy krok po rejestracji. Pytania są bardziej „otwarte” — model trenera bierze pod uwagę nie tylko liczby, ale i kontekst.','This is a one-time post-registration step. Questions are more open-ended — the coach model uses not only numbers but context too.') }}
+        {{ tx('To jest pierwszy krok po rejestracji. Pytania są bardziej „otwarte” — model trenera bierze pod uwagę nie tylko liczby, ale i kontekst.','This is the first step after registration. Questions are more open-ended — the coach model uses not only numbers but context too.') }}
         {{ tx('Dane możesz później edytować w zakładce','You can edit this data later in') }} <b>{{ tx('Profil','Profile') }}</b>.
     </p>
 
@@ -42,17 +42,17 @@
 
             <div class="field">
                 <label>{{ tx('1) Jakie dyscypliny trenujesz? (np. run, ride, swim, gym)','1) Which disciplines do you train? (e.g. run, ride, swim, gym)') }}</label>
-                <input type="text" name="primary_sports" placeholder="{{ tx('np. run, gym','e.g. run, gym') }}" value="{{ profile.primary_sports or '' }}" required>
+                <input type="text" name="primary_sports" placeholder="{{ tx('np. run, gym','e.g. run, gym') }}" value="{{ profile.primary_sports or '' }}">
             </div>
 
             <div class="form-row">
                 <div class="field">
                     <label>{{ tx('2) Ile czasu realnie masz tygodniowo? (h)','2) How much time do you realistically have weekly? (h)') }}</label>
-                    <input type="number" step="0.5" min="0" name="weekly_time_hours" value="{{ profile.weekly_time_hours if profile.weekly_time_hours is not none else '' }}" placeholder="{{ tx('np. 5','e.g. 5') }}" required>
+                    <input type="number" step="0.5" min="0" name="weekly_time_hours" value="{{ profile.weekly_time_hours if profile.weekly_time_hours is not none else '' }}" placeholder="{{ tx('np. 5','e.g. 5') }}">
                 </div>
                 <div class="field">
                     <label>{{ tx('3) Ile dni w tygodniu możesz trenować?','3) How many days per week can you train?') }}</label>
-                    <input type="number" min="1" max="7" name="days_per_week" value="{{ profile.days_per_week if profile.days_per_week is not none else '' }}" placeholder="{{ tx('np. 4','e.g. 4') }}" required>
+                    <input type="number" min="1" max="7" name="days_per_week" value="{{ profile.days_per_week if profile.days_per_week is not none else '' }}" placeholder="{{ tx('np. 4','e.g. 4') }}">
                 </div>
             </div>
 
@@ -106,7 +106,7 @@
             <div class="section-title">{{ tx('CELE (dokąd zmierzasz)','GOALS (where you are heading)') }}</div>
             <div class="field">
                 <label>{{ tx('6) Jaki jest Twój główny cel? (napisz normalnie)','6) What is your main goal? (write naturally)') }}</label>
-                <textarea name="goals_text" required>{{ profile.goals_text or '' }}</textarea>
+                <textarea class="textarea-lg" name="goals_text">{{ profile.goals_text or '' }}</textarea>
             </div>
             <div class="form-row">
                 <div class="field">
@@ -124,11 +124,11 @@
             <div class="section-title">{{ tx('Preferencje i ograniczenia','Preferences and constraints') }}</div>
             <div class="field">
                 <label>{{ tx('9) Co lubisz / czego nie lubisz w treningu?','9) What do you like / dislike in training?') }}</label>
-                <textarea name="preferences_text">{{ profile.preferences_text or '' }}</textarea>
+                <textarea class="textarea-lg" name="preferences_text">{{ profile.preferences_text or '' }}</textarea>
             </div>
             <div class="field">
                 <label>{{ tx('10) Ograniczenia (czas, sprzęt, praca, dojazdy)','10) Constraints (time, equipment, work, commute)') }}</label>
-                <textarea name="constraints_text">{{ profile.constraints_text or '' }}</textarea>
+                <textarea class="textarea-lg" name="constraints_text">{{ profile.constraints_text or '' }}</textarea>
             </div>
         </div>
 
@@ -138,13 +138,13 @@
 
             <div class="field">
                 <label>{{ tx('11) Czy masz teraz uraz / ból / ograniczenie? (opcjonalnie)','11) Do you currently have an injury / pain / limitation? (optional)') }}</label>
-                <textarea name="injuries_text" placeholder="{{ tx('np. lekki ból kolana od tygodnia','e.g. mild knee pain for a week') }}"></textarea>
+                <textarea class="textarea-lg" name="injuries_text" placeholder="{{ tx('np. lekki ból kolana od tygodnia','e.g. mild knee pain for a week') }}"></textarea>
             </div>
 
             <div class="field dictation-wrap">
                 <label>{{ tx('12) Krótki kontekst (może być głosowo) — co jest dla Ciebie ważne?','12) Short context (voice allowed) — what matters most to you?') }}</label>
                 <button type="button" class="mic-btn" data-target="context">{{ tx('🎤 Mów','🎤 Speak') }}</button>
-                <textarea id="context" name="experience_text" placeholder="{{ tx('Np. jak Ci się trenuje, co Cię męczy, co chcesz poprawić...','E.g. how training feels, what tires you, what you want to improve...') }}">{{ profile.experience_text or '' }}</textarea>
+                <textarea class="textarea-lg" id="context" name="context_text" placeholder="{{ tx('Np. jak Ci się trenuje, co Cię męczy, co chcesz poprawić...','E.g. how training feels, what tires you, what you want to improve...') }}"></textarea>
                 <div class="help-text">{{ tx('Wspierane w Chrome/Edge (Web Speech API). Jeśli nie działa, wpisz ręcznie.','Supported in Chrome/Edge (Web Speech API). If unavailable, type manually.') }}</div>
             </div>
         </div>

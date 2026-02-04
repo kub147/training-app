@@ -866,31 +866,43 @@ def parse_plan_html(html_content: str) -> list[dict]:
 
 
 def compute_profile_defaults_from_history(user_id: int) -> None:
-    """Wypełnia część profilu liczbami wyliczonymi z historii (ZIP), jeżeli user tego nie podał."""
+    """Auto-uzupełnia profil po imporcie historii.
+
+    Priorytet:
+    - ostatnie 3 tygodnie (bardziej aktualny poziom),
+    - fallback: ostatnie 12 tygodni, gdy danych jest mało.
+    """
     profile = UserProfile.query.filter_by(user_id=user_id).first()
     if not profile:
         profile = UserProfile(user_id=user_id)
         db.session.add(profile)
         db.session.commit()
 
-    # weź ostatnie 12 tygodni
-    cutoff = datetime.now() - timedelta(days=84)
-    acts = (
-        Activity.query
-        .filter(Activity.user_id == user_id, Activity.start_time >= cutoff)
-        .all()
+    now = datetime.now()
+    recent_acts = _load_user_activities_with_fallback(
+        user_id=user_id,
+        start=now - timedelta(days=21),
+        order_asc=True,
     )
+    acts = recent_acts
+    if len(acts) < 3:
+        acts = _load_user_activities_with_fallback(
+            user_id=user_id,
+            start=now - timedelta(days=84),
+            order_asc=True,
+        )
     if not acts:
         return
 
     # top sporty
     counts = {}
     for a in acts:
-        counts[a.activity_type] = counts.get(a.activity_type, 0) + 1
+        key = (a.activity_type or "other").lower()
+        counts[key] = counts.get(key, 0) + 1
     top = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:4]
     top_sports = ",".join([t[0] for t in top])
 
-    # tygodniowe agregaty: dystans (km) i czas (h) + dni aktywne
+    # tygodniowe agregaty: dystans (km), czas (h), dni aktywne, liczba treningów
     # grupujemy po tygodniu (poniedziałek)
     buckets = {}
     for a in acts:
@@ -899,12 +911,13 @@ def compute_profile_defaults_from_history(user_id: int) -> None:
             continue
         d = start_dt.date()
         week_start = d - timedelta(days=d.weekday())
-        b = buckets.setdefault(week_start, {"dist_km": 0.0, "dur_h": 0.0, "days": set()})
+        b = buckets.setdefault(week_start, {"dist_km": 0.0, "dur_h": 0.0, "days": set(), "count": 0})
         if a.distance:
             b["dist_km"] += (a.distance / 1000.0)
         if a.duration:
             b["dur_h"] += (a.duration / 3600.0)
         b["days"].add(d)
+        b["count"] += 1
 
     weeks = list(buckets.values())
     if not weeks:
@@ -913,6 +926,7 @@ def compute_profile_defaults_from_history(user_id: int) -> None:
     avg_dist = sum(w["dist_km"] for w in weeks) / len(weeks)
     avg_dur = sum(w["dur_h"] for w in weeks) / len(weeks)
     avg_days = sum(len(w["days"]) for w in weeks) / len(weeks)
+    avg_count = sum(w["count"] for w in weeks) / len(weeks)
 
     changed = False
     if profile.primary_sports in (None, "") and top_sports:
@@ -927,6 +941,9 @@ def compute_profile_defaults_from_history(user_id: int) -> None:
     if profile.days_per_week is None and avg_days > 0:
         profile.days_per_week = int(round(avg_days))
         changed = True
+    if profile.weekly_goal_workouts is None and avg_count > 0:
+        profile.weekly_goal_workouts = max(1, int(round(avg_count)))
+        changed = True
 
     if changed:
         profile.updated_at = datetime.now(timezone.utc)
@@ -937,7 +954,7 @@ def compute_profile_defaults_from_history(user_id: int) -> None:
 
 @app.before_request
 def enforce_onboarding():
-    """Wymusza uzupełnienie ankiety przed wejściem na dashboard i inne widoki."""
+    """Ustawienia języka i miękkie przypomnienie o onboardingu (bez twardego blokowania)."""
     lang = request.args.get("lang")
     if lang in ("pl", "en"):
         session["lang"] = lang
@@ -948,28 +965,7 @@ def enforce_onboarding():
     if session.get("lang") not in ("pl", "en"):
         session["lang"] = (getattr(current_user, "preferred_lang", None) or "pl")
 
-    # endpoint może być None (np. statyczne pliki) — wtedy nie blokujemy
-    endpoint = request.endpoint or ""
-
-    allowed_endpoints = {
-        "login",
-        "register",
-        "logout",
-        "onboarding",
-        "static",
-    }
-
-    # Dopuszczamy też requesty do API czatu/forecast, ale dopiero po onboardingu
-    if endpoint.startswith("static"):
-        return
-
-    if current_user.onboarding_completed:
-        return
-
-    # jeśli użytkownik jeszcze nie przeszedł onboardingu, to poza dozwolonymi endpointami
-    # przekierowujemy do /onboarding
-    if endpoint not in allowed_endpoints:
-        return redirect(url_for("onboarding"))
+    return
 
 
 def get_weekly_aggregates(user_id: int, weeks: int = 12) -> str:
@@ -1592,10 +1588,6 @@ def register():
             flash(tr("Email i hasło są wymagane.", "Email and password are required."))
             return redirect(url_for("register"))
 
-        if not zip_file or not getattr(zip_file, "filename", ""):
-            flash(tr("Dodaj plik ZIP z archiwum Stravy, żeby rozpocząć.", "Add a Strava ZIP archive file to start."))
-            return redirect(url_for("register"))
-
         if User.query.filter_by(email=email).first():
             flash(tr("Taki email już istnieje. Zaloguj się.", "This email already exists. Please sign in."))
             return redirect(url_for("login"))
@@ -1615,27 +1607,36 @@ def register():
         db.session.commit()
 
         login_user(user)
+        session["profile_prompt_seen"] = False
 
-        # Import ZIP od razu przy rejestracji
-        try:
-            added, skipped = import_strava_zip_for_user(zip_file, user.id)
-            compute_profile_defaults_from_history(user.id)
+        # ZIP jest opcjonalny podczas rejestracji.
+        if zip_file and getattr(zip_file, "filename", ""):
+            try:
+                added, skipped = import_strava_zip_for_user(zip_file, user.id)
+                compute_profile_defaults_from_history(user.id)
+                flash(
+                    tr(
+                        f"Konto utworzone. ZIP zaimportowany: {added} aktywności (pominięto {skipped} duplikatów).",
+                        f"Account created. ZIP imported: {added} activities (skipped {skipped} duplicates).",
+                    )
+                )
+            except Exception as e:
+                app.logger.exception("ZIP import failed during registration: %s", e)
+                flash(
+                    tr(
+                        "Konto utworzone, ale import ZIP się nie udał.",
+                        "Account created, but ZIP import failed.",
+                    )
+                )
+        else:
             flash(
                 tr(
-                    f"Konto utworzone. Zaimportowano {added} aktywności (pominięto {skipped} duplikatów).",
-                    f"Account created. Imported {added} activities (skipped {skipped} duplicates).",
-                )
-            )
-        except Exception as e:
-            app.logger.exception("ZIP import failed during registration: %s", e)
-            flash(
-                tr(
-                    "Konto utworzone, ale import ZIP się nie udał.",
-                    "Account created, but ZIP import failed.",
+                    "Konto utworzone. Możesz od razu zacząć i uzupełnić profil później.",
+                    "Account created. You can start now and complete your profile later.",
                 )
             )
 
-        return redirect(url_for("onboarding"))
+        return redirect(url_for("index"))
 
     return render_template("register.html")
 
@@ -1656,6 +1657,10 @@ def login():
 
         login_user(user)
         session["lang"] = (getattr(user, "preferred_lang", None) or "pl")
+        if user.onboarding_completed:
+            session["profile_prompt_seen"] = True
+        else:
+            session.setdefault("profile_prompt_seen", False)
         return redirect(url_for("index"))
 
     return render_template("login.html")
@@ -1767,7 +1772,12 @@ def onboarding():
         profile.risk_tolerance = _clip(request.form.get("risk_tolerance"), 40)
         profile.training_priority = _clip(request.form.get("training_priority"), 40)
         profile.target_time_text = _clip(request.form.get("target_time_text"), 80)
-        profile.experience_text = _clip(request.form.get("experience_text"), 10000)
+        experience_text = _clip(request.form.get("experience_text"), 10000)
+        context_text = _clip(request.form.get("context_text"), 10000)
+        if experience_text and context_text:
+            profile.experience_text = (experience_text + "\n" + context_text).strip()[:10000]
+        else:
+            profile.experience_text = experience_text or context_text
 
         # GOALS
         profile.goals_text = _clip(request.form.get("goals_text"), 10000)
@@ -1797,6 +1807,7 @@ def onboarding():
             flash(tr("Nie udało się zapisać profilu. Skróć wpisy i spróbuj ponownie.", "Could not save profile. Please shorten inputs and try again."))
             return redirect(url_for("onboarding"))
 
+        session["profile_prompt_seen"] = True
         flash(tr("Dzięki! Profil zapisany. Możesz korzystać z dashboardu.", "Thanks! Profile saved. You can now use the dashboard."))
         return redirect(url_for("index"))
 
@@ -1823,6 +1834,7 @@ def profile():
                 return redirect(url_for("profile"))
             try:
                 added, skipped = import_strava_zip_for_user(zip_file, current_user.id)
+                compute_profile_defaults_from_history(current_user.id)
                 flash(
                     tr(
                         f"Zaimportowano {added} aktywności (pominięto {skipped} duplikatów).",
@@ -2028,6 +2040,10 @@ def compute_stats(user_id: int, range_days: int) -> dict:
 @app.route("/")
 @login_required
 def index():
+    show_profile_prompt = (not current_user.onboarding_completed) and (not session.get("profile_prompt_seen", False))
+    if show_profile_prompt:
+        session["profile_prompt_seen"] = True
+
     recent_activities = (
         Activity.query
         .filter_by(user_id=current_user.id)
@@ -2209,6 +2225,7 @@ def index():
         weekly_completion_pct=completion_pct,
         coach_note=coach_note,
         today_str=today_str,
+        show_profile_prompt=show_profile_prompt,
     )
 
 

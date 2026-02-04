@@ -132,15 +132,15 @@
             </div>
             <div class="field">
                 <label>{{ tx('Preferencje','Preferences') }}</label>
-                <textarea name="preferences_text" placeholder="{{ tx('Co lubisz? Czego unikasz?','What do you like? What do you avoid?') }}">{{ profile.preferences_text or '' }}</textarea>
+                <textarea class="textarea-lg" name="preferences_text" placeholder="{{ tx('Co lubisz? Czego unikasz?','What do you like? What do you avoid?') }}">{{ profile.preferences_text or '' }}</textarea>
             </div>
             <div class="field">
                 <label>{{ tx('Ograniczenia','Constraints') }}</label>
-                <textarea name="constraints_text" placeholder="{{ tx('Czas, sprzęt, dostępność, kontuzje','Time, equipment, availability, injuries') }}">{{ profile.constraints_text or '' }}</textarea>
+                <textarea class="textarea-lg" name="constraints_text" placeholder="{{ tx('Czas, sprzęt, dostępność, kontuzje','Time, equipment, availability, injuries') }}">{{ profile.constraints_text or '' }}</textarea>
             </div>
             <div class="field">
                 <label>{{ tx('STAN: Aktualny stan (zmęczenie/urazy)','STATE: Current status (fatigue/injuries)') }}</label>
-                <textarea name="injuries_text" placeholder="{{ tx('Np. ból kolana od tygodnia','e.g. knee pain for a week') }}">{{ current_injury_text or '' }}</textarea>
+                <textarea class="textarea-lg" name="injuries_text" placeholder="{{ tx('Np. ból kolana od tygodnia','e.g. knee pain for a week') }}">{{ current_injury_text or '' }}</textarea>
             </div>
 
             <div class="actions">
