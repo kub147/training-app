@@ -36,146 +36,111 @@
                         </div>
                     </div>
 
-                        {# --- Zasada: unikamy duplikatu dzisiejszej daty. Jeśli jest aktywność dziś -> bierzemy dziś z historii,
-                           jeśli nie ma -> bierzemy dziś z planu. --- #}
-                        {% set today_has_history = (past_days | selectattr('date','equalto', today_str) | list | length) > 0 %}
-                        {% set past_before = (past_days | rejectattr('date','equalto', today_str) | list) %}
-                        {% set future_after = (future_days | rejectattr('date','equalto', today_str) | list) %}
+                        <div class="week-calendar" id="weekCalendar" aria-label="{{ tx('Kalendarz tygodnia','Weekly calendar') }}">
+                            {% for day in week_days %}
+                                <div class="week-col {% if day.is_today %}is-today{% endif %} {% if day.drop_allowed %}is-droppable{% endif %}" data-date="{{ day.date }}">
+                                    <div class="week-col-head">
+                                        <div>
+                                            <div class="week-col-weekday">{{ day.weekday_short }}</div>
+                                            <div class="week-col-date">{{ day.date }}</div>
+                                        </div>
+                                        {% if day.drop_allowed %}
+                                            <div class="day-weather" data-weather-date="{{ day.date }}" title="{{ t('calendar_weather_loading') }}">…</div>
+                                        {% endif %}
+                                    </div>
 
-                        {% if today_has_history %}
-                            {% set today_item = (past_days | selectattr('date','equalto', today_str) | list | first) %}
-                            {% set today_kind = 'past' %}
-                        {% else %}
-                            {% set today_item = (future_days | selectattr('date','equalto', today_str) | list | first) %}
-                            {% set today_kind = 'future' %}
-                        {% endif %}
-
-                        {% set past_show = past_before[-3:] %}
-                        {% set future_show = future_after[:3] %}
-
-                        <div class="roadmap-board" aria-label="{{ tx('Roadmap tygodniowy','Weekly roadmap') }}">
-                            <div class="roadmap-section">
-                                <div class="roadmap-label">{{ t('roadmap_past') }}</div>
-                                <div class="roadmap-grid">
-                                    {% for d in past_show %}
-                                      <button
-                                          type="button"
-                                          class="road-item road-btn"
-                                          onclick="window.__openRoadModal && window.__openRoadModal(this)"
-                                          data-kind="past"
-                                          data-date="{{ d.date }}"
-                                          data-sport="{{ d.sport }}"
-                                          data-count="{{ d.count }}"
-                                          data-dist="{{ d.dist_km }}"
-                                          data-dur="{{ d.dur_min }}"
-                                          aria-label="{{ tx('Szczegóły dnia','Day details') }} {{ d.date }}"
-                                      >
-                                          <div class="road-top">
-                                              <div class="road-date js-road-date">{{ d.date }}</div>
-                                          </div>
-
-                                          <div class="road-main">
-                                              <div class="road-icon">
-                                                  {% if d.sport == 'run' %}🏃{% elif d.sport == 'ride' %}🚴{% elif d.sport == 'swim' %}🏊{% elif d.sport in ['weighttraining','workout'] %}🏋️{% elif d.sport == 'yoga' %}🧘{% elif d.sport == 'hike' %}⛰️{% elif d.sport == 'walk' %}🚶{% else %}🏅{% endif %}
-                                              </div>
-                                              <div class="road-text">
-                                              <div class="road-title">{{ d.count }} {{ t('roadmap_activities') }}</div>
-                                                  <div class="road-sub">
-                                                      {% if d.dist_km and d.dist_km > 0 %}{{ d.dist_km }} km{% endif %}
-                                                      {% if d.dur_min and d.dur_min > 0 %} • {{ d.dur_min }} min{% endif %}
-                                                  </div>
-                                              </div>
-                                          </div>
-
-                                          <div class="road-action" aria-hidden="true"><span class="pill">{{ t('roadmap_details') }}</span></div>
-                                      </button>
-                                    {% endfor %}
+                                    <div class="week-col-body" data-drop-date="{{ day.date }}">
+                                        {% if day.card_kind == 'done' %}
+                                            <button
+                                                type="button"
+                                                class="week-item week-item-done road-btn"
+                                                data-kind="done"
+                                                data-date="{{ day.date }}"
+                                                data-sport="{{ day.sport }}"
+                                                data-count="{{ day.done.count }}"
+                                                data-dist="{{ day.done.dist_km }}"
+                                                data-dur="{{ day.done.dur_min }}"
+                                                data-avg-hr="{{ day.done.avg_hr if day.done.avg_hr is not none else '' }}"
+                                                data-activities='{{ day.done.activities | tojson | e }}'
+                                                aria-label="{{ tx('Szczegóły dnia','Day details') }} {{ day.date }}"
+                                            >
+                                                <div class="week-item-top">
+                                                    <span class="week-item-badge">{{ t('calendar_done') }}</span>
+                                                </div>
+                                                <div class="week-item-main">
+                                                    <div class="week-item-icon">
+                                                        {% if day.sport == 'run' %}🏃{% elif day.sport == 'ride' %}🚴{% elif day.sport == 'swim' %}🏊{% elif day.sport in ['weighttraining','workout'] %}🏋️{% elif day.sport == 'yoga' %}🧘{% elif day.sport == 'hike' %}⛰️{% elif day.sport == 'walk' %}🚶{% else %}🏅{% endif %}
+                                                    </div>
+                                                    <div class="week-item-text">
+                                                        <div class="week-item-title">{{ day.done.count }} {{ t('roadmap_activities') }}</div>
+                                                        <div class="week-item-sub">
+                                                            {{ day.done.dist_km }} km • {{ day.done.dur_min }} min
+                                                            {% if day.done.avg_hr %} • HR {{ day.done.avg_hr }}{% endif %}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        {% elif day.card_kind == 'planned' %}
+                                            <button
+                                                type="button"
+                                                class="week-item week-item-planned road-btn planned-item"
+                                                draggable="{{ 'true' if day.drop_allowed else 'false' }}"
+                                                data-kind="planned"
+                                                data-date="{{ day.date }}"
+                                                data-sport="{{ day.sport }}"
+                                                data-intensity="{{ day.plan.intensity or '' }}"
+                                                data-workout="{{ (day.plan.workout or '') | e }}"
+                                                data-why="{{ (day.plan.why or '') | e }}"
+                                                data-details="{{ (day.plan.details or '') | e }}"
+                                                data-dist="{{ day.plan.distance_km if day.plan.distance_km is not none else '' }}"
+                                                data-dur="{{ day.plan.duration_min if day.plan.duration_min is not none else '' }}"
+                                                data-source-facts='{{ (day.plan.source_facts or []) | tojson | e }}'
+                                                aria-label="{{ tx('Szczegóły dnia','Day details') }} {{ day.date }}"
+                                            >
+                                                <div class="week-item-top">
+                                                    <span class="week-item-badge">{{ t('calendar_planned') }}</span>
+                                                </div>
+                                                <div class="week-item-main">
+                                                    <div class="week-item-icon">
+                                                        {% if day.sport == 'run' %}🏃{% elif day.sport == 'ride' %}🚴{% elif day.sport == 'swim' %}🏊{% elif day.sport in ['weighttraining','workout'] %}🏋️{% elif day.sport == 'yoga' %}🧘{% elif day.sport == 'hike' %}⛰️{% elif day.sport == 'walk' %}🚶{% else %}🏅{% endif %}
+                                                    </div>
+                                                    <div class="week-item-text">
+                                                        <div class="week-item-title">{{ day.plan.workout or t('label_training') }}</div>
+                                                        <div class="week-item-sub">
+                                                            {% if day.plan.distance_km is not none %}{{ day.plan.distance_km }} km{% endif %}
+                                                            {% if day.plan.duration_min is not none %}{% if day.plan.distance_km is not none %} • {% endif %}{{ day.plan.duration_min }} min{% endif %}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        {% else %}
+                                            <div class="week-empty">{{ t('calendar_empty') }}</div>
+                                        {% endif %}
+                                    </div>
                                 </div>
+                            {% endfor %}
+                        </div>
+
+                        <div class="week-summary-grid">
+                            <div class="week-summary-card">
+                                <div class="week-summary-title">{{ t('week_goals_title') }}</div>
+                                {% if weekly_goal_items %}
+                                    <ul class="week-goals-list">
+                                        {% for line in weekly_goal_items %}
+                                            <li>{{ line }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                {% else %}
+                                    <p class="week-summary-note">{{ t('calendar_goal_missing') }}</p>
+                                {% endif %}
+                                <p class="week-summary-note">
+                                    {{ t('calendar_progress') }}: <b>{{ weekly_done_total }} / {{ weekly_goal_target }}</b> ({{ weekly_completion_pct }}%)
+                                </p>
                             </div>
 
-                            <div class="roadmap-section">
-                                <div class="roadmap-label">{{ t('roadmap_today') }}</div>
-                                <div class="roadmap-grid is-today-row">
-                                    {% if today_item %}
-                                      <button
-                                          type="button"
-                                          class="road-item road-btn is-today"
-                                          onclick="window.__openRoadModal && window.__openRoadModal(this)"
-                                          data-kind="{{ today_kind }}"
-                                          data-date="{{ today_item.date }}"
-                                          data-sport="{{ today_item.sport }}"
-                                          {% if today_kind == 'past' %}
-                                              data-count="{{ today_item.count }}"
-                                              data-dist="{{ today_item.dist_km }}"
-                                              data-dur="{{ today_item.dur_min }}"
-                                          {% else %}
-                                              data-workout="{{ (today_item.workout or '') | e }}"
-                                              data-why="{{ (today_item.why or '') | e }}"
-                                          {% endif %}
-                                          aria-label="{{ tx('Szczegóły dnia','Day details') }} {{ today_item.date }}"
-                                      >
-                                          <div class="road-top">
-                                              <div class="road-date js-road-date">{{ today_item.date }}</div>
-                                          <div class="today-badge">{{ t('roadmap_today_badge') }}</div>
-                                          </div>
-
-                                          <div class="road-main">
-                                              <div class="road-icon">
-                                                  {% if today_item.sport == 'run' %}🏃{% elif today_item.sport == 'ride' %}🚴{% elif today_item.sport == 'swim' %}🏊{% elif today_item.sport in ['weighttraining','workout'] %}🏋️{% elif today_item.sport == 'yoga' %}🧘{% elif today_item.sport == 'hike' %}⛰️{% elif today_item.sport == 'walk' %}🚶{% else %}🏅{% endif %}
-                                              </div>
-                                              <div class="road-text">
-                                                  {% if today_kind == 'past' %}
-                                                      <div class="road-title">{{ today_item.count }} {{ t('roadmap_activities') }}</div>
-                                                      <div class="road-sub">
-                                                          {% if today_item.dist_km and today_item.dist_km > 0 %}{{ today_item.dist_km }} km{% endif %}
-                                                          {% if today_item.dur_min and today_item.dur_min > 0 %} • {{ today_item.dur_min }} min{% endif %}
-                                                      </div>
-                                                  {% else %}
-                                                      <div class="road-title">{{ today_item.workout or t('label_training') }}</div>
-                                                      <div class="road-sub">{{ today_item.why or '' }}</div>
-                                                  {% endif %}
-                                              </div>
-                                          </div>
-
-                                          <div class="road-action" aria-hidden="true"><span class="pill">{{ t('roadmap_details') }}</span></div>
-                                      </button>
-                                    {% endif %}
-                                </div>
-                            </div>
-
-                            <div class="roadmap-section">
-                                <div class="roadmap-label">{{ t('roadmap_next') }}</div>
-                                <div class="roadmap-grid">
-                                    {% for f in future_show %}
-                                      <button
-                                          type="button"
-                                          class="road-item road-btn"
-                                          onclick="window.__openRoadModal && window.__openRoadModal(this)"
-                                          data-kind="future"
-                                          data-date="{{ f.date }}"
-                                          data-sport="{{ f.sport }}"
-                                          data-workout="{{ (f.workout or '') | e }}"
-                                          data-why="{{ (f.why or '') | e }}"
-                                          aria-label="{{ tx('Szczegóły dnia','Day details') }} {{ f.date }}"
-                                      >
-                                          <div class="road-top">
-                                              <div class="road-date js-road-date">{{ f.date }}</div>
-                                          </div>
-
-                                          <div class="road-main">
-                                              <div class="road-icon">
-                                                  {% if f.sport == 'run' %}🏃{% elif f.sport == 'ride' %}🚴{% elif f.sport == 'swim' %}🏊{% elif f.sport in ['weighttraining','workout'] %}🏋️{% elif f.sport == 'yoga' %}🧘{% elif f.sport == 'hike' %}⛰️{% elif f.sport == 'walk' %}🚶{% else %}🏅{% endif %}
-                                              </div>
-                                              <div class="road-text">
-                                                  <div class="road-title">{{ f.workout or t('label_training') }}</div>
-                                                  <div class="road-sub">{{ f.why or '' }}</div>
-                                              </div>
-                                          </div>
-
-                                          <div class="road-action" aria-hidden="true"><span class="pill">{{ t('roadmap_details') }}</span></div>
-                                      </button>
-                                    {% endfor %}
-                                </div>
+                            <div class="week-summary-card">
+                                <div class="week-summary-title">{{ t('coach_note_title') }}</div>
+                                <p class="week-summary-note">{{ coach_note }}</p>
                             </div>
                         </div>
                     </div>
@@ -423,43 +388,6 @@
                 if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
                 return;
             }
-
-            // Parsuj HTML planu do mapy: date -> {workout, why}
-            const map = {};
-            const clean = (s) => (s || '').replace(/<[^>]*>/g, '').replace(/\*\*/g, '').replace(/DATA\\s*:/gi, '').trim();
-            try {
-                const parsed = JSON.parse(planHtml);
-                const days = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.days) ? parsed.days : []);
-                days.forEach((d) => {
-                    if (!d || !d.date) return;
-                    map[d.date] = { workout: clean(d.workout || ''), why: clean(d.why || '') };
-                });
-            } catch (_e) {
-                const rx = /<b>(\d{4}-\d{2}-\d{2})<\/b>\s*<br>\s*<b>\s*Trening:\s*<\/b>\s*([\s\S]*?)<br>\s*<b>\s*Dlaczego:\s*<\/b>\s*([\s\S]*?)<br>/gi;
-                let m;
-                while ((m = rx.exec(planHtml)) !== null) {
-                    const date = m[1];
-                    const workout = clean(m[2]);
-                    const why = clean(m[3]);
-                    map[date] = { workout, why };
-                }
-            }
-
-            // Aktualizuj kafelki roadmapy (te, które są z planu)
-            document.querySelectorAll('.road-btn[data-kind="future"]').forEach(btnEl => {
-                const date = btnEl.dataset.date;
-                const entry = map[date];
-                if (!entry) return;
-
-                btnEl.dataset.workout = entry.workout;
-                btnEl.dataset.why = entry.why;
-
-                const titleEl = btnEl.querySelector('.road-title');
-                const subEl = btnEl.querySelector('.road-sub');
-                if (titleEl) titleEl.textContent = entry.workout || {{ t('label_training')|tojson }};
-                if (subEl) subEl.textContent = entry.why || '';
-            });
-
             setStatus({{ t('status_plan_updated')|tojson }}, 'ok');
             setTimeout(() => {
                 window.location.reload();
@@ -485,98 +413,6 @@
         if (window.__openChatWidget) window.__openChatWidget();
     }
 
-    window.addEventListener('DOMContentLoaded', function(){
-  (function initRoadmapModal() {
-    const modal = document.getElementById('roadModal');
-    const modalTitle = document.getElementById('roadModalTitle');
-    const modalMeta = document.getElementById('roadModalMeta');
-    const modalBody = document.getElementById('roadModalBody');
-    const modalActions = document.getElementById('roadModalActions');
-    const btnClose = document.getElementById('roadModalClose');
-
-    if (!modal || !modalTitle || !modalMeta || !modalBody || !modalActions || !btnClose) {
-      console.warn('Roadmap modal elements not found.');
-      return;
-    }
-
-    const weekShort = {{ tx(["niedz.", "pon.", "wt.", "śr.", "czw.", "pt.", "sob."], ["sun", "mon", "tue", "wed", "thu", "fri", "sat"])|tojson }};
-
-    function formatDate(isoDate) {
-      // isoDate: YYYY-MM-DD
-      const [y, m, d] = (isoDate || '').split('-').map(Number);
-      if (!y || !m || !d) return isoDate || '';
-      const dt = new Date(y, m - 1, d);
-      const wd = weekShort[dt.getDay()];
-      const dd = String(d).padStart(2, '0');
-      const mm = String(m).padStart(2, '0');
-      return `${wd} ${dd}.${mm}`;
-    }
-
-    // Podmień widok daty w roadmap na "pon 23.01"
-    document.querySelectorAll('.js-road-date').forEach(el => {
-      const raw = (el.textContent || '').trim();
-      el.textContent = formatDate(raw) || raw;
-    });
-
-    let lastPayload = null;
-
-    function openModal(payload) {
-      lastPayload = payload;
-      modal.classList.add('open');
-      modal.setAttribute('aria-hidden', 'false');
-
-      const pretty = formatDate(payload.date);
-      modalTitle.textContent = pretty ? `{{ t('roadmap_details') }}: ${pretty}` : `{{ t('roadmap_details') }}`;
-      modalMeta.textContent = payload.date || '';
-
-      modalActions.innerHTML = '';
-
-      if (payload.kind === 'future') {
-        const workout = cleanPlanText(payload.workout || {{ t('label_training')|tojson }});
-        const why = cleanPlanText(payload.why || '');
-
-        modalBody.innerHTML = `
-          <p><b>{{ tx('Trening','Workout') }}:</b> ${escapeHtml(workout)}</p>
-          ${why ? `<p><b>{{ tx('Dlaczego','Why') }}:</b> ${escapeHtml(why)}</p>` : `<p class="muted">{{ t('modal_no_reason') }}</p>`}
-        `;
-
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'btn btn-soft btn-small';
-        btn.textContent = {{ tx('Zaproponuj zmianę','Suggest change')|tojson }};
-        btn.addEventListener('click', () => {
-          if (typeof suggestChange === 'function') {
-            suggestChange(payload.date, workout);
-            closeModal();
-          }
-        });
-        modalActions.appendChild(btn);
-      } else {
-        const count = payload.count ?? '0';
-        const dist = payload.dist ?? '0';
-        const dur = payload.dur ?? '0';
-        modalBody.innerHTML = `
-          <p><b>{{ tx('Podsumowanie','Summary') }}:</b></p>
-          <p>${escapeHtml(String(count))} {{ tx('aktywności','activities') }}</p>
-          <p>${escapeHtml(String(dist))} km • ${escapeHtml(String(dur))} min</p>
-        `;
-      }
-    }
-
-    function closeModal() {
-      modal.classList.remove('open');
-      modal.setAttribute('aria-hidden', 'true');
-      lastPayload = null;
-    }
-
-    function cleanPlanText(s) {
-      const t = (s ?? '').toString();
-      return t
-        .replace(/\*\*DATA\*\*\s*:\s*/gi, '')
-        .replace(/\bDATA\s*:\s*/gi, '')
-        .trim();
-    }
-
     function escapeHtml(s) {
       return (s ?? '')
         .replaceAll('&', '&amp;')
@@ -586,35 +422,301 @@
         .replaceAll("'", '&#39;');
     }
 
-    document.addEventListener('click', (e) => {
-      const btn = e.target.closest('.road-btn');
-      if (!btn) return;
+    function normalizeNumber(v, suffix = '') {
+      if (v === null || v === undefined || v === '') return '';
+      const n = Number(v);
+      if (Number.isNaN(n)) return '';
+      return `${n}${suffix}`;
+    }
 
-      const payload = {
-        kind: btn.dataset.kind,
-        date: btn.dataset.date,
-        sport: btn.dataset.sport,
-        workout: btn.dataset.workout,
-        why: btn.dataset.why,
-        count: btn.dataset.count,
-        dist: btn.dataset.dist,
-        dur: btn.dataset.dur,
+    async function movePlanDay(fromDate, toDate) {
+      const status = document.getElementById('forecastStatus');
+      const setStatus = (txt, cls) => {
+        if (!status) return;
+        status.className = 'mini-status ' + (cls || '');
+        status.textContent = txt || '';
       };
-      openModal(payload);
-    });
+      try {
+        const res = await fetch('/api/plan/move', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from_date: fromDate, to_date: toDate }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          setStatus((data && data.error) || {{ t('calendar_reorder_err')|tojson }}, 'err');
+          return false;
+        }
+        setStatus({{ t('calendar_reorder_ok')|tojson }}, 'ok');
+        return true;
+      } catch (_e) {
+        setStatus({{ t('calendar_reorder_err')|tojson }}, 'err');
+        return false;
+      }
+    }
 
-    btnClose.addEventListener('click', closeModal);
+    function checkHardDayConflicts() {
+      const planned = Array.from(document.querySelectorAll('.planned-item'))
+        .map((el) => {
+          const col = el.closest('.week-col');
+          return {
+            date: col ? col.dataset.date : '',
+            intensity: (el.dataset.intensity || '').toLowerCase(),
+            workout: (el.dataset.workout || '').toLowerCase(),
+          };
+        })
+        .filter((x) => x.date)
+        .sort((a, b) => a.date.localeCompare(b.date));
 
-    modal.addEventListener('click', (e) => {
-      // klik w tło zamyka
-      if (e.target === modal) closeModal();
-    });
+      const isHard = (x) => {
+        const txt = `${x.intensity} ${x.workout}`;
+        return /hard|interwa|tempo|vo2|threshold|maks|max/.test(txt);
+      };
 
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && modal.classList.contains('open')) closeModal();
+      for (let i = 1; i < planned.length; i += 1) {
+        if (isHard(planned[i - 1]) && isHard(planned[i])) {
+          const status = document.getElementById('forecastStatus');
+          if (status) {
+            status.className = 'mini-status err';
+            status.textContent = {{ t('calendar_swap_warning')|tojson }};
+          }
+          return;
+        }
+      }
+    }
+
+    function initCalendarModal() {
+      const modal = document.getElementById('roadModal');
+      const modalTitle = document.getElementById('roadModalTitle');
+      const modalMeta = document.getElementById('roadModalMeta');
+      const modalBody = document.getElementById('roadModalBody');
+      const modalActions = document.getElementById('roadModalActions');
+      const btnClose = document.getElementById('roadModalClose');
+      if (!modal || !modalTitle || !modalMeta || !modalBody || !modalActions || !btnClose) return;
+
+      function closeModal() {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+      }
+
+      function openModal(payload) {
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+        modalTitle.textContent = `${{ t('roadmap_details')|tojson }}: ${payload.date || ''}`;
+        modalMeta.textContent = payload.kind === 'planned' ? {{ t('calendar_planned')|tojson }} : {{ t('calendar_done')|tojson }};
+
+        if (payload.kind === 'planned') {
+          const why = payload.why ? `<p><b>{{ tx('Dlaczego','Why') }}:</b> ${escapeHtml(payload.why)}</p>` : '';
+          const details = payload.details ? `<p><b>{{ tx('Szczegóły','Details') }}:</b><br>${escapeHtml(payload.details).replaceAll('\n', '<br>')}</p>` : '';
+          const facts = Array.isArray(payload.sourceFacts) && payload.sourceFacts.length
+            ? `<p><b>{{ tx('Na podstawie','Based on') }}:</b> ${payload.sourceFacts.map((x) => escapeHtml(String(x))).join('; ')}</p>`
+            : '';
+          modalBody.innerHTML = `
+            <p><b>{{ tx('Trening','Workout') }}:</b> ${escapeHtml(payload.workout || {{ t('label_training')|tojson }})}</p>
+            <p>${normalizeNumber(payload.dist, ' km')}${payload.dist && payload.dur ? ' • ' : ''}${normalizeNumber(payload.dur, ' min')}</p>
+            ${why}
+            ${details}
+            ${facts}
+          `;
+
+          modalActions.innerHTML = '';
+          const discussBtn = document.createElement('button');
+          discussBtn.type = 'button';
+          discussBtn.className = 'btn btn-soft btn-small';
+          discussBtn.textContent = {{ t('calendar_discuss')|tojson }};
+          discussBtn.addEventListener('click', () => {
+            suggestChange(payload.date, payload.workout || '');
+            closeModal();
+          });
+          modalActions.appendChild(discussBtn);
+        } else {
+          let activities = [];
+          try {
+            activities = JSON.parse(payload.activities || '[]');
+          } catch (_e) {
+            activities = [];
+          }
+          const rows = activities.map((a) => `
+            <li>${escapeHtml(a.time || '')} • ${escapeHtml(a.label || '')} • ${normalizeNumber(a.dist_km, ' km')} • ${normalizeNumber(a.dur_min, ' min')}${a.avg_hr ? ` • HR ${a.avg_hr}` : ''}</li>
+          `).join('');
+          modalBody.innerHTML = `
+            <p><b>{{ tx('Podsumowanie','Summary') }}:</b> ${escapeHtml(String(payload.count || 0))} {{ tx('aktywności','activities') }}</p>
+            <p>${normalizeNumber(payload.dist, ' km')} • ${normalizeNumber(payload.dur, ' min')}${payload.avgHr ? ` • HR ${escapeHtml(String(payload.avgHr))}` : ''}</p>
+            ${rows ? `<ul>${rows}</ul>` : ''}
+          `;
+          modalActions.innerHTML = '';
+        }
+      }
+
+      document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.road-btn');
+        if (!btn) return;
+        const payload = {
+          kind: btn.dataset.kind,
+          date: btn.dataset.date,
+          workout: btn.dataset.workout,
+          why: btn.dataset.why,
+          details: btn.dataset.details,
+          dist: btn.dataset.dist,
+          dur: btn.dataset.dur,
+          count: btn.dataset.count,
+          avgHr: btn.dataset.avgHr,
+          activities: btn.dataset.activities,
+          sourceFacts: (() => {
+            try { return JSON.parse(btn.dataset.sourceFacts || '[]'); } catch (_e) { return []; }
+          })(),
+        };
+        openModal(payload);
+      });
+
+      btnClose.addEventListener('click', closeModal);
+      modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.classList.contains('open')) closeModal();
+      });
+    }
+
+    function initCalendarDnD() {
+      const items = Array.from(document.querySelectorAll('.planned-item[draggable="true"]'));
+      const dropZones = Array.from(document.querySelectorAll('.week-col-body'));
+      let dragItem = null;
+      let fromDate = null;
+
+      items.forEach((item) => {
+        item.addEventListener('dragstart', (e) => {
+          dragItem = item;
+          const col = item.closest('.week-col');
+          fromDate = col ? col.dataset.date : null;
+          e.dataTransfer.effectAllowed = 'move';
+          item.classList.add('is-dragging');
+        });
+        item.addEventListener('dragend', () => {
+          item.classList.remove('is-dragging');
+          dragItem = null;
+          fromDate = null;
+        });
+      });
+
+      dropZones.forEach((zone) => {
+        zone.addEventListener('dragover', (e) => {
+          const col = zone.closest('.week-col');
+          if (!col || !col.classList.contains('is-droppable')) return;
+          e.preventDefault();
+          zone.classList.add('is-drop-hover');
+        });
+        zone.addEventListener('dragleave', () => zone.classList.remove('is-drop-hover'));
+        zone.addEventListener('drop', async (e) => {
+          e.preventDefault();
+          zone.classList.remove('is-drop-hover');
+          if (!dragItem || !fromDate) return;
+
+          const targetCol = zone.closest('.week-col');
+          if (!targetCol || !targetCol.classList.contains('is-droppable')) return;
+          const toDate = targetCol.dataset.date;
+          if (!toDate || toDate === fromDate) return;
+
+          const targetItem = zone.querySelector('.planned-item');
+          const sourceZone = dragItem.closest('.week-col-body');
+          const placeholder = zone.querySelector('.week-empty');
+          if (placeholder) placeholder.remove();
+
+          const ok = await movePlanDay(fromDate, toDate);
+          if (!ok) return;
+
+          if (targetItem && sourceZone) {
+            sourceZone.appendChild(targetItem);
+            targetItem.dataset.date = fromDate;
+            sourceZone.classList.remove('is-drop-hover');
+          } else if (sourceZone) {
+            sourceZone.innerHTML = '<div class="week-empty">' + {{ t('calendar_empty')|tojson }} + '</div>';
+          }
+
+          zone.innerHTML = '';
+          zone.appendChild(dragItem);
+          dragItem.dataset.date = toDate;
+          checkHardDayConflicts();
+        });
+      });
+    }
+
+    async function fetchWeatherByCoords(lat, lon) {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('weather');
+      return await res.json();
+    }
+
+    function weatherIcon(code) {
+      if (code === 0) return '☀️';
+      if ([1, 2].includes(code)) return '🌤️';
+      if (code === 3) return '☁️';
+      if ([45, 48].includes(code)) return '🌫️';
+      if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return '🌧️';
+      if ([71, 73, 75, 85, 86].includes(code)) return '❄️';
+      if ([95, 96, 99].includes(code)) return '⛈️';
+      return '🌡️';
+    }
+
+    async function initWeather() {
+      const weatherEls = Array.from(document.querySelectorAll('.day-weather[data-weather-date]'));
+      if (!weatherEls.length) return;
+      weatherEls.forEach((el) => { el.textContent = '…'; });
+
+      const applyForecast = (daily) => {
+        if (!daily || !daily.time) return;
+        weatherEls.forEach((el) => {
+          const idx = daily.time.indexOf(el.dataset.weatherDate);
+          if (idx === -1) {
+            el.textContent = '—';
+            return;
+          }
+          const code = Number(daily.weather_code[idx]);
+          const tMax = daily.temperature_2m_max ? Math.round(Number(daily.temperature_2m_max[idx])) : null;
+          const icon = weatherIcon(code);
+          el.textContent = icon;
+          el.title = tMax !== null ? `${icon} ${tMax}°C` : icon;
+        });
+      };
+
+      const fetchByCity = async () => {
+        const city = window.prompt({{ t('calendar_city_prompt')|tojson }});
+        if (!city) throw new Error('city-missing');
+        const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language={{ tx('pl','en') }}&format=json`);
+        if (!geoRes.ok) throw new Error('city-geo');
+        const geo = await geoRes.json();
+        if (!geo.results || !geo.results.length) throw new Error('city-not-found');
+        const c = geo.results[0];
+        return await fetchWeatherByCoords(c.latitude, c.longitude);
+      };
+
+      try {
+        if (!navigator.geolocation) throw new Error('geo-not-supported');
+        const pos = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 7000, maximumAge: 1800000 });
+        });
+        const data = await fetchWeatherByCoords(pos.coords.latitude, pos.coords.longitude);
+        applyForecast(data.daily);
+      } catch (_e) {
+        try {
+          const data = await fetchByCity();
+          applyForecast(data.daily);
+        } catch (err2) {
+          const msg = (String(err2.message || '').includes('city-not-found'))
+            ? {{ t('calendar_city_not_found')|tojson }}
+            : {{ t('calendar_weather_error')|tojson }};
+          weatherEls.forEach((el) => {
+            el.textContent = '—';
+            el.title = msg;
+          });
+        }
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initCalendarModal();
+      initCalendarDnD();
+      initWeather();
     });
-  })()
-});;
 
 // Auto-ukrywanie flash messages po 5 sekundach
 document.addEventListener('DOMContentLoaded', () => {
@@ -650,7 +752,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     <!-- ROADMAP MODAL -->
     <div class="modal-backdrop" id="roadModal" aria-hidden="true">
-        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="roadModalTitle">
+            <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="roadModalTitle">
             <div class="modal-head">
                 <div>
                     <div class="modal-title" id="roadModalTitle">{{ t('roadmap_details') }}</div>
@@ -659,7 +761,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button class="modal-close" type="button" id="roadModalClose" aria-label="{{ tx('Zamknij','Close') }}">{{ tx('Zamknij','Close') }}</button>
             </div>
             <div class="modal-body">
-                <p id="roadModalBody"></p>
+                <div id="roadModalBody"></div>
                 <div class="modal-actions" id="roadModalActions"></div>
             </div>
         </div>

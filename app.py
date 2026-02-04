@@ -61,6 +61,21 @@ I18N = {
         "roadmap_details": "szczegóły",
         "roadmap_today_badge": "DZIŚ",
         "roadmap_activities": "aktyw.",
+        "week_goals_title": "🎯 Cele tygodnia",
+        "coach_note_title": "🧠 Opinia trenera",
+        "calendar_done": "Wykonane",
+        "calendar_planned": "Plan",
+        "calendar_empty": "Brak planu",
+        "calendar_discuss": "Omów z trenerem",
+        "calendar_swap_warning": "Uwaga: 2 ciężkie jednostki dzień po dniu.",
+        "calendar_reorder_ok": "Plan zaktualizowany",
+        "calendar_reorder_err": "Nie udało się zapisać zmiany",
+        "calendar_weather_loading": "Pogoda...",
+        "calendar_weather_error": "Brak pogody",
+        "calendar_city_prompt": "Podaj miasto do prognozy pogody (np. Warszawa):",
+        "calendar_city_not_found": "Nie znaleziono miasta",
+        "calendar_progress": "Realizacja tygodnia",
+        "calendar_goal_missing": "Ustaw cel tygodniowy w profilu, by lepiej śledzić postęp.",
         "add_title": "➕ Dodaj trening / raport",
         "tab_manual": "Ręcznie",
         "tab_checkin": "Raport",
@@ -141,6 +156,21 @@ I18N = {
         "roadmap_details": "details",
         "roadmap_today_badge": "TODAY",
         "roadmap_activities": "activities",
+        "week_goals_title": "🎯 Weekly goals",
+        "coach_note_title": "🧠 Coach note",
+        "calendar_done": "Done",
+        "calendar_planned": "Plan",
+        "calendar_empty": "No plan",
+        "calendar_discuss": "Discuss with coach",
+        "calendar_swap_warning": "Warning: 2 hard sessions on consecutive days.",
+        "calendar_reorder_ok": "Plan updated",
+        "calendar_reorder_err": "Could not save changes",
+        "calendar_weather_loading": "Loading weather...",
+        "calendar_weather_error": "No weather",
+        "calendar_city_prompt": "Provide city for weather forecast (e.g. London):",
+        "calendar_city_not_found": "City not found",
+        "calendar_progress": "Weekly completion",
+        "calendar_goal_missing": "Set weekly goal in profile to better track progress.",
         "add_title": "➕ Add workout / check-in",
         "tab_manual": "Manual",
         "tab_checkin": "Check-in",
@@ -464,6 +494,11 @@ WEEKDAYS_FULL = {
     "en": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
 }
 
+WEEKDAYS_SHORT = {
+    "pl": ["pon", "wt", "śr", "czw", "pt", "sob", "nd"],
+    "en": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+}
+
 MONTHS_FULL = {
     "pl": ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września", "października", "listopada", "grudnia"],
     "en": ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
@@ -531,6 +566,99 @@ def classify_sport(text: str) -> str:
     return "other"
 
 
+def _activity_start_dt(activity: Activity) -> datetime | None:
+    dt = getattr(activity, "start_time", None)
+    if isinstance(dt, datetime):
+        return dt
+    if isinstance(dt, str):
+        try:
+            return datetime.fromisoformat(dt.replace("Z", "+00:00"))
+        except Exception:
+            return None
+    return None
+
+
+def _to_naive_utc(dt: datetime | None) -> datetime | None:
+    if not dt:
+        return None
+    if getattr(dt, "tzinfo", None) is not None:
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
+def _load_user_activities_with_fallback(
+    *,
+    user_id: int,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    order_asc: bool = True,
+    limit: int | None = None,
+) -> list[Activity]:
+    q = Activity.query.filter(Activity.user_id == user_id)
+    if start is not None:
+        q = q.filter(Activity.start_time >= start)
+    if end is not None:
+        q = q.filter(Activity.start_time < end)
+    q = q.order_by(Activity.start_time.asc() if order_asc else Activity.start_time.desc())
+    if limit:
+        q = q.limit(limit)
+    rows = q.all()
+    if rows:
+        return rows
+
+    # Fallback for mixed datetime formats in SQLite (naive/aware/string).
+    if start is None and end is None:
+        return rows
+
+    base_q = Activity.query.filter(Activity.user_id == user_id).order_by(Activity.start_time.asc() if order_asc else Activity.start_time.desc())
+    base_rows = base_q.all()
+    if not base_rows:
+        return []
+
+    start_n = _to_naive_utc(start)
+    end_n = _to_naive_utc(end)
+    filtered: list[Activity] = []
+    for a in base_rows:
+        dt = _to_naive_utc(_activity_start_dt(a))
+        if not dt:
+            continue
+        if start_n and dt < start_n:
+            continue
+        if end_n and dt >= end_n:
+            continue
+        filtered.append(a)
+        if limit and len(filtered) >= limit:
+            break
+    return filtered
+
+
+def _extract_estimates_from_text(text: str | None) -> tuple[float | None, int | None]:
+    raw = (text or "").lower()
+
+    dist_match = re.search(r'(\d+(?:[.,]\d+)?)\s*km', raw)
+    dist_km = None
+    if dist_match:
+        try:
+            dist_km = float(dist_match.group(1).replace(",", "."))
+        except Exception:
+            dist_km = None
+
+    dur_min = None
+    hour_match = re.search(r'(\d+)\s*h(?:\s*(\d{1,2})\s*min)?', raw)
+    min_match = re.search(r'(\d+)\s*min', raw)
+    try:
+        if hour_match:
+            hours = int(hour_match.group(1))
+            mins = int(hour_match.group(2) or 0)
+            dur_min = hours * 60 + mins
+        elif min_match:
+            dur_min = int(min_match.group(1))
+    except Exception:
+        dur_min = None
+
+    return dist_km, dur_min
+
+
 def parse_plan_html(html_content: str) -> list[dict]:
     """Parsuje zapis planu na listę dni.
 
@@ -558,9 +686,22 @@ def parse_plan_html(html_content: str) -> list[dict]:
                 date_str = (item.get("date") or "").strip() or None
                 workout = (item.get("workout") or "").strip() or None
                 why = (item.get("why") or "").strip() or None
+                details = (item.get("details") or "").strip() or None
+                intensity = (item.get("intensity") or "").strip() or None
                 sport = (item.get("activity_type") or item.get("sport") or "").strip().lower()
                 sport = sport if sport else classify_sport((workout or "") + " " + (why or ""))
                 source_facts = item.get("source_facts") or []
+                dist_km = item.get("distance_km")
+                dur_min = item.get("duration_min")
+                parsed_dist, parsed_dur = _extract_estimates_from_text(workout)
+                try:
+                    dist_km = float(dist_km) if dist_km is not None else parsed_dist
+                except Exception:
+                    dist_km = parsed_dist
+                try:
+                    dur_min = int(round(float(dur_min))) if dur_min is not None else parsed_dur
+                except Exception:
+                    dur_min = parsed_dur
                 why_with_facts = why
                 if isinstance(source_facts, list) and source_facts:
                     why_with_facts = (why or "")
@@ -570,6 +711,11 @@ def parse_plan_html(html_content: str) -> list[dict]:
                     "workout": workout,
                     "why": why_with_facts,
                     "sport": sport,
+                    "details": details,
+                    "intensity": intensity,
+                    "distance_km": dist_km,
+                    "duration_min": dur_min,
+                    "source_facts": source_facts if isinstance(source_facts, list) else [],
                     "html": json.dumps(item, ensure_ascii=False),
                 })
             if out:
@@ -589,11 +735,17 @@ def parse_plan_html(html_content: str) -> list[dict]:
     if not date_matches:
         # Fallback: jeden blok bez daty
         sport = classify_sport(text)
+        dist_km, dur_min = _extract_estimates_from_text(text)
         return [{
             "date": None,
             "workout": text[:200] if text else None,
             "why": None,
             "sport": sport,
+            "details": None,
+            "intensity": None,
+            "distance_km": dist_km,
+            "duration_min": dur_min,
+            "source_facts": [],
             "html": html_content,
         }]
 
@@ -624,12 +776,18 @@ def parse_plan_html(html_content: str) -> list[dict]:
             why = ' '.join(why.split())[:300]
 
         sport = classify_sport(chunk)
+        dist_km, dur_min = _extract_estimates_from_text(workout or chunk)
 
         blocks.append({
             "date": date_str,
             "workout": workout,
             "why": why,
             "sport": sport,
+            "details": None,
+            "intensity": None,
+            "distance_km": dist_km,
+            "duration_min": dur_min,
+            "source_facts": [],
             "html": chunk,  # Możesz zwrócić clean text zamiast HTML
         })
 
@@ -665,7 +823,10 @@ def compute_profile_defaults_from_history(user_id: int) -> None:
     # grupujemy po tygodniu (poniedziałek)
     buckets = {}
     for a in acts:
-        d = a.start_time.date()
+        start_dt = _activity_start_dt(a)
+        if not start_dt:
+            continue
+        d = start_dt.date()
         week_start = d - timedelta(days=d.weekday())
         b = buckets.setdefault(week_start, {"dist_km": 0.0, "dur_h": 0.0, "days": set()})
         if a.distance:
@@ -748,11 +909,10 @@ def get_weekly_aggregates(user_id: int, weeks: int = 12) -> str:
     monday = today - timedelta(days=today.weekday())
     start_date = monday - timedelta(weeks=weeks - 1)
 
-    activities = (
-        Activity.query
-        .filter(Activity.user_id == user_id, Activity.start_time >= datetime.combine(start_date, datetime.min.time()))
-        .order_by(Activity.start_time.asc())
-        .all()
+    activities = _load_user_activities_with_fallback(
+        user_id=user_id,
+        start=datetime.combine(start_date, datetime.min.time()),
+        order_asc=True,
     )
 
     # week_start (date) -> totals
@@ -762,9 +922,10 @@ def get_weekly_aggregates(user_id: int, weeks: int = 12) -> str:
         return d - timedelta(days=d.weekday())
 
     for a in activities:
-        if not a.start_time:
+        start_dt = _activity_start_dt(a)
+        if not start_dt:
             continue
-        ws = week_start(a.start_time.date())
+        ws = week_start(start_dt.date())
         entry = weeks_map.setdefault(ws, {"count": 0, "duration": 0, "distance": 0.0, "by_type": {}})
         entry["count"] += 1
         entry["duration"] += int(a.duration or 0)
@@ -793,12 +954,11 @@ def get_weekly_aggregates(user_id: int, weeks: int = 12) -> str:
 
 def get_recent_activity_details(user_id: int, days: int = 21, limit: int = 120) -> str:
     cutoff = datetime.now() - timedelta(days=days)
-    activities = (
-        Activity.query
-        .filter(Activity.user_id == user_id, Activity.start_time >= cutoff)
-        .order_by(Activity.start_time.asc())
-        .limit(limit)
-        .all()
+    activities = _load_user_activities_with_fallback(
+        user_id=user_id,
+        start=cutoff,
+        order_asc=True,
+        limit=limit,
     )
 
     if not activities:
@@ -806,9 +966,10 @@ def get_recent_activity_details(user_id: int, days: int = 21, limit: int = 120) 
 
     out = [f"OSTATNIE TRENINGI (ostatnie {days} dni):"]
     for act in activities:
-        if not act.start_time:
+        start_dt = _activity_start_dt(act)
+        if not start_dt:
             continue
-        d = act.start_time.strftime('%Y-%m-%d')
+        d = start_dt.strftime('%Y-%m-%d')
         t = (act.activity_type or 'unknown').lower()
         dist_km = (act.distance or 0) / 1000.0
         dur_min = int((act.duration or 0) // 60)
@@ -847,17 +1008,18 @@ def get_recent_weekly_volume_km(user_id: int, weeks: int = 4) -> dict:
     monday = today - timedelta(days=today.weekday())
     start_date = monday - timedelta(weeks=weeks - 1)
 
-    acts = (
-        Activity.query
-        .filter(Activity.user_id == user_id, Activity.start_time >= datetime.combine(start_date, datetime.min.time()))
-        .all()
+    acts = _load_user_activities_with_fallback(
+        user_id=user_id,
+        start=datetime.combine(start_date, datetime.min.time()),
+        order_asc=True,
     )
 
     buckets = {}
     for a in acts:
-        if not a.start_time:
+        start_dt = _activity_start_dt(a)
+        if not start_dt:
             continue
-        d = a.start_time.date()
+        d = start_dt.date()
         ws = d - timedelta(days=d.weekday())
         buckets[ws] = buckets.get(ws, 0.0) + float(a.distance or 0.0) / 1000.0
 
@@ -1542,10 +1704,10 @@ def compute_stats(user_id: int, range_days: int) -> dict:
     cutoff = datetime.now() - timedelta(days=range_days)
     start_date = datetime.now().date() - timedelta(days=range_days - 1)
 
-    acts = (
-        Activity.query
-        .filter(Activity.user_id == user_id, Activity.start_time >= cutoff)
-        .all()
+    acts = _load_user_activities_with_fallback(
+        user_id=user_id,
+        start=cutoff,
+        order_asc=True,
     )
 
     # Dynamiczne kategorie (Strava ma wiele typów). Mapujemy najczęstsze + reszta do "other".
@@ -1583,8 +1745,9 @@ def compute_stats(user_id: int, range_days: int) -> dict:
         totals["distance"] += float(a.distance or 0)
         totals["duration"] += int(a.duration or 0)
 
-        if a.start_time:
-            day_key = a.start_time.date().isoformat()
+        start_dt = _activity_start_dt(a)
+        if start_dt:
+            day_key = start_dt.date().isoformat()
             day_entry = daily_bucket.setdefault(day_key, {"run": 0.0, "ride": 0.0, "swim": 0.0, "gym": 0.0, "other": 0.0})
             day_entry[b] += float(a.distance or 0.0) / 1000.0
             dur_entry = daily_duration_bucket.setdefault(day_key, {"run": 0, "ride": 0, "swim": 0, "gym": 0, "other": 0})
@@ -1672,54 +1835,165 @@ def index():
     )
 
     plan_days = parse_plan_html(active_plan.html_content) if active_plan else []
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now().date()
+    today_str = today.isoformat()
+    week_start = today - timedelta(days=today.weekday())
+    week_dates = [week_start + timedelta(days=i) for i in range(7)]
+    week_end = week_start + timedelta(days=6)
 
-    # Future: bierz najbliższe dni z planu (max 4, z dziś), żeby sekcja "najbliższe 3 dni" miała dane
-    # nawet gdy model zwróci daty nieidealnie po kolei.
-    candidate_future = [x for x in plan_days if x.get("date") and x.get("date") >= today_str]
-    candidate_future.sort(key=lambda x: x.get("date"))
-    seen_dates = set()
-    future_days = []
-    for item in candidate_future:
-        d = item.get("date")
-        if d in seen_dates:
-            continue
-        seen_dates.add(d)
-        future_days.append(item)
-        if len(future_days) >= 4:
-            break
-
-    # Past roadmap: 7 dni wstecz (agregujemy per dzień po top aktywności)
-    past_cutoff = datetime.now() - timedelta(days=7)
-    past_acts = (
-        Activity.query
-        .filter(Activity.user_id == current_user.id, Activity.start_time >= past_cutoff)
-        .order_by(Activity.start_time.desc())
-        .all()
+    week_acts = _load_user_activities_with_fallback(
+        user_id=current_user.id,
+        start=datetime.combine(week_start, datetime.min.time()),
+        end=datetime.combine(week_end + timedelta(days=1), datetime.min.time()),
+        order_asc=True,
     )
-    day_bucket = {}
-    for a in past_acts:
-        ds = a.start_time.strftime("%Y-%m-%d")
-        b = day_bucket.setdefault(ds, {"date": ds, "sport": a.activity_type, "count": 0, "dist_km": 0.0, "dur_min": 0})
-        b["count"] += 1
-        if a.distance:
-            b["dist_km"] += a.distance / 1000.0
-        if a.duration:
-            b["dur_min"] += int(a.duration / 60)
-        # sport: weź dominujący (najpierw zmapuj)
-        b["sport"] = b["sport"] or a.activity_type
 
-    past_days = sorted(day_bucket.values(), key=lambda x: x["date"])
-    for b in past_days:
-        b["sport"] = b["sport"] if b["sport"] in SPORT_STYLES else classify_sport(b["sport"])
-        b["dist_km"] = round(b["dist_km"], 1)
+    day_done = {
+        d.isoformat(): {
+            "count": 0,
+            "dist_km": 0.0,
+            "dur_min": 0,
+            "hr_sum": 0,
+            "hr_count": 0,
+            "sport_counts": {},
+            "activities": [],
+        }
+        for d in week_dates
+    }
+
+    def _normalize_sport(activity_type: str | None) -> str:
+        t = (activity_type or "").lower()
+        if t in SPORT_STYLES:
+            return t
+        return classify_sport(t)
+
+    for act in week_acts:
+        start_dt = _activity_start_dt(act)
+        if not start_dt:
+            continue
+        ds = start_dt.date().isoformat()
+        if ds not in day_done:
+            continue
+        entry = day_done[ds]
+        sport = _normalize_sport(act.activity_type)
+        entry["count"] += 1
+        entry["dist_km"] += float(act.distance or 0.0) / 1000.0
+        entry["dur_min"] += int((act.duration or 0) / 60)
+        if act.avg_hr:
+            entry["hr_sum"] += int(act.avg_hr)
+            entry["hr_count"] += 1
+        entry["sport_counts"][sport] = entry["sport_counts"].get(sport, 0) + 1
+        entry["activities"].append({
+            "id": act.id,
+            "sport": sport,
+            "label": activity_label(act.activity_type),
+            "dist_km": round(float(act.distance or 0.0) / 1000.0, 2),
+            "dur_min": int((act.duration or 0) / 60),
+            "avg_hr": int(act.avg_hr) if act.avg_hr else None,
+            "time": start_dt.strftime("%H:%M"),
+        })
+
+    plan_map = {}
+    for item in plan_days:
+        d = (item.get("date") or "").strip()
+        if not d:
+            continue
+        try:
+            d_obj = datetime.strptime(d, "%Y-%m-%d").date()
+        except Exception:
+            continue
+        if d_obj < week_start or d_obj > week_end:
+            continue
+        plan_map[d] = {
+            "sport": _normalize_sport(item.get("sport")),
+            "workout": item.get("workout") or "",
+            "why": item.get("why") or "",
+            "details": item.get("details") or "",
+            "intensity": (item.get("intensity") or "").lower(),
+            "distance_km": item.get("distance_km"),
+            "duration_min": item.get("duration_min"),
+            "source_facts": item.get("source_facts") or [],
+        }
+
+    lang = session.get("lang", "pl")
+    weekday_short = WEEKDAYS_SHORT.get(lang, WEEKDAYS_SHORT["pl"])
+    week_days = []
+    for d in week_dates:
+        iso = d.isoformat()
+        done = day_done[iso]
+        plan = plan_map.get(iso)
+        dominant_sport = "other"
+        if done["sport_counts"]:
+            dominant_sport = max(done["sport_counts"].items(), key=lambda x: x[1])[0]
+        elif plan:
+            dominant_sport = plan.get("sport") or "other"
+
+        avg_hr = int(round(done["hr_sum"] / done["hr_count"])) if done["hr_count"] else None
+        if done["count"] > 0:
+            card_kind = "done"
+        elif plan and d >= today:
+            card_kind = "planned"
+        else:
+            card_kind = "empty"
+
+        week_days.append({
+            "date": iso,
+            "weekday_short": weekday_short[d.weekday()],
+            "is_today": d == today,
+            "is_past": d < today,
+            "drop_allowed": (d >= today and done["count"] == 0),
+            "card_kind": card_kind,
+            "sport": dominant_sport,
+            "done": {
+                "count": done["count"],
+                "dist_km": round(done["dist_km"], 2),
+                "dur_min": done["dur_min"],
+                "avg_hr": avg_hr,
+                "activities": done["activities"],
+            },
+            "plan": plan,
+        })
+
+    # Weekly goals + coach note
+    planned_counts = {}
+    for d, plan in plan_map.items():
+        if d >= today_str:
+            s = plan.get("sport") or "other"
+            planned_counts[s] = planned_counts.get(s, 0) + 1
+    weekly_goal_items = [f"{cnt}x {activity_label(s)}" for s, cnt in sorted(planned_counts.items(), key=lambda x: (-x[1], x[0]))]
+
+    done_total = sum(day_done[d.isoformat()]["count"] for d in week_dates if d <= today)
+    profile_obj = UserProfile.query.filter_by(user_id=current_user.id).first()
+    weekly_goal_target = max(1, int(profile_obj.weekly_goal_workouts or max(3, len(planned_counts) or 1))) if profile_obj else max(1, len(planned_counts) or 3)
+    completion_pct = int(round(min(100.0, (done_total / max(1, weekly_goal_target)) * 100.0)))
+    days_left = (week_end - today).days
+
+    if completion_pct >= 100:
+        coach_note = tr(
+            "Świetna robota — cel tygodnia już domknięty. Utrzymaj jakość i regenerację.",
+            "Great work — weekly goal already completed. Keep quality and recovery high.",
+        )
+    elif days_left <= 2 and completion_pct < 60:
+        coach_note = tr(
+            "Końcówka tygodnia jest napięta. Postaw na 1 kluczową jednostkę + 1 krótszy trening.",
+            "Week ending is tight. Focus on 1 key session + 1 shorter workout.",
+        )
+    else:
+        coach_note = tr(
+            "Plan wygląda stabilnie. Pilnuj regularności i unikaj dwóch ciężkich dni pod rząd.",
+            "Plan looks stable. Stay consistent and avoid two hard days back-to-back.",
+        )
 
     return render_template(
         "index.html",
         activities=recent_activities,
         active_plan=active_plan,
-        past_days=past_days,
-        future_days=future_days,
+        week_days=week_days,
+        weekly_goal_items=weekly_goal_items,
+        weekly_goal_target=weekly_goal_target,
+        weekly_done_total=done_total,
+        weekly_completion_pct=completion_pct,
+        coach_note=coach_note,
         today_str=today_str,
     )
 
@@ -1844,7 +2118,7 @@ def chat_with_coach():
 @app.route("/api/forecast", methods=["GET"])
 @login_required
 def generate_forecast():
-    """Generuje plan na najbliższe 4 dni i zapisuje go jako aktywny (stan), żeby dashboard był stabilny."""
+    """Generuje plan od dziś do końca tygodnia i zapisuje go jako aktywny."""
     profile_obj = UserProfile.query.filter_by(user_id=current_user.id).first()
     profile_state = get_profile_and_state_context(current_user)
     weekly_agg = get_weekly_aggregates(user_id=current_user.id, weeks=12)
@@ -1857,7 +2131,9 @@ def generate_forecast():
         stats=compute_stats(current_user.id, 30),
     )
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    today_dt = datetime.now().date()
+    today = today_dt.strftime("%Y-%m-%d")
+    days_to_generate = max(1, 7 - today_dt.weekday())  # do niedzieli włącznie
 
     language_hint = tr(
         "Opis i uzasadnienie pisz po polsku.",
@@ -1873,7 +2149,7 @@ def generate_forecast():
         if profile_obj and profile_obj.weekly_distance_km:
             base_week_km = max(base_week_km, float(profile_obj.weekly_distance_km))
         allowed_week_km = max(6.0, round(base_week_km * (1.0 + ramp_pct), 1))
-        allowed_4d_km = round((allowed_week_km * 4.0) / 7.0, 1)
+        allowed_window_km = round((allowed_week_km * float(days_to_generate)) / 7.0, 1)
 
         def parse_km(workout: str | None) -> float:
             txt = (workout or "").lower()
@@ -1945,13 +2221,13 @@ def generate_forecast():
 
         # Keep 4-day km load near safe ramp based on recent weeks.
         total_plan_km = sum(float(x.get("_km", 0.0) or 0.0) for x in out)
-        if total_plan_km > 0 and total_plan_km > allowed_4d_km:
-            factor = max(0.55, allowed_4d_km / total_plan_km)
+        if total_plan_km > 0 and total_plan_km > allowed_window_km:
+            factor = max(0.55, allowed_window_km / total_plan_km)
             for item in out:
                 item["workout"] = scale_first_km(item.get("workout"), factor)
                 item["why"] = ((item.get("why") or "").strip() + " " + tr(
-                    f"Dopasowano obciążenie (limit 4 dni: {allowed_4d_km} km).",
-                    f"Load adjusted (4-day cap: {allowed_4d_km} km).",
+                    f"Dopasowano obciążenie (limit okna: {allowed_window_km} km).",
+                    f"Load adjusted (window cap: {allowed_window_km} km).",
                 )).strip()
 
         for item in out:
@@ -1959,7 +2235,7 @@ def generate_forecast():
         return out
 
     prompt = f"""
-Jesteś trenerem sportowym. Stwórz plan treningowy na 4 dni (start: {today}).
+Jesteś trenerem sportowym. Stwórz plan treningowy od dziś do końca tygodnia ({days_to_generate} dni, start: {today}).
 
 WAŻNE:
 - Uwzględnij ograniczenia i dostępność z PROFILU.
@@ -1984,13 +2260,16 @@ FORMAT (BARDZO WAŻNE):
         "date": "YYYY-MM-DD",
         "activity_type": "run|ride|swim|weighttraining|yoga|walk|other",
         "workout": "konkretna jednostka z czasem/dystansem",
+        "details": "dokładny opis: rozgrzewka, część główna, schłodzenie",
+        "distance_km": number|null,
+        "duration_min": number|null,
         "intensity": "easy|moderate|hard",
         "why": "krótkie uzasadnienie",
         "source_facts": ["3 krótkie fakty użyte do decyzji"]
       }}
     ]
   }}
-- Dokładnie 4 dni.
+- Dokładnie {days_to_generate} dni.
 - {language_hint}
 """
 
@@ -2008,8 +2287,8 @@ FORMAT (BARDZO WAŻNE):
         if len(days) < 1:
             return jsonify({"plan": tr("Nie udało się wygenerować planu.", "Could not generate plan.")})
 
-        days = _apply_plan_rules(days)[:4]
-        # Normalizuj daty do kolejnych dni od dziś, żeby roadmap miał stabilnie dziś + 3 kolejne.
+        days = _apply_plan_rules(days)[:days_to_generate]
+        # Normalizuj daty do kolejnych dni od dziś, żeby kalendarz miał stabilny układ.
         for idx, item in enumerate(days):
             item["date"] = (datetime.now() + timedelta(days=idx)).strftime("%Y-%m-%d")
         text = json.dumps({"days": days}, ensure_ascii=False)
@@ -2020,7 +2299,7 @@ FORMAT (BARDZO WAŻNE):
             user_id=current_user.id,
             created_at=datetime.now(timezone.utc),
             start_date=datetime.now(timezone.utc).date(),
-            horizon_days=4,
+            horizon_days=days_to_generate,
             html_content=text,
             is_active=True,
         )
@@ -2030,6 +2309,55 @@ FORMAT (BARDZO WAŻNE):
         return jsonify({"plan": text})
     except Exception:
         return jsonify({"plan": tr("Nie udało się wygenerować planu.", "Could not generate plan.")})
+
+
+@app.route("/api/plan/move", methods=["POST"])
+@login_required
+def move_plan_day():
+    payload = request.json or {}
+    from_date = (payload.get("from_date") or "").strip()
+    to_date = (payload.get("to_date") or "").strip()
+    if not from_date or not to_date:
+        return jsonify({"ok": False, "error": tr("Brak dat do zmiany.", "Missing dates.")}), 400
+
+    active_plan = (
+        GeneratedPlan.query
+        .filter_by(user_id=current_user.id, is_active=True)
+        .order_by(GeneratedPlan.created_at.desc())
+        .first()
+    )
+    if not active_plan:
+        return jsonify({"ok": False, "error": tr("Brak aktywnego planu.", "No active plan.")}), 404
+
+    try:
+        parsed = json.loads(active_plan.html_content or "{}")
+    except Exception:
+        return jsonify({"ok": False, "error": tr("Plan ma niepoprawny format.", "Plan has invalid format.")}), 400
+
+    days = []
+    if isinstance(parsed, dict) and isinstance(parsed.get("days"), list):
+        days = [d for d in parsed["days"] if isinstance(d, dict)]
+    if not days:
+        return jsonify({"ok": False, "error": tr("Brak dni do modyfikacji.", "No days to move.")}), 400
+
+    src_idx = next((i for i, d in enumerate(days) if (d.get("date") or "") == from_date), None)
+    dst_idx = next((i for i, d in enumerate(days) if (d.get("date") or "") == to_date), None)
+    if src_idx is None:
+        return jsonify({"ok": False, "error": tr("Nie znaleziono dnia źródłowego.", "Source day not found.")}), 404
+
+    if dst_idx is None:
+        days[src_idx]["date"] = to_date
+    else:
+        days[src_idx]["date"], days[dst_idx]["date"] = days[dst_idx].get("date"), days[src_idx].get("date")
+
+    try:
+        days.sort(key=lambda d: d.get("date") or "")
+    except Exception:
+        pass
+
+    active_plan.html_content = json.dumps({"days": days}, ensure_ascii=False)
+    db.session.commit()
+    return jsonify({"ok": True, "days": days})
 
 
 
