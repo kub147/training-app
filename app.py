@@ -576,6 +576,24 @@ def classify_sport(text: str) -> str:
     return "other"
 
 
+def normalize_activity_bucket(activity_type: str | None, notes: str | None = None) -> str:
+    t = (activity_type or "").lower()
+    n = (notes or "").lower()
+    if t in {"run", "trailrun", "virtualrun"}:
+        return "run"
+    if t in {"ride", "virtualride"}:
+        return "ride"
+    if t in {"swim"}:
+        return "swim"
+    if t in {"yoga"}:
+        return "mobility"
+    if t in {"weighttraining", "workout", "strengthtraining", "gym"}:
+        if any(k in n for k in ["mobility", "stabilizacja", "core", "rozciągan", "stretch", "rehab", "bioder", "stability"]):
+            return "mobility"
+        return "gym"
+    return "other"
+
+
 def _activity_start_dt(activity: Activity) -> datetime | None:
     dt = getattr(activity, "start_time", None)
     if isinstance(dt, datetime):
@@ -1053,6 +1071,46 @@ def get_recent_checkins_summary(user_id: int, days: int = 14, limit: int = 30) -
             note = note[:220] + "..."
         out.append(f"- {ts} | {note or 'brak opisu'}")
     return "\n".join(out)
+
+
+def get_execution_context(user_id: int, days: int = 10) -> str:
+    cutoff = datetime.now() - timedelta(days=days)
+    acts = _load_user_activities_with_fallback(
+        user_id=user_id,
+        start=cutoff,
+        order_asc=True,
+    )
+    if not acts:
+        return "WYKONANE TRENINGI: brak danych."
+
+    today_iso = datetime.now().strftime("%Y-%m-%d")
+    counts = {"run": 0, "ride": 0, "swim": 0, "gym": 0, "mobility": 0, "other": 0}
+    today_counts = {"run": 0, "ride": 0, "swim": 0, "gym": 0, "mobility": 0, "other": 0}
+    lines = [f"WYKONANE TRENINGI (ostatnie {days} dni):"]
+
+    for act in acts[-30:]:
+        dt = _activity_start_dt(act)
+        if not dt:
+            continue
+        ds = dt.strftime("%Y-%m-%d")
+        b = normalize_activity_bucket(act.activity_type, act.notes)
+        counts[b] = counts.get(b, 0) + 1
+        if ds == today_iso:
+            today_counts[b] = today_counts.get(b, 0) + 1
+
+        dist_km = (act.distance or 0.0) / 1000.0
+        dur_min = int((act.duration or 0) // 60)
+        lines.append(f"- {ds} | {b} | {dist_km:.1f} km | {dur_min} min")
+
+    lines.append(
+        "PODSUMOWANIE TYPU: "
+        + " | ".join([f"{k}={counts[k]}" for k in ("run", "ride", "swim", "gym", "mobility", "other")])
+    )
+    lines.append(
+        "DZISIAJ WYKONANO: "
+        + " | ".join([f"{k}={today_counts[k]}" for k in ("run", "ride", "swim", "gym", "mobility", "other")])
+    )
+    return "\n".join(lines)
 
 
 def get_checkin_signal_snapshot(user_id: int, days: int = 14, limit: int = 30) -> dict:
@@ -2241,6 +2299,7 @@ def chat_with_coach():
     weekly_agg = get_weekly_aggregates(user_id=current_user.id, weeks=12)
     recent_details = get_recent_activity_details(user_id=current_user.id, days=21)
     recent_checkins = get_recent_checkins_summary(user_id=current_user.id, days=14)
+    execution_ctx = get_execution_context(user_id=current_user.id, days=10)
     checkin_signals = get_checkin_signal_snapshot(user_id=current_user.id, days=14)
     goal_progress = build_goal_progress(
         user_id=current_user.id,
@@ -2257,6 +2316,7 @@ def chat_with_coach():
         weekly_agg=weekly_agg,
         recent_details=recent_details,
         recent_checkins=recent_checkins,
+        execution_context=execution_ctx,
         checkin_signals=json.dumps(checkin_signals, ensure_ascii=False),
         goal_context=json.dumps(goal_progress, ensure_ascii=False) if goal_progress else "Brak aktywnego celu z datą.",
         chat_history=chat_history_text,
@@ -2289,6 +2349,7 @@ def generate_forecast():
     weekly_agg = get_weekly_aggregates(user_id=current_user.id, weeks=12)
     recent_details = get_recent_activity_details(user_id=current_user.id, days=21)
     recent_checkins = get_recent_checkins_summary(user_id=current_user.id, days=14)
+    execution_ctx = get_execution_context(user_id=current_user.id, days=10)
     checkin_signals = get_checkin_signal_snapshot(user_id=current_user.id, days=14)
     goal_progress = build_goal_progress(
         user_id=current_user.id,
@@ -2406,6 +2467,8 @@ Jesteś trenerem sportowym. Stwórz plan treningowy od dziś do końca tygodnia 
 WAŻNE:
 - Uwzględnij ograniczenia i dostępność z PROFILU.
 - Jeżeli STATE wskazuje aktywny uraz/ograniczenia — plan ma być konserwatywny.
+- Uwzględnij WYKONANE TRENINGI: nie dubluj jednostek już wykonanych, chyba że to celowe.
+- Jeśli dziś wykonano już siłę/mobility, jutro preferuj inną modalność (np. bieg easy / regeneracja), chyba że cel wymaga inaczej.
 
 {profile_state}
 
@@ -2414,6 +2477,8 @@ WAŻNE:
 {recent_details}
 
 {recent_checkins}
+
+{execution_ctx}
 
 SYGNAŁY CHECK-IN:
 {json.dumps(checkin_signals, ensure_ascii=False)}

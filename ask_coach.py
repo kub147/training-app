@@ -45,6 +45,7 @@ def build_chat_prompt(
     weekly_agg: str,
     recent_details: str,
     recent_checkins: str,
+    execution_context: str,
     checkin_signals: str,
     goal_context: str,
     chat_history: str,
@@ -62,6 +63,8 @@ KONTEKST (warstwowo, nie pełna baza):
 {recent_details}
 
 {recent_checkins}
+
+{execution_context}
 
 SYGNAŁY CHECK-IN (JSON):
 {checkin_signals}

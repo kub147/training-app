@@ -622,12 +622,22 @@ h1 {
     font-weight: 800;
     color: #0f172a;
     line-height: 1.25;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
 .week-item-sub {
     margin-top: 4px;
     font-size: 11px;
     color: #475569;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .week-empty {
