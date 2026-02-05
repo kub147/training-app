@@ -724,6 +724,7 @@ def ensure_schema() -> None:
             'weekly_distance_km': "weekly_distance_km REAL",
             'days_per_week': "days_per_week INTEGER",
             'weekly_goal_workouts': "weekly_goal_workouts INTEGER",
+            'weekly_focus_sports': "weekly_focus_sports TEXT",
             'weekly_run_sessions': "weekly_run_sessions INTEGER",
             'weekly_gym_sessions': "weekly_gym_sessions INTEGER",
             'weekly_swim_sessions': "weekly_swim_sessions INTEGER",
@@ -828,6 +829,16 @@ ACTIVITY_LABELS = {
         "other": "Other",
     },
 }
+
+TARGET_SPORT_FIELDS = {
+    "run": "weekly_run_sessions",
+    "gym": "weekly_gym_sessions",
+    "swim": "weekly_swim_sessions",
+    "mobility": "weekly_mobility_sessions",
+    "ride": "weekly_ride_sessions",
+}
+
+TARGET_SPORT_ORDER = ["run", "gym", "swim", "mobility", "ride"]
 
 WEEKDAYS_FULL = {
     "pl": ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"],
@@ -1278,14 +1289,7 @@ def compute_profile_defaults_from_history(user_id: int) -> None:
     if profile.weekly_goal_workouts is None and avg_count > 0:
         profile.weekly_goal_workouts = max(1, int(round(avg_count)))
         changed = True
-    bucket_field_map = {
-        "run": "weekly_run_sessions",
-        "gym": "weekly_gym_sessions",
-        "swim": "weekly_swim_sessions",
-        "mobility": "weekly_mobility_sessions",
-        "ride": "weekly_ride_sessions",
-    }
-    for bucket, field_name in bucket_field_map.items():
+    for bucket, field_name in TARGET_SPORT_FIELDS.items():
         if getattr(profile, field_name, None) is not None:
             continue
         bucket_total = bucket_counts.get(bucket, 0)
@@ -1294,6 +1298,11 @@ def compute_profile_defaults_from_history(user_id: int) -> None:
         avg_bucket_sessions = bucket_total / max(1, len(weeks))
         setattr(profile, field_name, max(1, int(round(avg_bucket_sessions))))
         changed = True
+    if not (profile.weekly_focus_sports or "").strip():
+        inferred_focus = [k for k in TARGET_SPORT_ORDER if bucket_counts.get(k, 0) > 0]
+        if inferred_focus:
+            profile.weekly_focus_sports = ",".join(inferred_focus)
+            changed = True
 
     if changed:
         _sync_legacy_weekly_goal(profile)
@@ -1662,17 +1671,52 @@ def _target_bucket_label(bucket: str) -> str:
     return labels.get(bucket, bucket)
 
 
+def _normalize_focus_sports(raw_values: list[str] | tuple[str, ...] | None) -> list[str]:
+    if not raw_values:
+        return ["run"]
+
+    out = []
+    seen = set()
+    for raw in raw_values:
+        if raw is None:
+            continue
+        parts = str(raw).split(",")
+        for part in parts:
+            key = part.strip().lower()
+            if key not in TARGET_SPORT_FIELDS:
+                continue
+            if key in seen:
+                continue
+            out.append(key)
+            seen.add(key)
+    return out or ["run"]
+
+
+def _get_focus_sports(profile_obj: UserProfile | None, weekly_targets: dict[str, int] | None = None) -> list[str]:
+    if weekly_targets is None:
+        weekly_targets = _get_weekly_session_targets(profile_obj)
+
+    if profile_obj and getattr(profile_obj, "weekly_focus_sports", None):
+        selected = _normalize_focus_sports([profile_obj.weekly_focus_sports])
+        if selected:
+            return selected
+
+    inferred = [k for k in TARGET_SPORT_ORDER if int(weekly_targets.get(k, 0) or 0) > 0]
+    if inferred:
+        return inferred
+    return ["run"]
+
+
+def _build_weekly_target_form_context(profile_obj: UserProfile | None) -> tuple[list[str], dict[str, int]]:
+    targets = _get_weekly_session_targets(profile_obj)
+    focus_sports = _get_focus_sports(profile_obj, targets)
+    return focus_sports, targets
+
+
 def _get_weekly_session_targets(profile_obj: UserProfile | None) -> dict[str, int]:
-    fields = {
-        "run": "weekly_run_sessions",
-        "gym": "weekly_gym_sessions",
-        "swim": "weekly_swim_sessions",
-        "mobility": "weekly_mobility_sessions",
-        "ride": "weekly_ride_sessions",
-    }
-    targets = {k: 0 for k in fields}
+    targets = {k: 0 for k in TARGET_SPORT_FIELDS}
     if profile_obj:
-        for key, field in fields.items():
+        for key, field in TARGET_SPORT_FIELDS.items():
             val = getattr(profile_obj, field, None)
             try:
                 targets[key] = max(0, int(val or 0))
@@ -1708,7 +1752,7 @@ def _count_week_sessions_by_target(user_id: int, week_start: date, week_end: dat
         end=datetime.combine(week_end + timedelta(days=1), datetime.min.time()),
         order_asc=True,
     )
-    out = {"run": 0, "gym": 0, "swim": 0, "mobility": 0, "ride": 0}
+    out = {k: 0 for k in TARGET_SPORT_ORDER}
     for a in acts:
         b = normalize_activity_bucket(a.activity_type, a.notes)
         if b in out:
@@ -1771,10 +1815,11 @@ def build_goal_progress(user_id: int, profile_obj: UserProfile | None, range_day
         projected_4w = target_weekly
 
     weekly_targets = _get_weekly_session_targets(profile_obj)
-    weekly_goal = max(1, sum(weekly_targets.values()))
+    focus_sports = _get_focus_sports(profile_obj, weekly_targets)
+    weekly_goal = max(1, sum(int(weekly_targets.get(k, 0) or 0) for k in focus_sports))
     week_start = today - timedelta(days=today.weekday())
     done_targets = _count_week_sessions_by_target(user_id=user_id, week_start=week_start, week_end=today)
-    workouts_done = sum(done_targets.values())
+    workouts_done = sum(int(done_targets.get(k, 0) or 0) for k in focus_sports)
     completion_pct = int(round(min(100.0, (workouts_done / max(1, weekly_goal)) * 100.0)))
 
     if days_left <= 0:
@@ -1814,6 +1859,7 @@ def build_goal_progress(user_id: int, profile_obj: UserProfile | None, range_day
         "workouts_done_this_week": workouts_done,
         "weekly_targets": weekly_targets,
         "weekly_done_targets": done_targets,
+        "focus_sports": focus_sports,
         "updated_on": today.isoformat(),
     }
 
@@ -1864,15 +1910,10 @@ def get_profile_and_state_context(user: User) -> str:
         if profile.weekly_goal_workouts is not None:
             facts.append(f"Cel treningów/tydz.: {profile.weekly_goal_workouts}")
         weekly_targets = _get_weekly_session_targets(profile)
-        if any(weekly_targets.values()):
-            facts.append(
-                "Preferowana częstotliwość/tydz.: "
-                f"run {weekly_targets.get('run', 0)}, "
-                f"gym {weekly_targets.get('gym', 0)}, "
-                f"swim {weekly_targets.get('swim', 0)}, "
-                f"mobility {weekly_targets.get('mobility', 0)}, "
-                f"ride {weekly_targets.get('ride', 0)}"
-            )
+        focus_sports = _get_focus_sports(profile, weekly_targets)
+        if focus_sports:
+            freq_parts = [f"{sport} {weekly_targets.get(sport, 0)}" for sport in focus_sports]
+            facts.append("Preferowana częstotliwość/tydz.: " + ", ".join(freq_parts))
         if profile.experience_text:
             facts.append(f"Doświadczenie: {profile.experience_text}")
         lines.append("FACTS: " + (" | ".join(facts) if facts else "brak"))
@@ -2127,6 +2168,7 @@ def register():
         password = request.form.get("password") or ""
         first_name = (request.form.get("first_name") or "").strip()
         last_name = (request.form.get("last_name") or "").strip()
+        selected_sports = _normalize_focus_sports(request.form.getlist("weekly_focus_sports"))
 
         zip_file = request.files.get("strava_zip")
 
@@ -2148,7 +2190,16 @@ def register():
         db.session.add(user)
         db.session.commit()
 
-        profile = UserProfile(user_id=user.id)
+        profile = UserProfile(
+            user_id=user.id,
+            weekly_focus_sports=",".join(selected_sports),
+            primary_sports=",".join(selected_sports),
+        )
+        for sport in selected_sports:
+            field_name = TARGET_SPORT_FIELDS.get(sport)
+            if field_name:
+                setattr(profile, field_name, 1)
+        _sync_legacy_weekly_goal(profile)
         db.session.add(profile)
         db.session.commit()
 
@@ -2184,7 +2235,11 @@ def register():
 
         return redirect(url_for("index"))
 
-    return render_template("register.html")
+    return render_template(
+        "register.html",
+        target_sport_keys=TARGET_SPORT_ORDER,
+        focus_sports=["run", "gym"],
+    )
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -2313,11 +2368,13 @@ def onboarding():
         profile.weekly_time_hours = _to_float(request.form.get("weekly_time_hours"))
         profile.weekly_distance_km = _to_float(request.form.get("weekly_distance_km"))
         profile.days_per_week = _to_int(request.form.get("days_per_week"))
-        profile.weekly_run_sessions = _to_int(request.form.get("weekly_run_sessions"))
-        profile.weekly_gym_sessions = _to_int(request.form.get("weekly_gym_sessions"))
-        profile.weekly_swim_sessions = _to_int(request.form.get("weekly_swim_sessions"))
-        profile.weekly_mobility_sessions = _to_int(request.form.get("weekly_mobility_sessions"))
-        profile.weekly_ride_sessions = _to_int(request.form.get("weekly_ride_sessions"))
+        selected_sports = _normalize_focus_sports(request.form.getlist("weekly_focus_sports"))
+        profile.weekly_focus_sports = ",".join(selected_sports)
+        for sport, field_name in TARGET_SPORT_FIELDS.items():
+            if sport in selected_sports:
+                setattr(profile, field_name, _to_int(request.form.get(field_name)) or 0)
+            else:
+                setattr(profile, field_name, 0)
         profile.coach_style = _clip(request.form.get("coach_style"), 40)
         profile.risk_tolerance = _clip(request.form.get("risk_tolerance"), 40)
         profile.training_priority = _clip(request.form.get("training_priority"), 40)
@@ -2362,7 +2419,15 @@ def onboarding():
         flash(tr("Dzięki! Profil zapisany. Możesz korzystać z dashboardu.", "Thanks! Profile saved. You can now use the dashboard."))
         return redirect(url_for("index"))
 
-    return render_template("onboarding.html", profile=profile)
+    focus_sports, target_values = _build_weekly_target_form_context(profile)
+    return render_template(
+        "onboarding.html",
+        profile=profile,
+        target_sport_keys=TARGET_SPORT_ORDER,
+        target_sport_fields=TARGET_SPORT_FIELDS,
+        focus_sports=focus_sports,
+        target_values=target_values,
+    )
 
 
 @app.route("/profile", methods=["GET", "POST"])
@@ -2421,11 +2486,13 @@ def profile():
             profile_obj.weekly_time_hours = _to_float(request.form.get("weekly_time_hours"))
             profile_obj.weekly_distance_km = _to_float(request.form.get("weekly_distance_km"))
             profile_obj.days_per_week = _to_int(request.form.get("days_per_week"))
-            profile_obj.weekly_run_sessions = _to_int(request.form.get("weekly_run_sessions"))
-            profile_obj.weekly_gym_sessions = _to_int(request.form.get("weekly_gym_sessions"))
-            profile_obj.weekly_swim_sessions = _to_int(request.form.get("weekly_swim_sessions"))
-            profile_obj.weekly_mobility_sessions = _to_int(request.form.get("weekly_mobility_sessions"))
-            profile_obj.weekly_ride_sessions = _to_int(request.form.get("weekly_ride_sessions"))
+            selected_sports = _normalize_focus_sports(request.form.getlist("weekly_focus_sports"))
+            profile_obj.weekly_focus_sports = ",".join(selected_sports)
+            for sport, field_name in TARGET_SPORT_FIELDS.items():
+                if sport in selected_sports:
+                    setattr(profile_obj, field_name, _to_int(request.form.get(field_name)) or 0)
+                else:
+                    setattr(profile_obj, field_name, 0)
             profile_obj.coach_style = _clip(request.form.get("coach_style"), 40)
             profile_obj.risk_tolerance = _clip(request.form.get("risk_tolerance"), 40)
             profile_obj.training_priority = _clip(request.form.get("training_priority"), 40)
@@ -2463,7 +2530,16 @@ def profile():
         return redirect(url_for("profile"))
 
     try:
-        return render_template("profile.html", profile=profile_obj, current_injury_text=get_current_injury_text(current_user.id))
+        focus_sports, target_values = _build_weekly_target_form_context(profile_obj)
+        return render_template(
+            "profile.html",
+            profile=profile_obj,
+            current_injury_text=get_current_injury_text(current_user.id),
+            target_sport_keys=TARGET_SPORT_ORDER,
+            target_sport_fields=TARGET_SPORT_FIELDS,
+            focus_sports=focus_sports,
+            target_values=target_values,
+        )
     except Exception as e:
         app.logger.exception("Profile render failed for user %s: %s", current_user.id, e)
         return (
@@ -2748,18 +2824,18 @@ def index():
         week_start=week_start,
         week_end=today,
     )
+    focus_sports = _get_focus_sports(profile_obj, weekly_targets)
 
     weekly_goal_items = []
-    ordered_buckets = ["run", "gym", "swim", "mobility", "ride"]
-    for bucket in ordered_buckets:
+    for bucket in focus_sports:
         target_val = int(weekly_targets.get(bucket, 0) or 0)
         if target_val <= 0:
             continue
         done_val = int(weekly_done.get(bucket, 0) or 0)
         weekly_goal_items.append(f"{_target_bucket_label(bucket)}: {done_val}/{target_val}")
 
-    done_total = sum(int(v or 0) for v in weekly_done.values())
-    weekly_goal_target = max(1, sum(int(v or 0) for v in weekly_targets.values()))
+    done_total = sum(int(weekly_done.get(k, 0) or 0) for k in focus_sports)
+    weekly_goal_target = max(1, sum(int(weekly_targets.get(k, 0) or 0) for k in focus_sports))
     completion_pct = int(round(min(100.0, (done_total / max(1, weekly_goal_target)) * 100.0)))
     days_left = (week_end - today).days
 
@@ -2953,15 +3029,17 @@ def generate_forecast():
         week_start=week_start,
         week_end=today_dt,
     )
+    focus_sports = _get_focus_sports(profile_obj, weekly_targets)
     weekly_remaining = {
         k: max(0, int(weekly_targets.get(k, 0) or 0) - int(weekly_done.get(k, 0) or 0))
-        for k in weekly_targets
+        for k in focus_sports
     }
     weekly_target_context = {
         "week_start": week_start.isoformat(),
         "today": today_dt.isoformat(),
-        "targets": weekly_targets,
-        "done_until_today": weekly_done,
+        "selected_sports": focus_sports,
+        "targets": {k: int(weekly_targets.get(k, 0) or 0) for k in focus_sports},
+        "done_until_today": {k: int(weekly_done.get(k, 0) or 0) for k in focus_sports},
         "remaining_to_fill": weekly_remaining,
     }
 

@@ -740,6 +740,29 @@ h1 {
     font-weight: 800;
 }
 
+.sport-pick-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+}
+
+.sport-pick-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.sport-pick-item input[type="checkbox"] {
+    margin: 0;
+}
+
 .field-spaced {
     margin-top: 10px;
 }

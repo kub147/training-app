@@ -75,31 +75,26 @@
                     <input type="number" min="0" name="days_per_week" value="{{ profile.days_per_week if profile.days_per_week is not none else '' }}" placeholder="{{ tx('np. 4','e.g. 4') }}">
                 </div>
                 <div class="field">
-                    <label>{{ tx('FAKTY: Sesje biegowe / tydzień','FACTS: Run sessions / week') }}</label>
-                    <input type="number" min="0" max="14" name="weekly_run_sessions" value="{{ profile.weekly_run_sessions if profile.weekly_run_sessions is not none else '' }}" placeholder="{{ tx('np. 3','e.g. 3') }}">
+                    <label>{{ tx('FAKTY: Jakie sporty mają być w celach tygodnia','FACTS: Sports included in weekly goals') }}</label>
+                    <div class="sport-pick-grid">
+                        {% for sport in target_sport_keys %}
+                            <label class="sport-pick-item">
+                                <input type="checkbox" name="weekly_focus_sports" value="{{ sport }}" {% if sport in focus_sports %}checked{% endif %}>
+                                <span>{{ activity_label(sport) }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                    <div class="help-text">{{ tx('To jest lista „Dodaj sport”. Tylko wybrane sporty będą w celach tygodnia.','This is your “Add sport” list. Only selected sports appear in weekly goals.') }}</div>
                 </div>
             </div>
 
             <div class="form-row">
-                <div class="field">
-                    <label>{{ tx('FAKTY: Sesje siłowe / tydzień','FACTS: Gym sessions / week') }}</label>
-                    <input type="number" min="0" max="14" name="weekly_gym_sessions" value="{{ profile.weekly_gym_sessions if profile.weekly_gym_sessions is not none else '' }}" placeholder="{{ tx('np. 2','e.g. 2') }}">
-                </div>
-                <div class="field">
-                    <label>{{ tx('FAKTY: Sesje pływackie / tydzień','FACTS: Swim sessions / week') }}</label>
-                    <input type="number" min="0" max="14" name="weekly_swim_sessions" value="{{ profile.weekly_swim_sessions if profile.weekly_swim_sessions is not none else '' }}" placeholder="{{ tx('np. 1','e.g. 1') }}">
-                </div>
-            </div>
-
-            <div class="form-row">
-                <div class="field">
-                    <label>{{ tx('FAKTY: Mobilność/core / tydzień','FACTS: Mobility/core sessions / week') }}</label>
-                    <input type="number" min="0" max="14" name="weekly_mobility_sessions" value="{{ profile.weekly_mobility_sessions if profile.weekly_mobility_sessions is not none else '' }}" placeholder="{{ tx('np. 1','e.g. 1') }}">
-                </div>
-                <div class="field">
-                    <label>{{ tx('FAKTY: Sesje rowerowe / tydzień','FACTS: Cycling sessions / week') }}</label>
-                    <input type="number" min="0" max="14" name="weekly_ride_sessions" value="{{ profile.weekly_ride_sessions if profile.weekly_ride_sessions is not none else '' }}" placeholder="{{ tx('np. 1','e.g. 1') }}">
-                </div>
+                {% for sport in target_sport_keys %}
+                    <div class="field weekly-target-field {% if sport not in focus_sports %}is-hidden{% endif %}" data-sport-field="{{ sport }}">
+                        <label>{{ activity_label(sport) }} / {{ tx('tydzień','week') }}</label>
+                        <input type="number" min="0" max="14" name="{{ target_sport_fields[sport] }}" value="{{ target_values.get(sport, '') }}" placeholder="{{ tx('np. 2','e.g. 2') }}">
+                    </div>
+                {% endfor %}
             </div>
 
             <div class="field">
@@ -171,6 +166,29 @@
         </form>
     </div>
 </div>
+<script>
+(function(){
+  const boxes = Array.from(document.querySelectorAll('input[name="weekly_focus_sports"]'));
+  const fields = Array.from(document.querySelectorAll('.weekly-target-field'));
+  if(!boxes.length || !fields.length) return;
+
+  const sync = () => {
+    const selected = new Set(boxes.filter(b => b.checked).map(b => b.value));
+    fields.forEach(el => {
+      const sport = el.getAttribute('data-sport-field');
+      const active = selected.has(sport);
+      el.classList.toggle('is-hidden', !active);
+      const input = el.querySelector('input');
+      if(input && !active){
+        input.value = '0';
+      }
+    });
+  };
+
+  boxes.forEach(box => box.addEventListener('change', sync));
+  sync();
+})();
+</script>
 {% include "_chat_widget.html" %}
 </body>
 </html>

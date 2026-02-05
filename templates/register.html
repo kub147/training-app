@@ -47,6 +47,19 @@
                     </select>
                 </div>
 
+                <div class="field">
+                    <label>{{ tx('Jakie sporty chcesz mieć w celach tygodnia?','Which sports do you want in weekly goals?') }}</label>
+                    <div class="sport-pick-grid">
+                        {% for sport in target_sport_keys %}
+                            <label class="sport-pick-item">
+                                <input type="checkbox" name="weekly_focus_sports" value="{{ sport }}" {% if sport in focus_sports %}checked{% endif %}>
+                                <span>{{ activity_label(sport) }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                    <div class="help-text">{{ tx('To ustawienie możesz zmienić później w profilu.','You can change this later in profile.') }}</div>
+                </div>
+
                 <div class="form-row">
                     <div class="field">
                         <label>{{ tx('Imię','First name') }}</label>

@@ -46,6 +46,7 @@ class UserProfile(db.Model):
     weekly_distance_km = db.Column(db.Float)          # declared distance per week
     days_per_week = db.Column(db.Integer)             # training days per week
     weekly_goal_workouts = db.Column(db.Integer)      # target workouts per week (for metrics goal)
+    weekly_focus_sports = db.Column(db.String(200))   # comma-separated keys for weekly goals UI
     weekly_run_sessions = db.Column(db.Integer)       # preferred run sessions/week
     weekly_gym_sessions = db.Column(db.Integer)       # preferred strength sessions/week
     weekly_swim_sessions = db.Column(db.Integer)      # preferred swim sessions/week
