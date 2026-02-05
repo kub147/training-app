@@ -35,11 +35,11 @@
 
     <div class="card">
         <div class="section-title">📦 {{ tx('Ponowny import ZIP (opcjonalnie)','Re-import ZIP (optional)') }}</div>
-        <p class="help-text">{{ tx('Strava: strava.com/account → Pobierz lub usuń konto → Poproś o archiwum.','Strava: strava.com/account -> Download or delete your account -> Request your archive.') }}</p>
+        <p class="help-text">{{ tx('Obsługiwane archiwa: Strava oraz Garmin Connect Export.','Supported archives: Strava and Garmin Connect Export.') }}</p>
         <form method="POST" action="/profile" enctype="multipart/form-data">
             <input type="hidden" name="action" value="reimport_zip">
             <div class="field">
-                <label>{{ tx('Archiwum Strava (ZIP)','Strava archive (ZIP)') }}</label>
+                <label>{{ tx('Archiwum aktywności (ZIP)','Activity archive (ZIP)') }}</label>
                 <input type="file" name="strava_zip" accept=".zip" required>
             </div>
             <div class="actions">

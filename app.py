@@ -730,6 +730,15 @@ def ensure_schema() -> None:
             'weekly_swim_sessions': "weekly_swim_sessions INTEGER",
             'weekly_mobility_sessions': "weekly_mobility_sessions INTEGER",
             'weekly_ride_sessions': "weekly_ride_sessions INTEGER",
+            'gender': "gender TEXT",
+            'birth_date': "birth_date DATE",
+            'height_cm': "height_cm REAL",
+            'weight_kg': "weight_kg REAL",
+            'vo2max': "vo2max REAL",
+            'resting_hr': "resting_hr INTEGER",
+            'avg_sleep_hours': "avg_sleep_hours REAL",
+            'avg_daily_steps': "avg_daily_steps INTEGER",
+            'avg_daily_stress': "avg_daily_stress REAL",
             'coach_style': "coach_style TEXT",
             'risk_tolerance': "risk_tolerance TEXT",
             'training_priority': "training_priority TEXT",
@@ -760,6 +769,34 @@ def ensure_schema() -> None:
         for name, coldef in wanted.items():
             if name not in cols:
                 add_column('generated_plans', coldef)
+
+    # activities
+    if 'activities' in inspect(db.engine).get_table_names():
+        cols = columns('activities')
+        wanted = {
+            'max_hr': "max_hr INTEGER",
+            'moving_duration': "moving_duration INTEGER",
+            'elapsed_duration': "elapsed_duration INTEGER",
+            'avg_speed_mps': "avg_speed_mps REAL",
+            'max_speed_mps': "max_speed_mps REAL",
+            'elevation_gain': "elevation_gain REAL",
+            'elevation_loss': "elevation_loss REAL",
+            'calories': "calories REAL",
+            'steps': "steps INTEGER",
+            'vo2max': "vo2max REAL",
+            'start_lat': "start_lat REAL",
+            'start_lng': "start_lng REAL",
+            'end_lat': "end_lat REAL",
+            'end_lng': "end_lng REAL",
+            'source': "source TEXT DEFAULT 'manual'",
+            'external_id': "external_id TEXT",
+            'device_id': "device_id TEXT",
+            'sport_type': "sport_type TEXT",
+            'metadata_json': "metadata_json TEXT",
+        }
+        for name, coldef in wanted.items():
+            if name not in cols:
+                add_column('activities', coldef)
 
 
 # Uruchom minimalną migrację przy starcie aplikacji (również na PythonAnywhere)
@@ -1401,7 +1438,14 @@ def get_recent_activity_details(user_id: int, days: int = 21, limit: int = 120) 
         dist_km = (act.distance or 0) / 1000.0
         dur_min = int((act.duration or 0) // 60)
         hr = f" | HR {act.avg_hr}" if act.avg_hr else ""
-        out.append(f"- {d} | {t} | {dist_km:.1f} km | {dur_min} min{hr}")
+        pace = ""
+        if getattr(act, "avg_speed_mps", None) and float(act.avg_speed_mps) > 0:
+            sec_per_km = 1000.0 / float(act.avg_speed_mps)
+            mm = int(sec_per_km // 60)
+            ss = int(round(sec_per_km % 60))
+            pace = f" | tempo {mm}:{ss:02d}/km"
+        elev = f" | +{int(round(act.elevation_gain))}m" if getattr(act, "elevation_gain", None) else ""
+        out.append(f"- {d} | {t} | {dist_km:.1f} km | {dur_min} min{hr}{pace}{elev}")
         if act.notes:
             out.append(f"  Notatka: {act.notes}")
     return "\n".join(out)
@@ -1905,6 +1949,22 @@ def get_profile_and_state_context(user: User) -> str:
             facts.append(f"Czas tygodniowo: {profile.weekly_time_hours} h")
         if profile.weekly_distance_km is not None:
             facts.append(f"Kilometry tygodniowo: {profile.weekly_distance_km} km")
+        if profile.height_cm is not None:
+            facts.append(f"Wzrost: {profile.height_cm} cm")
+        if profile.weight_kg is not None:
+            facts.append(f"Waga: {profile.weight_kg} kg")
+        if profile.gender:
+            facts.append(f"Płeć: {profile.gender}")
+        if profile.vo2max is not None:
+            facts.append(f"VO2max: {profile.vo2max}")
+        if profile.resting_hr is not None:
+            facts.append(f"Tętno spoczynkowe: {profile.resting_hr}")
+        if profile.avg_sleep_hours is not None:
+            facts.append(f"Śr. sen: {profile.avg_sleep_hours} h")
+        if profile.avg_daily_steps is not None:
+            facts.append(f"Śr. kroki/dzień: {profile.avg_daily_steps}")
+        if profile.avg_daily_stress is not None:
+            facts.append(f"Śr. stres dzienny: {profile.avg_daily_stress}")
         if profile.days_per_week is not None:
             facts.append(f"Dni treningowe/tydz.: {profile.days_per_week}")
         if profile.weekly_goal_workouts is not None:
@@ -2064,6 +2124,318 @@ def get_current_injury_text(user_id: int) -> str:
     return (state.details or state.summary or "").strip()
 
 
+def _rewind_fileobj(file_obj) -> None:
+    try:
+        file_obj.seek(0)
+    except Exception:
+        pass
+
+
+def detect_activity_archive_type(zip_file) -> str:
+    """Detect import archive type from ZIP contents."""
+    _rewind_fileobj(zip_file)
+    try:
+        with zipfile.ZipFile(zip_file) as z:
+            names = [n.lower() for n in z.namelist()]
+    finally:
+        _rewind_fileobj(zip_file)
+
+    if any(n.endswith("activities.csv") for n in names):
+        return "strava"
+    if any(n.endswith("_summarizedactivities.json") and "di-connect-fitness" in n for n in names):
+        return "garmin"
+    return "unknown"
+
+
+def _garmin_activity_type_to_app(activity_type: str | None, sport_type: str | None, name: str | None) -> str:
+    t = (activity_type or "").strip().lower()
+    s = (sport_type or "").strip().lower()
+    n = (name or "").strip().lower()
+
+    direct = {
+        "running": "run",
+        "treadmill_running": "run",
+        "track_running": "run",
+        "cycling": "ride",
+        "lap_swimming": "swim",
+        "open_water_swimming": "swim",
+        "swimming": "swim",
+        "walking": "walk",
+        "hiking": "hike",
+        "yoga": "yoga",
+        "breathwork": "yoga",
+        "strength_training": "weighttraining",
+        "fitness_equipment": "workout",
+        "cardio_training": "workout",
+    }
+    if t in direct:
+        return direct[t]
+
+    if t == "other":
+        if any(k in s for k in ("swim",)):
+            return "swim"
+        if any(k in s for k in ("run", "track", "treadmill")):
+            return "run"
+        if any(k in s for k in ("cycle", "bike")):
+            return "ride"
+        if any(k in s for k in ("walk", "steps")):
+            return "walk"
+        if any(k in s for k in ("train", "strength", "generic", "invalid")):
+            return "workout"
+        if any(k in n for k in ("sił", "sil", "gym", "strength", "core", "mobility", "joga", "yoga")):
+            return "workout"
+
+    return "other"
+
+
+def _load_json_member_from_zip(z: zipfile.ZipFile, member_name: str):
+    with z.open(member_name) as f:
+        return json.load(io.TextIOWrapper(f, encoding="utf-8"))
+
+
+def _safe_float(value) -> float | None:
+    try:
+        if value in (None, "", "nan"):
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _safe_int(value) -> int | None:
+    try:
+        if value in (None, "", "nan"):
+            return None
+        return int(round(float(value)))
+    except Exception:
+        return None
+
+
+def _ms_to_datetime_utc(ms_value) -> datetime | None:
+    ms = _safe_float(ms_value)
+    if ms is None:
+        return None
+    try:
+        # Keep naive UTC to stay compatible with existing DB rows.
+        return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).replace(tzinfo=None)
+    except Exception:
+        return None
+
+
+def _to_meters_from_garmin_distance(raw_distance) -> float:
+    # Garmin summarized exports distance in centimeters.
+    val = _safe_float(raw_distance)
+    if val is None:
+        return 0.0
+    return max(0.0, val / 100.0)
+
+
+def _to_seconds_from_ms(raw_ms) -> int:
+    val = _safe_float(raw_ms)
+    if val is None:
+        return 0
+    return max(0, int(round(val / 1000.0)))
+
+
+def _load_garmin_profile_snapshot(z: zipfile.ZipFile) -> dict:
+    snapshot = {
+        "first_name": None,
+        "last_name": None,
+        "gender": None,
+        "birth_date": None,
+        "height_cm": None,
+        "weight_kg": None,
+        "vo2max": None,
+        "resting_hr": None,
+        "avg_sleep_hours": None,
+        "avg_daily_steps": None,
+        "avg_daily_stress": None,
+    }
+    names = z.namelist()
+    lower_map = {n.lower(): n for n in names}
+
+    # Basic identity from Garmin profile files.
+    user_profile_member = lower_map.get("di_connect/di-connect-user/user_profile.json")
+    if user_profile_member:
+        try:
+            data = _load_json_member_from_zip(z, user_profile_member)
+            if isinstance(data, dict):
+                snapshot["first_name"] = (data.get("firstName") or "").strip() or None
+                snapshot["gender"] = (data.get("gender") or "").strip() or None
+                snapshot["birth_date"] = (data.get("birthDate") or "").strip() or None
+        except Exception:
+            pass
+
+    customer_member = lower_map.get("customer_data/customer.json")
+    if customer_member:
+        try:
+            data = _load_json_member_from_zip(z, customer_member)
+            if isinstance(data, dict):
+                if not snapshot["first_name"]:
+                    snapshot["first_name"] = (data.get("firstName") or "").strip() or None
+                last_name = (data.get("lastName") or "").strip()
+                snapshot["last_name"] = last_name or snapshot["last_name"]
+                if not snapshot["birth_date"]:
+                    dob = (data.get("dateOfBirth") or "").strip()
+                    snapshot["birth_date"] = dob[:10] if dob else None
+                if not snapshot["gender"]:
+                    snapshot["gender"] = (data.get("gender") or "").strip() or None
+        except Exception:
+            pass
+
+    # Body metrics.
+    bio_metric_member = next(
+        (n for n in names if n.lower().endswith("_userbiometricprofiledata.json")),
+        None,
+    )
+    if bio_metric_member:
+        try:
+            data = _load_json_member_from_zip(z, bio_metric_member)
+            row = data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else None)
+            if isinstance(row, dict):
+                snapshot["height_cm"] = _safe_float(row.get("height"))
+                w = _safe_float(row.get("weight"))
+                if w is not None:
+                    snapshot["weight_kg"] = round(w / 1000.0, 1) if w > 200 else round(w, 1)
+                snapshot["vo2max"] = _safe_float(row.get("vo2Max"))
+        except Exception:
+            pass
+
+    # Daily wellness aggregates (steps/stress/resting HR).
+    uds_members = [n for n in names if "/di-connect-aggregator/udsfile_" in n.lower() and n.lower().endswith(".json")]
+    daily_rows = {}
+    for member in uds_members:
+        try:
+            payload = _load_json_member_from_zip(z, member)
+            if not isinstance(payload, list):
+                continue
+            for row in payload:
+                if not isinstance(row, dict):
+                    continue
+                d = (row.get("calendarDate") or "").strip()
+                if not d:
+                    continue
+                daily_rows[d] = row
+        except Exception:
+            continue
+
+    if daily_rows:
+        steps = []
+        stresses = []
+        resting_hr = []
+        for row in daily_rows.values():
+            st = _safe_int(row.get("totalSteps"))
+            if st is not None:
+                steps.append(st)
+
+            rh = _safe_int(row.get("restingHeartRate"))
+            if rh is not None and rh > 0:
+                resting_hr.append(rh)
+
+            all_day_stress = row.get("allDayStress") or {}
+            agg = all_day_stress.get("aggregatorList") if isinstance(all_day_stress, dict) else None
+            if isinstance(agg, list):
+                total = next((x for x in agg if isinstance(x, dict) and (x.get("type") or "").upper() == "TOTAL"), None)
+                if total:
+                    avg_stress = _safe_float(total.get("averageStressLevel"))
+                    if avg_stress is not None:
+                        stresses.append(avg_stress)
+
+        if steps:
+            snapshot["avg_daily_steps"] = int(round(sum(steps) / len(steps)))
+        if stresses:
+            snapshot["avg_daily_stress"] = round(sum(stresses) / len(stresses), 1)
+        if resting_hr:
+            snapshot["resting_hr"] = int(round(sum(resting_hr) / len(resting_hr)))
+
+    # Sleep files: compute average sleep duration in hours.
+    sleep_members = [n for n in names if "/di-connect-wellness/" in n.lower() and "sleepdata" in n.lower() and n.lower().endswith(".json")]
+    sleep_hours = []
+    for member in sleep_members:
+        try:
+            payload = _load_json_member_from_zip(z, member)
+            if not isinstance(payload, list):
+                continue
+            for row in payload:
+                if not isinstance(row, dict):
+                    continue
+                start_ts = (row.get("sleepStartTimestampGMT") or "").strip()
+                end_ts = (row.get("sleepEndTimestampGMT") or "").strip()
+                if start_ts and end_ts:
+                    try:
+                        start = datetime.fromisoformat(start_ts.replace("Z", "+00:00"))
+                        end = datetime.fromisoformat(end_ts.replace("Z", "+00:00"))
+                        delta_h = (end - start).total_seconds() / 3600.0
+                        if 1.0 <= delta_h <= 16.0:
+                            sleep_hours.append(delta_h)
+                        continue
+                    except Exception:
+                        pass
+
+                total_sec = 0
+                for key in ("deepSleepSeconds", "lightSleepSeconds", "remSleepSeconds", "awakeSleepSeconds"):
+                    v = _safe_float(row.get(key))
+                    if v is not None:
+                        total_sec += max(0.0, v)
+                if total_sec > 0:
+                    sleep_hours.append(total_sec / 3600.0)
+        except Exception:
+            continue
+
+    if sleep_hours:
+        snapshot["avg_sleep_hours"] = round(sum(sleep_hours) / len(sleep_hours), 1)
+
+    return snapshot
+
+
+def _apply_imported_profile_snapshot(user_id: int, snapshot: dict) -> None:
+    user = db.session.get(User, int(user_id))
+    if not user:
+        return
+
+    profile = UserProfile.query.filter_by(user_id=user_id).first()
+    if not profile:
+        profile = UserProfile(user_id=user_id)
+        db.session.add(profile)
+
+    first_name = (snapshot.get("first_name") or "").strip()
+    last_name = (snapshot.get("last_name") or "").strip()
+    if first_name and not (user.first_name or "").strip():
+        user.first_name = first_name
+    if last_name and not (user.last_name or "").strip():
+        user.last_name = last_name
+
+    if snapshot.get("gender") and not profile.gender:
+        profile.gender = str(snapshot["gender"]).strip()[:20]
+
+    birth_date = (snapshot.get("birth_date") or "").strip()
+    if birth_date:
+        try:
+            profile_birth = datetime.strptime(birth_date[:10], "%Y-%m-%d").date()
+            if not profile.birth_date:
+                profile.birth_date = profile_birth
+        except Exception:
+            pass
+
+    if snapshot.get("height_cm") is not None:
+        profile.height_cm = round(float(snapshot["height_cm"]), 1)
+    if snapshot.get("weight_kg") is not None:
+        profile.weight_kg = round(float(snapshot["weight_kg"]), 1)
+    if snapshot.get("vo2max") is not None:
+        profile.vo2max = round(float(snapshot["vo2max"]), 1)
+    if snapshot.get("resting_hr") is not None:
+        profile.resting_hr = int(snapshot["resting_hr"])
+    if snapshot.get("avg_sleep_hours") is not None:
+        profile.avg_sleep_hours = round(float(snapshot["avg_sleep_hours"]), 1)
+    if snapshot.get("avg_daily_steps") is not None:
+        profile.avg_daily_steps = int(snapshot["avg_daily_steps"])
+    if snapshot.get("avg_daily_stress") is not None:
+        profile.avg_daily_stress = round(float(snapshot["avg_daily_stress"]), 1)
+
+    profile.updated_at = datetime.now(timezone.utc)
+    db.session.commit()
+
+
 def import_strava_zip_for_user(zip_file, user_id: int) -> tuple[int, int]:
     """Importuje activities.csv z archiwum Stravy dla wskazanego usera.
 
@@ -2089,6 +2461,7 @@ def import_strava_zip_for_user(zip_file, user_id: int) -> tuple[int, int]:
             for row in reader:
                 date_str = row.get("Activity Date", "")
                 start_time_obj = None
+                external_id = (row.get("Activity ID") or row.get("Activity Id") or "").strip() or None
 
                 formats = [
                     "%b %d, %Y, %I:%M:%S %p",  # np. Apr 30, 2025, 7:59:42 PM
@@ -2105,7 +2478,14 @@ def import_strava_zip_for_user(zip_file, user_id: int) -> tuple[int, int]:
                 if not start_time_obj:
                     continue
 
-                existing = Activity.query.filter_by(user_id=user_id, start_time=start_time_obj).first()
+                if external_id:
+                    existing = Activity.query.filter_by(
+                        user_id=user_id,
+                        source="strava",
+                        external_id=external_id,
+                    ).first()
+                else:
+                    existing = Activity.query.filter_by(user_id=user_id, start_time=start_time_obj).first()
                 if existing:
                     skipped_count += 1
                     continue
@@ -2130,6 +2510,12 @@ def import_strava_zip_for_user(zip_file, user_id: int) -> tuple[int, int]:
                 else:
                     avg_hr = int(float(avg_hr_val))
 
+                max_hr_val = row.get("Max Heart Rate", None)
+                if max_hr_val in [None, "", "nan"]:
+                    max_hr = None
+                else:
+                    max_hr = int(float(max_hr_val))
+
                 desc = row.get("Activity Description", "")
                 if desc == "nan":
                     desc = ""
@@ -2141,6 +2527,11 @@ def import_strava_zip_for_user(zip_file, user_id: int) -> tuple[int, int]:
                     duration=int(moving),
                     distance=dist,
                     avg_hr=avg_hr,
+                    max_hr=max_hr,
+                    moving_duration=int(moving),
+                    elapsed_duration=int(elapsed),
+                    source="strava",
+                    external_id=external_id,
                     notes=desc,
                 )
 
@@ -2149,6 +2540,165 @@ def import_strava_zip_for_user(zip_file, user_id: int) -> tuple[int, int]:
 
             db.session.commit()
             return added_count, skipped_count
+
+
+def import_garmin_zip_for_user(zip_file, user_id: int) -> tuple[int, int]:
+    """Import Garmin data-export ZIP for given user.
+
+    Source of activities:
+    - DI_CONNECT/DI-Connect-Fitness/*_summarizedActivities.json
+    """
+    with zipfile.ZipFile(zip_file) as z:
+        names = z.namelist()
+        summary_members = [
+            n for n in names
+            if n.lower().endswith("_summarizedactivities.json") and "di-connect-fitness" in n.lower()
+        ]
+        if not summary_members:
+            raise ValueError("Nie znaleziono plików *_summarizedActivities.json w archiwum Garmina")
+
+        summarized_rows = []
+        for member in summary_members:
+            try:
+                payload = _load_json_member_from_zip(z, member)
+            except Exception:
+                continue
+            if isinstance(payload, list):
+                for item in payload:
+                    if isinstance(item, dict) and isinstance(item.get("summarizedActivitiesExport"), list):
+                        summarized_rows.extend(item["summarizedActivitiesExport"])
+            elif isinstance(payload, dict) and isinstance(payload.get("summarizedActivitiesExport"), list):
+                summarized_rows.extend(payload["summarizedActivitiesExport"])
+
+        if not summarized_rows:
+            raise ValueError("Pliki Garmina nie zawierają żadnych aktywności do importu")
+
+        # Import profile/wellness snapshot first (optional, best effort).
+        try:
+            snapshot = _load_garmin_profile_snapshot(z)
+            _apply_imported_profile_snapshot(user_id=user_id, snapshot=snapshot)
+        except Exception:
+            # Do not fail activity import if profile snapshot fails.
+            pass
+
+        # Deduplicate by Garmin activityId.
+        added_count = 0
+        skipped_count = 0
+        seen_external = set()
+        for row in summarized_rows:
+            if not isinstance(row, dict):
+                continue
+
+            external_id = str(row.get("activityId") or "").strip()
+            if not external_id:
+                skipped_count += 1
+                continue
+            if external_id in seen_external:
+                skipped_count += 1
+                continue
+            seen_external.add(external_id)
+
+            existing = Activity.query.filter_by(
+                user_id=user_id,
+                source="garmin",
+                external_id=external_id,
+            ).first()
+            if existing:
+                skipped_count += 1
+                continue
+
+            start_dt = _ms_to_datetime_utc(row.get("startTimeGmt") or row.get("startTimeLocal") or row.get("beginTimestamp"))
+            if not start_dt:
+                skipped_count += 1
+                continue
+
+            raw_type = (row.get("activityType") or "").strip()
+            sport_type = (row.get("sportType") or "").strip()
+            activity_name = (row.get("name") or "").strip()
+            mapped_type = _garmin_activity_type_to_app(raw_type, sport_type, activity_name)
+
+            distance_m = _to_meters_from_garmin_distance(row.get("distance"))
+            duration_s = _to_seconds_from_ms(row.get("duration"))
+            moving_s = _to_seconds_from_ms(row.get("movingDuration")) or duration_s
+            elapsed_s = _to_seconds_from_ms(row.get("elapsedDuration")) or duration_s
+
+            avg_speed_mps = (distance_m / moving_s) if (distance_m > 0 and moving_s > 0) else None
+            max_speed_raw = _safe_float(row.get("maxSpeed"))
+            max_speed_mps = (max_speed_raw * 10.0) if max_speed_raw is not None else None
+            elev_gain_raw = _safe_float(row.get("elevationGain"))
+            elev_loss_raw = _safe_float(row.get("elevationLoss"))
+
+            notes_parts = []
+            if activity_name:
+                notes_parts.append(activity_name)
+            location = (row.get("locationName") or "").strip()
+            if location:
+                notes_parts.append(location)
+            notes = " | ".join(notes_parts)[:1000] if notes_parts else None
+
+            meta = {
+                "eventTypeId": row.get("eventTypeId"),
+                "manufacturer": row.get("manufacturer"),
+                "lapCount": row.get("lapCount"),
+                "avgRunCadence": row.get("avgRunCadence"),
+                "maxRunCadence": row.get("maxRunCadence"),
+                "avgStrideLength": row.get("avgStrideLength"),
+                "workoutFeel": row.get("workoutFeel"),
+                "workoutRpe": row.get("workoutRpe"),
+                "splitSummaries": row.get("splitSummaries"),
+                "sportTypeRaw": row.get("sportType"),
+                "activityTypeRaw": row.get("activityType"),
+            }
+
+            act = Activity(
+                user_id=user_id,
+                activity_type=mapped_type,
+                start_time=start_dt,
+                duration=duration_s,
+                distance=distance_m,
+                avg_hr=_safe_int(row.get("avgHr")),
+                max_hr=_safe_int(row.get("maxHr")),
+                moving_duration=moving_s,
+                elapsed_duration=elapsed_s,
+                avg_speed_mps=round(avg_speed_mps, 3) if avg_speed_mps is not None else None,
+                max_speed_mps=round(max_speed_mps, 3) if max_speed_mps is not None else None,
+                elevation_gain=(round(elev_gain_raw / 100.0, 2) if elev_gain_raw is not None else None),
+                elevation_loss=(round(elev_loss_raw / 100.0, 2) if elev_loss_raw is not None else None),
+                calories=_safe_float(row.get("calories")),
+                steps=_safe_int(row.get("steps")),
+                vo2max=_safe_float(row.get("vO2MaxValue")),
+                start_lat=_safe_float(row.get("startLatitude")),
+                start_lng=_safe_float(row.get("startLongitude")),
+                end_lat=_safe_float(row.get("endLatitude")),
+                end_lng=_safe_float(row.get("endLongitude")),
+                source="garmin",
+                external_id=external_id,
+                device_id=str(row.get("deviceId")) if row.get("deviceId") is not None else None,
+                sport_type=sport_type or None,
+                metadata_json=json.dumps(meta, ensure_ascii=False),
+                notes=notes,
+            )
+            db.session.add(act)
+            added_count += 1
+
+        db.session.commit()
+        return added_count, skipped_count
+
+
+def import_activity_archive_for_user(zip_file, user_id: int) -> tuple[str, int, int]:
+    """Auto-detect archive source and import workouts.
+
+    Returns: (source_kind, added_count, skipped_count)
+    """
+    source_kind = detect_activity_archive_type(zip_file)
+    _rewind_fileobj(zip_file)
+    if source_kind == "strava":
+        added, skipped = import_strava_zip_for_user(zip_file, user_id)
+        return source_kind, added, skipped
+    if source_kind == "garmin":
+        added, skipped = import_garmin_zip_for_user(zip_file, user_id)
+        return source_kind, added, skipped
+    raise ValueError("Nie rozpoznano formatu ZIP (obsługiwane: Strava lub Garmin)")
 
 
 # -------------------- AUTH --------------------
@@ -2209,20 +2759,20 @@ def register():
         # ZIP jest opcjonalny podczas rejestracji.
         if zip_file and getattr(zip_file, "filename", ""):
             try:
-                added, skipped = import_strava_zip_for_user(zip_file, user.id)
+                source_kind, added, skipped = import_activity_archive_for_user(zip_file, user.id)
                 compute_profile_defaults_from_history(user.id)
                 flash(
                     tr(
-                        f"Konto utworzone. ZIP zaimportowany: {added} aktywności (pominięto {skipped} duplikatów).",
-                        f"Account created. ZIP imported: {added} activities (skipped {skipped} duplicates).",
+                        f"Konto utworzone. ZIP ({source_kind}) zaimportowany: {added} aktywności (pominięto {skipped} duplikatów).",
+                        f"Account created. ZIP ({source_kind}) imported: {added} activities (skipped {skipped} duplicates).",
                     )
                 )
             except Exception as e:
                 app.logger.exception("ZIP import failed during registration: %s", e)
                 flash(
                     tr(
-                        "Konto utworzone, ale import ZIP się nie udał.",
-                        "Account created, but ZIP import failed.",
+                        "Konto utworzone, ale import ZIP (Strava/Garmin) się nie udał.",
+                        "Account created, but ZIP import (Strava/Garmin) failed.",
                     )
                 )
         else:
@@ -2449,12 +2999,12 @@ def profile():
                 flash(tr("Wybierz plik ZIP do importu.", "Choose a ZIP file to import."))
                 return redirect(url_for("profile"))
             try:
-                added, skipped = import_strava_zip_for_user(zip_file, current_user.id)
+                source_kind, added, skipped = import_activity_archive_for_user(zip_file, current_user.id)
                 compute_profile_defaults_from_history(current_user.id)
                 flash(
                     tr(
-                        f"Zaimportowano {added} aktywności (pominięto {skipped} duplikatów).",
-                        f"Imported {added} activities (skipped {skipped} duplicates).",
+                        f"Zaimportowano {added} aktywności z archiwum {source_kind} (pominięto {skipped} duplikatów).",
+                        f"Imported {added} activities from {source_kind} archive (skipped {skipped} duplicates).",
                     )
                 )
             except Exception as e:
@@ -3698,6 +4248,7 @@ def add_activity_manual():
         duration=int(round(duration_min * 60)),
         distance=distance_km * 1000.0,
         avg_hr=avg_hr_int,
+        source="manual",
         notes=notes,
     )
     if _looks_like_duplicate_activity(
@@ -3792,6 +4343,7 @@ def add_checkin():
                         duration=prepared_duration,
                         distance=prepared_distance,
                         avg_hr=int(avg_hr) if avg_hr else None,
+                        source="checkin",
                         notes=prepared_notes,
                     )
                     db.session.add(act)
@@ -3827,6 +4379,7 @@ def add_checkin():
                 duration=0,
                 distance=0.0,
                 avg_hr=None,
+                source="checkin",
                 notes=text_note,
             )
             db.session.add(act)
@@ -3885,11 +4438,11 @@ def import_zip():
         return redirect(url_for("index"))
 
     try:
-        added_count, skipped_count = import_strava_zip_for_user(file, current_user.id)
+        source_kind, added_count, skipped_count = import_activity_archive_for_user(file, current_user.id)
         flash(
             tr(
-                f"Sukces! Zaimportowano {added_count} treningów. Pominięto {skipped_count}.",
-                f"Success! Imported {added_count} workouts. Skipped {skipped_count}.",
+                f"Sukces! Zaimportowano {added_count} treningów z archiwum {source_kind}. Pominięto {skipped_count}.",
+                f"Success! Imported {added_count} workouts from {source_kind} archive. Skipped {skipped_count}.",
             )
         )
         try:
@@ -3898,7 +4451,7 @@ def import_zip():
             pass
     except Exception as e:
         app.logger.exception("ZIP import endpoint error for user %s: %s", current_user.id, e)
-        flash(tr("Błąd pliku ZIP.", "ZIP file error."))
+        flash(tr("Błąd pliku ZIP (obsługa: Strava/Garmin).", "ZIP file error (supported: Strava/Garmin)."))
 
     return redirect(url_for("index"))
 

@@ -52,6 +52,15 @@ class UserProfile(db.Model):
     weekly_swim_sessions = db.Column(db.Integer)      # preferred swim sessions/week
     weekly_mobility_sessions = db.Column(db.Integer)  # preferred mobility/yoga sessions/week
     weekly_ride_sessions = db.Column(db.Integer)      # preferred ride sessions/week
+    gender = db.Column(db.String(20))
+    birth_date = db.Column(db.Date)
+    height_cm = db.Column(db.Float)                   # auto-filled from import when available
+    weight_kg = db.Column(db.Float)                   # auto-filled from import when available
+    vo2max = db.Column(db.Float)                      # latest imported VO2 estimate
+    resting_hr = db.Column(db.Integer)                # latest imported resting HR
+    avg_sleep_hours = db.Column(db.Float)             # avg sleep over recent import window
+    avg_daily_steps = db.Column(db.Integer)           # avg daily steps over recent import window
+    avg_daily_stress = db.Column(db.Float)            # avg daily stress over recent import window
     coach_style = db.Column(db.String(40))            # concise|motivating|technical|balanced
     risk_tolerance = db.Column(db.String(40))         # conservative|balanced|aggressive
     training_priority = db.Column(db.String(40))      # performance|consistency|health
@@ -98,6 +107,25 @@ class Activity(db.Model):
     duration = db.Column(db.Integer)  # seconds
     distance = db.Column(db.Float)    # meters
     avg_hr = db.Column(db.Integer)
+    max_hr = db.Column(db.Integer)
+    moving_duration = db.Column(db.Integer)   # seconds
+    elapsed_duration = db.Column(db.Integer)  # seconds
+    avg_speed_mps = db.Column(db.Float)
+    max_speed_mps = db.Column(db.Float)
+    elevation_gain = db.Column(db.Float)      # meters
+    elevation_loss = db.Column(db.Float)      # meters
+    calories = db.Column(db.Float)
+    steps = db.Column(db.Integer)
+    vo2max = db.Column(db.Float)
+    start_lat = db.Column(db.Float)
+    start_lng = db.Column(db.Float)
+    end_lat = db.Column(db.Float)
+    end_lng = db.Column(db.Float)
+    source = db.Column(db.String(20), default="manual", nullable=False, index=True)
+    external_id = db.Column(db.String(80), index=True)
+    device_id = db.Column(db.String(80))
+    sport_type = db.Column(db.String(80))
+    metadata_json = db.Column(db.Text)
     notes = db.Column(db.Text)
 
     exercises = db.relationship("Exercise", backref="activity", cascade="all, delete-orphan")

@@ -27,14 +27,14 @@
             {% endwith %}
 
             <div class="info-box">
-                <div class="info-title">📦 {{ tx('Masz ZIP ze Stravy? (opcjonalnie)','Have a Strava ZIP? (optional)') }}</div>
+                <div class="info-title">📦 {{ tx('Masz ZIP ze Stravy lub Garmina? (opcjonalnie)','Have a Strava or Garmin ZIP? (optional)') }}</div>
                 <ol class="info-list">
-                    <li>{{ tx('Wejdź na ustawienia konta:','Go to account settings:') }} <code>strava.com/account</code></li>
-                    <li>{{ tx('Przejdź do sekcji pobierania danych i wybierz','Go to data export and select') }} <b>{{ tx('Request your archive','Request your archive') }}</b></li>
-                    <li>{{ tx('Strava wyśle link do ZIP-a na email. Pobierz ZIP i dodaj go poniżej.','Strava will email you a ZIP link. Download it and upload below.') }}</li>
+                    <li>{{ tx('Strava: wejdź na','Strava: go to') }} <code>strava.com/account</code> {{ tx('i poproś o archiwum.','and request your archive.') }}</li>
+                    <li>{{ tx('Garmin: Garmin Connect → Ustawienia konta → Export Data.','Garmin: Garmin Connect -> Account Settings -> Export Data.') }}</li>
+                    <li>{{ tx('Gdy dostaniesz ZIP, dodaj go poniżej. Typ zostanie wykryty automatycznie.','When you get the ZIP, upload it below. Type is detected automatically.') }}</li>
                 </ol>
                 <div class="help-text">
-                    {{ tx('Możesz pominąć ten krok i dodać ZIP później w Profilu.','You can skip this and import ZIP later from Profile.') }}
+                    {{ tx('Możesz pominąć ten krok i dodać ZIP później w Profilu. Obsługiwane: Strava i Garmin Connect export.','You can skip this and import ZIP later from Profile. Supported: Strava and Garmin Connect export.') }}
                 </div>
             </div>
 
@@ -83,9 +83,9 @@
                 </div>
 
                 <div class="field">
-                    <label>{{ tx('Archiwum Strava (ZIP, opcjonalnie)','Strava archive (ZIP, optional)') }}</label>
+                    <label>{{ tx('Archiwum aktywności (ZIP, opcjonalnie)','Activity archive (ZIP, optional)') }}</label>
                     <input type="file" name="strava_zip" accept=".zip">
-                    <div class="help-text">{{ tx('Plik typu','File like') }} <code>export_....zip</code>. {{ tx('Jeśli dodasz plik, import wykona się automatycznie.','If provided, import runs automatically.') }}</div>
+                    <div class="help-text">{{ tx('Obsługiwane źródła: Strava i Garmin Connect. Jeśli dodasz plik, import wykona się automatycznie.','Supported sources: Strava and Garmin Connect. If provided, import runs automatically.') }}</div>
                 </div>
 
                 <div class="actions">
