@@ -140,6 +140,14 @@
                     <p><b>{{ tx('Prognoza za 4 tygodnie','Projected in 4 weeks') }}:</b> {{ goal_progress.weekly_volume_projected_4w }} km</p>
                     <p><b>{{ tx('Gotowość objętości','Volume readiness') }}:</b> {{ goal_progress.readiness_pct }}%</p>
                     <p><b>{{ tx('Realizacja celu treningów (ten tydzień)','Workout goal completion (this week)') }}:</b> {{ goal_progress.completion_pct }}% ({{ goal_progress.workouts_done_this_week }}/{{ goal_progress.weekly_goal }})</p>
+                    <p class="goal-sub">
+                        {{ tx('Sesje tygodniowe','Weekly sessions') }}:
+                        {{ tx('Bieg','Run') }} {{ goal_progress.weekly_done_targets.get('run', 0) }}/{{ goal_progress.weekly_targets.get('run', 0) }},
+                        {{ tx('Siła','Gym') }} {{ goal_progress.weekly_done_targets.get('gym', 0) }}/{{ goal_progress.weekly_targets.get('gym', 0) }},
+                        {{ tx('Pływanie','Swim') }} {{ goal_progress.weekly_done_targets.get('swim', 0) }}/{{ goal_progress.weekly_targets.get('swim', 0) }},
+                        {{ tx('Mobilność','Mobility') }} {{ goal_progress.weekly_done_targets.get('mobility', 0) }}/{{ goal_progress.weekly_targets.get('mobility', 0) }},
+                        {{ tx('Rower','Ride') }} {{ goal_progress.weekly_done_targets.get('ride', 0) }}/{{ goal_progress.weekly_targets.get('ride', 0) }}
+                    </p>
                     <p class="goal-sub">{{ tx('Źródło wyliczeń','Data source') }}: {{ goal_progress.volume_source }} • {{ tx('Aktualizacja','Updated') }}: {{ goal_progress.updated_on }}</p>
                     {% if goal_progress.target_time_text %}
                     <p><b>{{ tx('Docelowy czas','Target time') }}:</b> {{ goal_progress.target_time_text }}</p>

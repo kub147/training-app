@@ -75,7 +75,7 @@ I18N = {
         "calendar_city_prompt": "Podaj miasto do prognozy pogody (np. Warszawa):",
         "calendar_city_not_found": "Nie znaleziono miasta",
         "calendar_progress": "Realizacja tygodnia",
-        "calendar_goal_missing": "Ustaw cel tygodniowy w profilu, by lepiej śledzić postęp.",
+        "calendar_goal_missing": "Ustaw cele tygodniowe w profilu, by lepiej śledzić postęp.",
         "calendar_copy_garmin": "Kopiuj pod Garmin",
         "calendar_copied": "Skopiowano opis treningu",
         "plan_warmup": "Rozgrzewka",
@@ -139,7 +139,7 @@ I18N = {
         "goal_done_text": "Cel osiągnięty! 🎉",
         "goal_left_text": "Zostało: {count}",
         "goal_profile_hint": "Cel ustawisz w profilu",
-        "goal_per_week_label": "Cel treningów / tydzień",
+        "goal_per_week_label": "Cel biegów / tydzień",
         "activity_count_title": "⏱️ Aktywności (liczba)",
         "km_chart_title": "📏 Kilometry według dyscypliny",
         "km_total_label": "Łącznie",
@@ -175,7 +175,7 @@ I18N = {
         "calendar_city_prompt": "Provide city for weather forecast (e.g. London):",
         "calendar_city_not_found": "City not found",
         "calendar_progress": "Weekly completion",
-        "calendar_goal_missing": "Set weekly goal in profile to better track progress.",
+        "calendar_goal_missing": "Set weekly goals in profile to better track progress.",
         "calendar_copy_garmin": "Copy for Garmin",
         "calendar_copied": "Workout description copied",
         "plan_warmup": "Warm-up",
@@ -239,7 +239,7 @@ I18N = {
         "goal_done_text": "Goal achieved! 🎉",
         "goal_left_text": "Remaining: {count}",
         "goal_profile_hint": "Set your target in profile",
-        "goal_per_week_label": "Workout goal / week",
+        "goal_per_week_label": "Run goal / week",
         "activity_count_title": "⏱️ Activities (count)",
         "km_chart_title": "📏 Distance by discipline",
         "km_total_label": "Total",
@@ -724,6 +724,11 @@ def ensure_schema() -> None:
             'weekly_distance_km': "weekly_distance_km REAL",
             'days_per_week': "days_per_week INTEGER",
             'weekly_goal_workouts': "weekly_goal_workouts INTEGER",
+            'weekly_run_sessions': "weekly_run_sessions INTEGER",
+            'weekly_gym_sessions': "weekly_gym_sessions INTEGER",
+            'weekly_swim_sessions': "weekly_swim_sessions INTEGER",
+            'weekly_mobility_sessions': "weekly_mobility_sessions INTEGER",
+            'weekly_ride_sessions': "weekly_ride_sessions INTEGER",
             'coach_style': "coach_style TEXT",
             'risk_tolerance': "risk_tolerance TEXT",
             'training_priority': "training_priority TEXT",
@@ -800,6 +805,8 @@ ACTIVITY_LABELS = {
         "run": "Bieganie",
         "ride": "Rower",
         "swim": "Pływanie",
+        "gym": "Siłownia",
+        "mobility": "Mobilność",
         "weighttraining": "Siłownia",
         "workout": "Trening",
         "yoga": "Joga",
@@ -811,6 +818,8 @@ ACTIVITY_LABELS = {
         "run": "Running",
         "ride": "Cycling",
         "swim": "Swimming",
+        "gym": "Gym",
+        "mobility": "Mobility",
         "weighttraining": "Gym",
         "workout": "Workout",
         "yoga": "Yoga",
@@ -1217,9 +1226,13 @@ def compute_profile_defaults_from_history(user_id: int) -> None:
 
     # top sporty
     counts = {}
+    bucket_counts = {"run": 0, "gym": 0, "swim": 0, "mobility": 0, "ride": 0}
     for a in acts:
         key = (a.activity_type or "other").lower()
         counts[key] = counts.get(key, 0) + 1
+        bucket = normalize_activity_bucket(a.activity_type, a.notes)
+        if bucket in bucket_counts:
+            bucket_counts[bucket] += 1
     top = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:4]
     top_sports = ",".join([t[0] for t in top])
 
@@ -1265,8 +1278,25 @@ def compute_profile_defaults_from_history(user_id: int) -> None:
     if profile.weekly_goal_workouts is None and avg_count > 0:
         profile.weekly_goal_workouts = max(1, int(round(avg_count)))
         changed = True
+    bucket_field_map = {
+        "run": "weekly_run_sessions",
+        "gym": "weekly_gym_sessions",
+        "swim": "weekly_swim_sessions",
+        "mobility": "weekly_mobility_sessions",
+        "ride": "weekly_ride_sessions",
+    }
+    for bucket, field_name in bucket_field_map.items():
+        if getattr(profile, field_name, None) is not None:
+            continue
+        bucket_total = bucket_counts.get(bucket, 0)
+        if bucket_total <= 0:
+            continue
+        avg_bucket_sessions = bucket_total / max(1, len(weeks))
+        setattr(profile, field_name, max(1, int(round(avg_bucket_sessions))))
+        changed = True
 
     if changed:
+        _sync_legacy_weekly_goal(profile)
         profile.updated_at = datetime.now(timezone.utc)
         db.session.commit()
 
@@ -1621,6 +1651,71 @@ def _recommended_weekly_volume_range_km(goal_discipline: str, goal_distance_km: 
     return round(base_low * f, 1), round(base_high * f, 1)
 
 
+def _target_bucket_label(bucket: str) -> str:
+    labels = {
+        "run": tr("Bieganie", "Running"),
+        "gym": tr("Siłownia", "Gym"),
+        "swim": tr("Pływanie", "Swimming"),
+        "mobility": tr("Mobilność", "Mobility"),
+        "ride": tr("Rower", "Cycling"),
+    }
+    return labels.get(bucket, bucket)
+
+
+def _get_weekly_session_targets(profile_obj: UserProfile | None) -> dict[str, int]:
+    fields = {
+        "run": "weekly_run_sessions",
+        "gym": "weekly_gym_sessions",
+        "swim": "weekly_swim_sessions",
+        "mobility": "weekly_mobility_sessions",
+        "ride": "weekly_ride_sessions",
+    }
+    targets = {k: 0 for k in fields}
+    if profile_obj:
+        for key, field in fields.items():
+            val = getattr(profile_obj, field, None)
+            try:
+                targets[key] = max(0, int(val or 0))
+            except Exception:
+                targets[key] = 0
+
+        if not any(targets.values()):
+            fallback = int(profile_obj.weekly_goal_workouts or 0)
+            if fallback <= 0:
+                fallback = int(profile_obj.days_per_week or 0)
+            if fallback <= 0:
+                fallback = 3
+            targets["run"] = fallback
+    else:
+        targets["run"] = 3
+
+    return targets
+
+
+def _sync_legacy_weekly_goal(profile_obj: UserProfile) -> None:
+    targets = _get_weekly_session_targets(profile_obj)
+    total = sum(targets.values())
+    if total > 0:
+        profile_obj.weekly_goal_workouts = total
+
+
+def _count_week_sessions_by_target(user_id: int, week_start: date, week_end: date | None = None) -> dict[str, int]:
+    if week_end is None:
+        week_end = week_start + timedelta(days=6)
+    acts = _load_user_activities_with_fallback(
+        user_id=user_id,
+        start=datetime.combine(week_start, datetime.min.time()),
+        end=datetime.combine(week_end + timedelta(days=1), datetime.min.time()),
+        order_asc=True,
+    )
+    out = {"run": 0, "gym": 0, "swim": 0, "mobility": 0, "ride": 0}
+    for a in acts:
+        b = normalize_activity_bucket(a.activity_type, a.notes)
+        if b in out:
+            out[b] += 1
+    return out
+
+
 def build_goal_progress(user_id: int, profile_obj: UserProfile | None, range_days: int, stats: dict) -> dict | None:
     if not profile_obj or not profile_obj.target_date:
         return None
@@ -1675,16 +1770,11 @@ def build_goal_progress(user_id: int, profile_obj: UserProfile | None, range_day
     else:
         projected_4w = target_weekly
 
-    weekly_goal = int(profile_obj.weekly_goal_workouts or 3)
-    weekly_goal = max(1, weekly_goal)
+    weekly_targets = _get_weekly_session_targets(profile_obj)
+    weekly_goal = max(1, sum(weekly_targets.values()))
     week_start = today - timedelta(days=today.weekday())
-    this_week_acts = _load_user_activities_with_fallback(
-        user_id=user_id,
-        start=datetime.combine(week_start, datetime.min.time()),
-        end=datetime.combine(today + timedelta(days=1), datetime.min.time()),
-        order_asc=True,
-    )
-    workouts_done = sum(1 for a in this_week_acts if _activity_start_dt(a))
+    done_targets = _count_week_sessions_by_target(user_id=user_id, week_start=week_start, week_end=today)
+    workouts_done = sum(done_targets.values())
     completion_pct = int(round(min(100.0, (workouts_done / max(1, weekly_goal)) * 100.0)))
 
     if days_left <= 0:
@@ -1722,6 +1812,8 @@ def build_goal_progress(user_id: int, profile_obj: UserProfile | None, range_day
         "completion_pct": completion_pct,
         "weekly_goal": weekly_goal,
         "workouts_done_this_week": workouts_done,
+        "weekly_targets": weekly_targets,
+        "weekly_done_targets": done_targets,
         "updated_on": today.isoformat(),
     }
 
@@ -1771,6 +1863,16 @@ def get_profile_and_state_context(user: User) -> str:
             facts.append(f"Dni treningowe/tydz.: {profile.days_per_week}")
         if profile.weekly_goal_workouts is not None:
             facts.append(f"Cel treningów/tydz.: {profile.weekly_goal_workouts}")
+        weekly_targets = _get_weekly_session_targets(profile)
+        if any(weekly_targets.values()):
+            facts.append(
+                "Preferowana częstotliwość/tydz.: "
+                f"run {weekly_targets.get('run', 0)}, "
+                f"gym {weekly_targets.get('gym', 0)}, "
+                f"swim {weekly_targets.get('swim', 0)}, "
+                f"mobility {weekly_targets.get('mobility', 0)}, "
+                f"ride {weekly_targets.get('ride', 0)}"
+            )
         if profile.experience_text:
             facts.append(f"Doświadczenie: {profile.experience_text}")
         lines.append("FACTS: " + (" | ".join(facts) if facts else "brak"))
@@ -2211,7 +2313,11 @@ def onboarding():
         profile.weekly_time_hours = _to_float(request.form.get("weekly_time_hours"))
         profile.weekly_distance_km = _to_float(request.form.get("weekly_distance_km"))
         profile.days_per_week = _to_int(request.form.get("days_per_week"))
-        profile.weekly_goal_workouts = _to_int(request.form.get("weekly_goal_workouts"))
+        profile.weekly_run_sessions = _to_int(request.form.get("weekly_run_sessions"))
+        profile.weekly_gym_sessions = _to_int(request.form.get("weekly_gym_sessions"))
+        profile.weekly_swim_sessions = _to_int(request.form.get("weekly_swim_sessions"))
+        profile.weekly_mobility_sessions = _to_int(request.form.get("weekly_mobility_sessions"))
+        profile.weekly_ride_sessions = _to_int(request.form.get("weekly_ride_sessions"))
         profile.coach_style = _clip(request.form.get("coach_style"), 40)
         profile.risk_tolerance = _clip(request.form.get("risk_tolerance"), 40)
         profile.training_priority = _clip(request.form.get("training_priority"), 40)
@@ -2242,6 +2348,7 @@ def onboarding():
         if injuries_text:
             set_or_refresh_injury_state(current_user.id, injuries_text)
 
+        _sync_legacy_weekly_goal(profile)
         current_user.onboarding_completed = True
         try:
             db.session.commit()
@@ -2314,7 +2421,11 @@ def profile():
             profile_obj.weekly_time_hours = _to_float(request.form.get("weekly_time_hours"))
             profile_obj.weekly_distance_km = _to_float(request.form.get("weekly_distance_km"))
             profile_obj.days_per_week = _to_int(request.form.get("days_per_week"))
-            profile_obj.weekly_goal_workouts = _to_int(request.form.get("weekly_goal_workouts"))
+            profile_obj.weekly_run_sessions = _to_int(request.form.get("weekly_run_sessions"))
+            profile_obj.weekly_gym_sessions = _to_int(request.form.get("weekly_gym_sessions"))
+            profile_obj.weekly_swim_sessions = _to_int(request.form.get("weekly_swim_sessions"))
+            profile_obj.weekly_mobility_sessions = _to_int(request.form.get("weekly_mobility_sessions"))
+            profile_obj.weekly_ride_sessions = _to_int(request.form.get("weekly_ride_sessions"))
             profile_obj.coach_style = _clip(request.form.get("coach_style"), 40)
             profile_obj.risk_tolerance = _clip(request.form.get("risk_tolerance"), 40)
             profile_obj.training_priority = _clip(request.form.get("training_priority"), 40)
@@ -2340,6 +2451,7 @@ def profile():
             else:
                 clear_active_injury_states(current_user.id)
 
+            _sync_legacy_weekly_goal(profile_obj)
             db.session.commit()
         except Exception as e:
             app.logger.exception("Profile save failed for user %s: %s", current_user.id, e)
@@ -2629,16 +2741,25 @@ def index():
         })
 
     # Weekly goals + coach note
-    planned_counts = {}
-    for d, plan in plan_map.items():
-        if d >= today_str:
-            s = plan.get("sport") or "other"
-            planned_counts[s] = planned_counts.get(s, 0) + 1
-    weekly_goal_items = [f"{cnt}x {activity_label(s)}" for s, cnt in sorted(planned_counts.items(), key=lambda x: (-x[1], x[0]))]
-
-    done_total = sum(day_done[d.isoformat()]["count"] for d in week_dates if d <= today)
     profile_obj = UserProfile.query.filter_by(user_id=current_user.id).first()
-    weekly_goal_target = max(1, int(profile_obj.weekly_goal_workouts or max(3, len(planned_counts) or 1))) if profile_obj else max(1, len(planned_counts) or 3)
+    weekly_targets = _get_weekly_session_targets(profile_obj)
+    weekly_done = _count_week_sessions_by_target(
+        user_id=current_user.id,
+        week_start=week_start,
+        week_end=today,
+    )
+
+    weekly_goal_items = []
+    ordered_buckets = ["run", "gym", "swim", "mobility", "ride"]
+    for bucket in ordered_buckets:
+        target_val = int(weekly_targets.get(bucket, 0) or 0)
+        if target_val <= 0:
+            continue
+        done_val = int(weekly_done.get(bucket, 0) or 0)
+        weekly_goal_items.append(f"{_target_bucket_label(bucket)}: {done_val}/{target_val}")
+
+    done_total = sum(int(v or 0) for v in weekly_done.values())
+    weekly_goal_target = max(1, sum(int(v or 0) for v in weekly_targets.values()))
     completion_pct = int(round(min(100.0, (done_total / max(1, weekly_goal_target)) * 100.0)))
     days_left = (week_end - today).days
 
@@ -2685,7 +2806,10 @@ def metrics():
 
     stats = compute_stats(current_user.id, range_days)
     profile_obj = UserProfile.query.filter_by(user_id=current_user.id).first()
-    weekly_goal = (profile_obj.weekly_goal_workouts if profile_obj and profile_obj.weekly_goal_workouts else 3)
+    weekly_targets = _get_weekly_session_targets(profile_obj)
+    weekly_goal = int(weekly_targets.get("run", 0) or 0)
+    if weekly_goal <= 0:
+        weekly_goal = int(profile_obj.weekly_goal_workouts or 3) if profile_obj else 3
     weekly_goal = max(1, int(weekly_goal))
     goal_target = max(1, int(round((weekly_goal * range_days) / 7)))
 
@@ -2822,6 +2946,24 @@ def generate_forecast():
     today_dt = datetime.now().date()
     today = today_dt.strftime("%Y-%m-%d")
     days_to_generate = max(1, 7 - today_dt.weekday())  # do niedzieli włącznie
+    week_start = today_dt - timedelta(days=today_dt.weekday())
+    weekly_targets = _get_weekly_session_targets(profile_obj)
+    weekly_done = _count_week_sessions_by_target(
+        user_id=current_user.id,
+        week_start=week_start,
+        week_end=today_dt,
+    )
+    weekly_remaining = {
+        k: max(0, int(weekly_targets.get(k, 0) or 0) - int(weekly_done.get(k, 0) or 0))
+        for k in weekly_targets
+    }
+    weekly_target_context = {
+        "week_start": week_start.isoformat(),
+        "today": today_dt.isoformat(),
+        "targets": weekly_targets,
+        "done_until_today": weekly_done,
+        "remaining_to_fill": weekly_remaining,
+    }
 
     language_hint = tr(
         "Opis i uzasadnienie pisz po polsku.",
@@ -2947,6 +3089,9 @@ SYGNAŁY CHECK-IN:
 KONTEKST CELU:
 {json.dumps(goal_progress, ensure_ascii=False) if goal_progress else "Brak aktywnego celu z datą."}
 
+CELE TYGODNIOWE UŻYTKOWNIKA (MUSISZ UWZGLĘDNIĆ):
+{json.dumps(weekly_target_context, ensure_ascii=False)}
+
 FORMAT (BARDZO WAŻNE):
 - Zwróć WYŁĄCZNIE JSON (bez markdown, bez komentarzy) w formie:
   {{
@@ -2972,6 +3117,8 @@ FORMAT (BARDZO WAŻNE):
 - Dokładnie {days_to_generate} dni.
 - {language_hint}
 - Każdy dzień MUSI mieć: warmup, main_set, cooldown (bez pustych pól).
+- Priorytet: plan na pozostałe dni tygodnia powinien dążyć do domknięcia `remaining_to_fill`.
+- Nie dokładamy zbędnie modalności z `remaining_to_fill = 0`, chyba że wymagają tego regeneracja lub bezpieczeństwo.
 """
 
     try:

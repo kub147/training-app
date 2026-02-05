@@ -75,8 +75,30 @@
                     <input type="number" min="0" name="days_per_week" value="{{ profile.days_per_week if profile.days_per_week is not none else '' }}" placeholder="{{ tx('np. 4','e.g. 4') }}">
                 </div>
                 <div class="field">
-                    <label>{{ t('goal_per_week_label') }}</label>
-                    <input type="number" min="1" max="30" name="weekly_goal_workouts" value="{{ profile.weekly_goal_workouts if profile.weekly_goal_workouts is not none else '' }}" placeholder="{{ tx('np. 3','e.g. 3') }}">
+                    <label>{{ tx('FAKTY: Sesje biegowe / tydzień','FACTS: Run sessions / week') }}</label>
+                    <input type="number" min="0" max="14" name="weekly_run_sessions" value="{{ profile.weekly_run_sessions if profile.weekly_run_sessions is not none else '' }}" placeholder="{{ tx('np. 3','e.g. 3') }}">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="field">
+                    <label>{{ tx('FAKTY: Sesje siłowe / tydzień','FACTS: Gym sessions / week') }}</label>
+                    <input type="number" min="0" max="14" name="weekly_gym_sessions" value="{{ profile.weekly_gym_sessions if profile.weekly_gym_sessions is not none else '' }}" placeholder="{{ tx('np. 2','e.g. 2') }}">
+                </div>
+                <div class="field">
+                    <label>{{ tx('FAKTY: Sesje pływackie / tydzień','FACTS: Swim sessions / week') }}</label>
+                    <input type="number" min="0" max="14" name="weekly_swim_sessions" value="{{ profile.weekly_swim_sessions if profile.weekly_swim_sessions is not none else '' }}" placeholder="{{ tx('np. 1','e.g. 1') }}">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="field">
+                    <label>{{ tx('FAKTY: Mobilność/core / tydzień','FACTS: Mobility/core sessions / week') }}</label>
+                    <input type="number" min="0" max="14" name="weekly_mobility_sessions" value="{{ profile.weekly_mobility_sessions if profile.weekly_mobility_sessions is not none else '' }}" placeholder="{{ tx('np. 1','e.g. 1') }}">
+                </div>
+                <div class="field">
+                    <label>{{ tx('FAKTY: Sesje rowerowe / tydzień','FACTS: Cycling sessions / week') }}</label>
+                    <input type="number" min="0" max="14" name="weekly_ride_sessions" value="{{ profile.weekly_ride_sessions if profile.weekly_ride_sessions is not none else '' }}" placeholder="{{ tx('np. 1','e.g. 1') }}">
                 </div>
             </div>
 
