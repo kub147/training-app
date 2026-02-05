@@ -2144,6 +2144,8 @@ def detect_activity_archive_type(zip_file) -> str:
         return "strava"
     if any(n.endswith("_summarizedactivities.json") and "di-connect-fitness" in n for n in names):
         return "garmin"
+    if any(n.endswith(".fit") for n in names):
+        return "garmin_fit_only"
     return "unknown"
 
 
@@ -2698,7 +2700,33 @@ def import_activity_archive_for_user(zip_file, user_id: int) -> tuple[str, int, 
     if source_kind == "garmin":
         added, skipped = import_garmin_zip_for_user(zip_file, user_id)
         return source_kind, added, skipped
+    if source_kind == "garmin_fit_only":
+        raise ValueError(
+            "Wykryto ZIP z samymi plikami .fit (częściowy eksport Garmina). "
+            "Prześlij pełne archiwum Garmin Export z DI_CONNECT/DI-Connect-Fitness."
+        )
     raise ValueError("Nie rozpoznano formatu ZIP (obsługiwane: Strava lub Garmin)")
+
+
+def import_activity_archive_for_user_resilient(zip_file, user_id: int) -> tuple[str, int, int]:
+    """Robust wrapper for archive import.
+
+    Some hosting/platform setups expose upload streams in ways that occasionally fail
+    on first pass. We retry by buffering bytes in-memory.
+    """
+    try:
+        return import_activity_archive_for_user(zip_file, user_id)
+    except Exception:
+        _rewind_fileobj(zip_file)
+        blob = None
+        try:
+            blob = zip_file.read()
+        except Exception:
+            blob = None
+        if not blob:
+            raise
+        buf = io.BytesIO(blob)
+        return import_activity_archive_for_user(buf, user_id)
 
 
 # -------------------- AUTH --------------------
@@ -2759,7 +2787,7 @@ def register():
         # ZIP jest opcjonalny podczas rejestracji.
         if zip_file and getattr(zip_file, "filename", ""):
             try:
-                source_kind, added, skipped = import_activity_archive_for_user(zip_file, user.id)
+                source_kind, added, skipped = import_activity_archive_for_user_resilient(zip_file, user.id)
                 compute_profile_defaults_from_history(user.id)
                 flash(
                     tr(
@@ -2771,8 +2799,8 @@ def register():
                 app.logger.exception("ZIP import failed during registration: %s", e)
                 flash(
                     tr(
-                        "Konto utworzone, ale import ZIP (Strava/Garmin) się nie udał.",
-                        "Account created, but ZIP import (Strava/Garmin) failed.",
+                        f"Konto utworzone, ale import ZIP się nie udał ({str(e)[:180]}).",
+                        f"Account created, but ZIP import failed ({str(e)[:180]}).",
                     )
                 )
         else:
@@ -2999,7 +3027,7 @@ def profile():
                 flash(tr("Wybierz plik ZIP do importu.", "Choose a ZIP file to import."))
                 return redirect(url_for("profile"))
             try:
-                source_kind, added, skipped = import_activity_archive_for_user(zip_file, current_user.id)
+                source_kind, added, skipped = import_activity_archive_for_user_resilient(zip_file, current_user.id)
                 compute_profile_defaults_from_history(current_user.id)
                 flash(
                     tr(
@@ -3009,7 +3037,7 @@ def profile():
                 )
             except Exception as e:
                 app.logger.exception("ZIP reimport failed for user %s: %s", current_user.id, e)
-                flash(tr("Import nieudany.", "Import failed."))
+                flash(tr(f"Import nieudany: {str(e)[:180]}", f"Import failed: {str(e)[:180]}"))
             return redirect(url_for("profile"))
 
         try:
@@ -4438,7 +4466,7 @@ def import_zip():
         return redirect(url_for("index"))
 
     try:
-        source_kind, added_count, skipped_count = import_activity_archive_for_user(file, current_user.id)
+        source_kind, added_count, skipped_count = import_activity_archive_for_user_resilient(file, current_user.id)
         flash(
             tr(
                 f"Sukces! Zaimportowano {added_count} treningów z archiwum {source_kind}. Pominięto {skipped_count}.",
@@ -4451,7 +4479,7 @@ def import_zip():
             pass
     except Exception as e:
         app.logger.exception("ZIP import endpoint error for user %s: %s", current_user.id, e)
-        flash(tr("Błąd pliku ZIP (obsługa: Strava/Garmin).", "ZIP file error (supported: Strava/Garmin)."))
+        flash(tr(f"Błąd pliku ZIP: {str(e)[:180]}", f"ZIP file error: {str(e)[:180]}"))
 
     return redirect(url_for("index"))
 
