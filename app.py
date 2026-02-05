@@ -1501,11 +1501,12 @@ def get_checkin_signal_snapshot(user_id: int, days: int = 14, limit: int = 30) -
     }
 
 
-def get_recent_weekly_volume_km(user_id: int, weeks: int = 4) -> dict:
+def get_recent_weekly_volume_km(user_id: int, weeks: int = 4, include_types: set[str] | None = None) -> dict:
     """Returns last/previous/average weekly distance in km for recent window."""
     today = datetime.now().date()
     monday = today - timedelta(days=today.weekday())
     start_date = monday - timedelta(weeks=weeks - 1)
+    allowed = {t.lower() for t in include_types} if include_types else None
 
     acts = _load_user_activities_with_fallback(
         user_id=user_id,
@@ -1518,6 +1519,10 @@ def get_recent_weekly_volume_km(user_id: int, weeks: int = 4) -> dict:
         start_dt = _activity_start_dt(a)
         if not start_dt:
             continue
+        if allowed is not None:
+            at = (a.activity_type or "").lower()
+            if at not in allowed:
+                continue
         d = start_dt.date()
         ws = d - timedelta(days=d.weekday())
         buckets[ws] = buckets.get(ws, 0.0) + float(a.distance or 0.0) / 1000.0
@@ -1545,42 +1550,152 @@ def get_recent_weekly_volume_km(user_id: int, weeks: int = 4) -> dict:
     }
 
 
+def _infer_goal_discipline(profile_obj: UserProfile | None) -> str:
+    if not profile_obj:
+        return "run"
+
+    txt = " ".join([
+        profile_obj.target_event or "",
+        profile_obj.goals_text or "",
+        profile_obj.primary_sports or "",
+    ]).lower()
+
+    if any(k in txt for k in ("marathon", "maraton", "half marathon", "półmaraton", "polmaraton", "10k", "5k", "run", "bieg")):
+        return "run"
+    if any(k in txt for k in ("ride", "rower", "bike", "cycling", "kolar")):
+        return "ride"
+    if any(k in txt for k in ("swim", "pływ", "plyw", "basen")):
+        return "swim"
+    return "run"
+
+
+def _infer_goal_distance_km(profile_obj: UserProfile | None) -> float | None:
+    if not profile_obj:
+        return None
+
+    txt = " ".join([
+        profile_obj.target_event or "",
+        profile_obj.goals_text or "",
+    ]).lower()
+
+    if any(k in txt for k in ("half marathon", "półmaraton", "polmaraton", "21k", "21.1")):
+        return 21.1
+    if any(k in txt for k in ("marathon", "maraton", "42k", "42.2")):
+        return 42.2
+
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:km|k)\b", txt)
+    if m:
+        try:
+            val = float(m.group(1).replace(",", "."))
+            if 3 <= val <= 120:
+                return val
+        except Exception:
+            pass
+    return None
+
+
+def _recommended_weekly_volume_range_km(goal_discipline: str, goal_distance_km: float | None, days_per_week: int | None) -> tuple[float, float]:
+    dpw = max(2, min(7, int(days_per_week or 4)))
+    factor_map = {2: 0.75, 3: 0.88, 4: 1.0, 5: 1.12, 6: 1.22, 7: 1.30}
+    f = factor_map.get(dpw, 1.0)
+
+    if goal_discipline == "run":
+        dist = float(goal_distance_km or 0.0)
+        if dist >= 40:
+            base_low, base_high = 42.0, 82.0
+        elif dist >= 20:
+            base_low, base_high = 28.0, 62.0
+        elif dist >= 10:
+            base_low, base_high = 18.0, 44.0
+        elif dist >= 5:
+            base_low, base_high = 14.0, 32.0
+        else:
+            base_low, base_high = 16.0, 36.0
+    elif goal_discipline == "ride":
+        base_low, base_high = 80.0, 260.0
+    elif goal_discipline == "swim":
+        base_low, base_high = 4.0, 18.0
+    else:
+        return 0.0, 0.0
+
+    return round(base_low * f, 1), round(base_high * f, 1)
+
+
 def build_goal_progress(user_id: int, profile_obj: UserProfile | None, range_days: int, stats: dict) -> dict | None:
     if not profile_obj or not profile_obj.target_date:
         return None
 
     today = datetime.now().date()
     days_left = (profile_obj.target_date - today).days
-    vol = get_recent_weekly_volume_km(user_id=user_id, weeks=6)
+
+    goal_discipline = _infer_goal_discipline(profile_obj)
+    include_types = None
+    if goal_discipline == "run":
+        include_types = {"run", "trailrun", "virtualrun"}
+    elif goal_discipline == "ride":
+        include_types = {"ride", "virtualride"}
+    elif goal_discipline == "swim":
+        include_types = {"swim"}
+
+    vol = get_recent_weekly_volume_km(user_id=user_id, weeks=6, include_types=include_types)
     avg_week = float(vol.get("avg_week_km", 0.0) or 0.0)
     last_week = float(vol.get("last_week_km", 0.0) or 0.0)
-    current_weekly = max(avg_week, last_week, 0.0)
+    declared_weekly = float(profile_obj.weekly_distance_km or 0.0)
+    current_weekly = max(avg_week, last_week, declared_weekly, 0.0)
+    if current_weekly <= 0 and vol.get("weekly_series"):
+        current_weekly = max(float(x or 0.0) for x in vol["weekly_series"])
 
     risk = (profile_obj.risk_tolerance or "balanced").lower()
-    ramp_pct = {"conservative": 0.06, "aggressive": 0.14}.get(risk, 0.10)
+    ramp_pct = {"conservative": 0.05, "aggressive": 0.11}.get(risk, 0.08)
 
-    weeks_left = max(0, int(days_left // 7))
-    target_weekly = float(profile_obj.weekly_distance_km or 0.0)
-    if target_weekly <= 0:
-        target_weekly = round(current_weekly * (1.0 + ramp_pct * min(weeks_left, 8)), 1)
-    target_weekly = max(target_weekly, current_weekly)
+    weeks_left = max(0, int((days_left + 6) // 7))
+    low_rec, high_rec = _recommended_weekly_volume_range_km(
+        goal_discipline=goal_discipline,
+        goal_distance_km=_infer_goal_distance_km(profile_obj),
+        days_per_week=profile_obj.days_per_week,
+    )
+
+    bias = {"conservative": 0.35, "aggressive": 0.75}.get(risk, 0.55)
+    recommended_peak = low_rec + (high_rec - low_rec) * bias if high_rec > 0 else 0.0
+    if declared_weekly > 0:
+        recommended_peak = max(recommended_peak, declared_weekly)
+    if recommended_peak <= 0:
+        recommended_peak = max(current_weekly, declared_weekly)
+
+    growth_weeks = max(1, min(10, weeks_left))
+    safe_cap = current_weekly * (1.0 + ramp_pct * growth_weeks) if current_weekly > 0 else recommended_peak
+
+    target_weekly = min(recommended_peak, safe_cap) if recommended_peak > 0 else safe_cap
+    if current_weekly > 0:
+        target_weekly = max(target_weekly, current_weekly)
+
+    if current_weekly > 0:
+        projected_cap = current_weekly * (1.0 + ramp_pct * min(4, growth_weeks))
+        projected_4w = min(target_weekly, projected_cap)
+    else:
+        projected_4w = target_weekly
 
     weekly_goal = int(profile_obj.weekly_goal_workouts or 3)
     weekly_goal = max(1, weekly_goal)
-    workouts_done = int(stats.get("count", 0) or 0)
-    goal_target = max(1, int(round((weekly_goal * range_days) / 7)))
-    completion_pct = int(round(min(100.0, (workouts_done / max(1, goal_target)) * 100.0)))
+    week_start = today - timedelta(days=today.weekday())
+    this_week_acts = _load_user_activities_with_fallback(
+        user_id=user_id,
+        start=datetime.combine(week_start, datetime.min.time()),
+        end=datetime.combine(today + timedelta(days=1), datetime.min.time()),
+        order_asc=True,
+    )
+    workouts_done = sum(1 for a in this_week_acts if _activity_start_dt(a))
+    completion_pct = int(round(min(100.0, (workouts_done / max(1, weekly_goal)) * 100.0)))
 
     if days_left <= 0:
         phase = tr("po starcie", "post-race")
     elif days_left <= 14:
         phase = tr("taper", "taper")
-    elif days_left <= 56:
+    elif days_left <= 84:
         phase = tr("build", "build")
     else:
         phase = tr("base", "base")
 
-    projected_4w = round(current_weekly * (1.0 + ramp_pct * min(4, weeks_left or 4)), 1)
     readiness_pct = 0
     if target_weekly > 0:
         readiness_pct = int(round(min(100.0, (current_weekly / target_weekly) * 100.0)))
@@ -1588,18 +1703,26 @@ def build_goal_progress(user_id: int, profile_obj: UserProfile | None, range_day
     return {
         "event": profile_obj.target_event or tr("Cel", "Goal"),
         "target_date": profile_obj.target_date.isoformat(),
-        "days_left": days_left,
+        "target_date_pretty": format_dt(profile_obj.target_date, "long"),
+        "days_left": max(0, days_left),
         "phase": phase,
         "risk": risk,
+        "goal_discipline": goal_discipline,
+        "volume_source": tr("profil + ostatnie 6 tygodni", "profile + last 6 weeks"),
         "weekly_volume_now": round(current_weekly, 1),
         "weekly_volume_target": round(target_weekly, 1),
-        "weekly_volume_projected_4w": projected_4w,
+        "weekly_volume_target_min": round(low_rec, 1) if high_rec > 0 else None,
+        "weekly_volume_target_max": round(high_rec, 1) if high_rec > 0 else None,
+        "weekly_volume_safe_cap": round(safe_cap, 1),
+        "weekly_volume_projected_4w": round(projected_4w, 1),
         "target_time_text": profile_obj.target_time_text or "",
         "weekly_labels": vol.get("weekly_labels", []),
         "weekly_series": vol.get("weekly_series", []),
         "readiness_pct": readiness_pct,
         "completion_pct": completion_pct,
         "weekly_goal": weekly_goal,
+        "workouts_done_this_week": workouts_done,
+        "updated_on": today.isoformat(),
     }
 
 

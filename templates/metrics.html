@@ -127,17 +127,24 @@
                 <div class="chart-title">{{ tx('🏁 Przygotowanie do celu','🏁 Goal preparation') }}</div>
                 <div class="goal-meta">
                     <p><b>{{ tx('Wydarzenie','Event') }}:</b> {{ goal_progress.event }}</p>
-                    <p><b>{{ tx('Data','Date') }}:</b> {{ goal_progress.target_date }}</p>
+                    <p><b>{{ tx('Data','Date') }}:</b> {{ goal_progress.target_date_pretty or goal_progress.target_date }}</p>
                     <p><b>{{ tx('Dni do startu','Days to event') }}:</b> {{ goal_progress.days_left }}</p>
                     <p><b>{{ tx('Faza przygotowania','Training phase') }}:</b> {{ goal_progress.phase }}</p>
+                    <p><b>{{ tx('Dyscyplina celu','Goal discipline') }}:</b> {{ activity_label(goal_progress.goal_discipline) }}</p>
                     <p><b>{{ tx('Objętość tygodniowa teraz','Weekly volume now') }}:</b> {{ goal_progress.weekly_volume_now }} km</p>
                     <p><b>{{ tx('Objętość docelowa','Target weekly volume') }}:</b> {{ goal_progress.weekly_volume_target }} km</p>
+                    {% if goal_progress.weekly_volume_target_min is not none and goal_progress.weekly_volume_target_max is not none %}
+                    <p class="goal-sub">{{ tx('Zakres orientacyjny','Recommended range') }}: {{ goal_progress.weekly_volume_target_min }} - {{ goal_progress.weekly_volume_target_max }} km</p>
+                    {% endif %}
+                    <p class="goal-sub">{{ tx('Bezpieczny limit (rampa)','Safe ramp cap') }}: {{ goal_progress.weekly_volume_safe_cap }} km</p>
                     <p><b>{{ tx('Prognoza za 4 tygodnie','Projected in 4 weeks') }}:</b> {{ goal_progress.weekly_volume_projected_4w }} km</p>
                     <p><b>{{ tx('Gotowość objętości','Volume readiness') }}:</b> {{ goal_progress.readiness_pct }}%</p>
-                    <p><b>{{ tx('Realizacja celu treningów','Workout goal completion') }}:</b> {{ goal_progress.completion_pct }}%</p>
+                    <p><b>{{ tx('Realizacja celu treningów (ten tydzień)','Workout goal completion (this week)') }}:</b> {{ goal_progress.completion_pct }}% ({{ goal_progress.workouts_done_this_week }}/{{ goal_progress.weekly_goal }})</p>
+                    <p class="goal-sub">{{ tx('Źródło wyliczeń','Data source') }}: {{ goal_progress.volume_source }} • {{ tx('Aktualizacja','Updated') }}: {{ goal_progress.updated_on }}</p>
                     {% if goal_progress.target_time_text %}
                     <p><b>{{ tx('Docelowy czas','Target time') }}:</b> {{ goal_progress.target_time_text }}</p>
                     {% endif %}
+                    <p class="goal-sub"><a href="/profile">{{ tx('Zmień datę/cel w profilu','Change date/goal in profile') }}</a></p>
                 </div>
                 <div class="chart-fixed">
                     <canvas id="goalVolumeChart"></canvas>
