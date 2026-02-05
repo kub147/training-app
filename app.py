@@ -5230,12 +5230,22 @@ def update_exercise(exercise_id: int):
     data = request.json or {}
 
     if "sets" in data:
-        ex.sets = int(data["sets"]) if data["sets"] not in (None, "") else 0
+        try:
+            ex.sets = max(0, int(data["sets"]))
+        except Exception:
+            ex.sets = 0
     if "reps" in data:
-        ex.reps = int(data["reps"]) if data["reps"] not in (None, "") else 0
+        try:
+            ex.reps = max(0, int(data["reps"]))
+        except Exception:
+            ex.reps = 0
     if "weight" in data:
         w = str(data["weight"]).replace(",", ".")
-        ex.weight = float(w) if w not in ("", "None") else 0.0
+        try:
+            val = float(w)
+            ex.weight = max(0.0, val)
+        except Exception:
+            ex.weight = 0.0
 
     db.session.commit()
     return jsonify({"success": True})
@@ -5258,13 +5268,27 @@ def add_exercise_api(activity_id: int):
     data = request.json or {}
 
     for item in data.get("exercises", []):
+        try:
+            sets_val = max(0, int(item.get("sets") or 0))
+        except Exception:
+            sets_val = 0
+        try:
+            reps_val = max(0, int(item.get("reps") or 0))
+        except Exception:
+            reps_val = 0
+        try:
+            weight_val = float(item.get("weight") or 0)
+            weight_val = max(0.0, weight_val)
+        except Exception:
+            weight_val = 0.0
+
         ex = Exercise(
             user_id=current_user.id,
             activity_id=activity.id,
             name=item.get("name"),
-            sets=int(item.get("sets") or 0),
-            reps=int(item.get("reps") or 0),
-            weight=float(item.get("weight") or 0),
+            sets=sets_val,
+            reps=reps_val,
+            weight=weight_val,
         )
         db.session.add(ex)
 
