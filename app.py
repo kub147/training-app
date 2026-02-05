@@ -287,14 +287,74 @@ def _parse_decimal_input(value) -> float | None:
     if not raw:
         return None
 
-    norm = raw.replace(",", ".").replace("−", "-")
-    m = re.search(r"-?\d+(?:\.\d+)?", norm)
+    norm = raw.replace("−", "-").replace("\u202f", " ").replace("\xa0", " ")
+    m = re.search(r"-?\d[\d\s.,]*", norm)
     if not m:
         return None
+
+    token = m.group(0).strip().replace(" ", "")
+    if not token:
+        return None
+
+    # both separators -> last one is decimal separator
+    if "," in token and "." in token:
+        if token.rfind(",") > token.rfind("."):
+            token = token.replace(".", "").replace(",", ".")
+        else:
+            token = token.replace(",", "")
+    elif "," in token:
+        # 1,425 -> thousand grouping, 5,5 -> decimal
+        if re.fullmatch(r"-?\d{1,3}(,\d{3})+", token):
+            token = token.replace(",", "")
+        else:
+            token = token.replace(",", ".")
+    elif "." in token:
+        # 1.425 -> thousand grouping in some locales
+        if re.fullmatch(r"-?\d{1,3}(\.\d{3})+", token):
+            token = token.replace(".", "")
+
     try:
-        return float(m.group(0))
+        return float(token)
     except Exception:
         return None
+
+
+def _parse_distance_km_input(value, activity_type: str | None = None) -> float | None:
+    """Parse distance and normalize to km from mixed strings (km/m, EN/PL)."""
+    if value is None:
+        return None
+
+    raw = str(value).strip().lower()
+    if not raw:
+        return None
+
+    # Ignore pure pace strings like "7:00 /km" or "1:52 /100m".
+    if ("/km" in raw or "/100m" in raw) and ("distance" not in raw and "dystans" not in raw):
+        return None
+
+    num = _parse_decimal_input(raw)
+    if num is None:
+        return None
+
+    has_km = bool(re.search(r"\bkm\b|kilometr", raw))
+    has_m = bool(re.search(r"(^|[^a-z])m($|[^a-z])|metr", raw)) and not has_km
+
+    if has_km:
+        dist_km = num
+    elif has_m:
+        dist_km = num / 1000.0
+    else:
+        dist_km = num
+
+    t = (activity_type or "").lower()
+    # Safety net for meters accidentally interpreted as km.
+    if dist_km and dist_km > 0:
+        if t == "swim" and dist_km > 20:
+            dist_km = dist_km / 1000.0
+        elif t in {"run", "walk", "hike", "yoga", "weighttraining", "workout", "other"} and dist_km > 120:
+            dist_km = dist_km / 1000.0
+
+    return dist_km
 
 
 def _parse_minutes_input(value) -> float | None:
@@ -308,28 +368,28 @@ def _parse_minutes_input(value) -> float | None:
 
     s = raw.replace(",", ".")
 
-    # Clock formats: MM:SS or HH:MM:SS
-    if ":" in s:
-        parts = [p.strip() for p in s.split(":")]
-        if all(re.fullmatch(r"\d+(?:\.\d+)?", p or "") for p in parts):
-            try:
-                nums = [float(p) for p in parts]
-                if len(nums) == 2:
-                    # MM:SS
-                    return nums[0] + (nums[1] / 60.0)
-                if len(nums) == 3:
-                    # HH:MM:SS
-                    return nums[0] * 60.0 + nums[1] + (nums[2] / 60.0)
-            except Exception:
-                pass
+    # Clock formats: MM:SS or HH:MM:SS (e.g. 49:06, 1:24:18)
+    m_clock = re.search(r"\b(\d{1,2}:\d{2}(?::\d{2})?)\b", s)
+    if m_clock:
+        parts = m_clock.group(1).split(":")
+        try:
+            nums = [float(p) for p in parts]
+            if len(nums) == 2:
+                return nums[0] + (nums[1] / 60.0)
+            if len(nums) == 3:
+                return nums[0] * 60.0 + nums[1] + (nums[2] / 60.0)
+        except Exception:
+            pass
 
-    # "1h 20min" style
-    h_match = re.search(r"(\d+(?:\.\d+)?)\s*h", s)
-    m_match = re.search(r"(\d+(?:\.\d+)?)\s*m(?:in)?", s)
-    if h_match or m_match:
-        hours = float(h_match.group(1)) if h_match else 0.0
-        mins = float(m_match.group(1)) if m_match else 0.0
-        return hours * 60.0 + mins
+    # "1h 20min 6s", "49min 6s", "1 godz 24 min" styles
+    h_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|godz)", s)
+    m_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:m|min|mins|minut)", s)
+    s_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:s|sec|secs|sek)", s)
+    if h_match or m_match or s_match:
+        hours = _parse_decimal_input(h_match.group(1)) if h_match else 0.0
+        mins = _parse_decimal_input(m_match.group(1)) if m_match else 0.0
+        secs = _parse_decimal_input(s_match.group(1)) if s_match else 0.0
+        return float(hours or 0.0) * 60.0 + float(mins or 0.0) + float(secs or 0.0) / 60.0
 
     return _parse_decimal_input(s)
 
@@ -339,11 +399,54 @@ def _normalize_date_input(value: str | None) -> str | None:
     if not raw:
         return None
 
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%Y"):
-        try:
-            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
-        except Exception:
-            continue
+    s = raw.lower().strip()
+    today = datetime.now().date()
+    if any(k in s for k in ("today", "dzis", "dziś")):
+        return today.isoformat()
+    if "yesterday" in s or "wczoraj" in s:
+        return (today - timedelta(days=1)).isoformat()
+
+    # Trim trailing noise like "at 8:31 PM - Porto".
+    candidates = [raw]
+    for sep in (" at ", " @ ", " - ", " • "):
+        if sep in raw:
+            candidates.append(raw.split(sep)[0].strip())
+
+    for cand in candidates:
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%Y", "%B %d, %Y", "%B %d %Y", "%b %d, %Y", "%b %d %Y"):
+            try:
+                return datetime.strptime(cand, fmt).strftime("%Y-%m-%d")
+            except Exception:
+                continue
+
+    month_map = {
+        "jan": 1, "january": 1, "stycz": 1, "sty": 1,
+        "feb": 2, "february": 2, "lut": 2, "luty": 2,
+        "mar": 3, "march": 3, "marz": 3,
+        "apr": 4, "april": 4, "kwi": 4, "kwiec": 4,
+        "may": 5, "maj": 5,
+        "jun": 6, "june": 6, "cze": 6,
+        "jul": 7, "july": 7, "lip": 7,
+        "aug": 8, "august": 8, "sie": 8,
+        "sep": 9, "sept": 9, "september": 9, "wrz": 9,
+        "oct": 10, "october": 10, "paz": 10, "paź": 10,
+        "nov": 11, "november": 11, "lis": 11,
+        "dec": 12, "december": 12, "gru": 12,
+    }
+    m = re.search(r"\b(\d{1,2})\s+([a-ząćęłńóśźż]+)\s*(\d{4})?\b", s)
+    if m:
+        day = int(m.group(1))
+        month_token = m.group(2)
+        year = int(m.group(3)) if m.group(3) else today.year
+        month = month_map.get(month_token)
+        if month is None:
+            month = month_map.get(month_token[:3])
+        if month:
+            try:
+                d = date(year, month, day)
+                return d.isoformat()
+            except Exception:
+                pass
     return None
 
 
@@ -352,10 +455,15 @@ def _normalize_time_input(value: str | None) -> str | None:
     if not raw:
         return None
 
+    # Support embedded text like "Today at 8:31 PM".
+    m_ampm = re.search(r"(\d{1,2}[:.]\d{2}(?::\d{2})?\s*[ap]m)", raw, re.IGNORECASE)
+    m_24 = re.search(r"\b(\d{1,2}[:.]\d{2}(?::\d{2})?)\b", raw)
+    extracted = m_ampm.group(1) if m_ampm else (m_24.group(1) if m_24 else raw)
+
     candidates = [
-        raw,
-        raw.replace(".", ":"),
-        raw.replace(" ", ""),
+        extracted,
+        extracted.replace(".", ":"),
+        extracted.replace(" ", ""),
     ]
 
     for c in candidates:
@@ -365,11 +473,125 @@ def _normalize_time_input(value: str | None) -> str | None:
             except Exception:
                 continue
 
-    # "1730" -> "17:30"
-    if re.fullmatch(r"\d{4}", raw):
-        return f"{raw[:2]}:{raw[2:]}"
+    # "1730" -> "17:30", "830" -> "08:30"
+    digits = re.sub(r"\D", "", raw)
+    if re.fullmatch(r"\d{3,4}", digits):
+        if len(digits) == 3:
+            hhmm = f"0{digits[0]}:{digits[1:]}"
+        else:
+            hhmm = f"{digits[:2]}:{digits[2:]}"
+        try:
+            return datetime.strptime(hhmm, "%H:%M").strftime("%H:%M")
+        except Exception:
+            pass
 
     return None
+
+
+def _normalize_activity_type_value(value: str | None) -> str:
+    raw = (value or "").strip().lower()
+    if not raw:
+        return "other"
+    if any(k in raw for k in ("swim", "pływ", "plyw", "basen")):
+        return "swim"
+    if any(k in raw for k in ("run", "bieg", "jog")):
+        return "run"
+    if any(k in raw for k in ("ride", "rower", "bike", "cycling")):
+        return "ride"
+    if any(k in raw for k in ("walk", "spacer")):
+        return "walk"
+    if any(k in raw for k in ("workout", "sił", "sil", "gym", "strength", "weight")):
+        return "weighttraining"
+    if any(k in raw for k in ("yoga", "joga")):
+        return "yoga"
+    if any(k in raw for k in ("hike", "trek", "gór", "gor", "szlak")):
+        return "hike"
+    return "other"
+
+
+def _extract_activity_from_free_text(raw: str) -> dict:
+    """Fallback when model returns non-JSON text."""
+    txt = (raw or "").strip()
+    low = txt.lower()
+    out: dict = {
+        "activity_type": _normalize_activity_type_value(txt),
+        "distance_km": None,
+        "duration_min": None,
+        "avg_hr": None,
+        "start_date": _normalize_date_input(txt),
+        "start_time": _normalize_time_input(txt),
+    }
+
+    # distance with units (skip pace fragments like "/100m")
+    for m in re.finditer(r"(\d[\d., ]*)\s*(km|m)\b", low):
+        start = m.start()
+        if start > 0 and low[start - 1] == "/":
+            continue
+        num_txt, unit = m.group(1), m.group(2)
+        parsed = _parse_distance_km_input(f"{num_txt} {unit}", out["activity_type"])
+        if parsed is not None and parsed > 0:
+            out["distance_km"] = parsed
+            break
+
+    # duration: prefer clock-like values near explicit duration labels.
+    duration_label_hits = []
+    clock_matches = list(re.finditer(r"\b(\d{1,2}:\d{2}(?::\d{2})?)\b", txt))
+    for m in clock_matches:
+        start = m.start()
+        end = m.end()
+        ctx = txt[max(0, start - 30): min(len(txt), end + 30)].lower()
+        tail = txt[start:start + 12].lower()
+
+        if "/km" in tail or "/100m" in tail:
+            continue
+        # Skip clock-times like "Today at 11:53 AM" / "@ 20:31"
+        if re.search(r"(today at|dzisiaj o|dziś o| at |\bam\b|\bpm\b|@\s*$)", txt[max(0, start - 12):start].lower()):
+            continue
+
+        mins = _parse_minutes_input(m.group(1))
+        if not mins or mins <= 0:
+            continue
+
+        if any(k in ctx for k in ("moving time", "elapsed time", "czas", "całkowity", "calkowity", "duration")):
+            duration_label_hits.append(mins)
+
+    if duration_label_hits:
+        out["duration_min"] = max(duration_label_hits)
+    else:
+        # Fallback: pick a sensible non-pace clock value.
+        candidates = []
+        for m in clock_matches:
+            start = m.start()
+            tail = txt[start:start + 12].lower()
+            if "/km" in tail or "/100m" in tail:
+                continue
+            if re.search(r"(today at|dzisiaj o|dziś o| at |\bam\b|\bpm\b|@\s*$)", txt[max(0, start - 12):start].lower()):
+                continue
+            mins = _parse_minutes_input(m.group(1))
+            if mins and mins > 0:
+                candidates.append(mins)
+        if candidates:
+            out["duration_min"] = max(candidates)
+
+    if out["duration_min"] is None:
+        mins = _parse_minutes_input(txt)
+        if mins and mins > 0:
+            out["duration_min"] = mins
+
+    # avg hr (average only)
+    hr_patterns = [
+        r"(?:avg(?:\.|\s)?heart(?:\s)?rate|average(?:\s)?heart(?:\s)?rate|avg hr|średnie(?:\s)?tętno|sr\.?\s*t[ęe]tno)\D{0,10}(\d{2,3})",
+        r"(\d{2,3})\s*bpm",
+    ]
+    for pat in hr_patterns:
+        m = re.search(pat, low, re.IGNORECASE)
+        if m:
+            hr = _parse_decimal_input(m.group(1))
+            if hr and 40 <= hr <= 230:
+                out["avg_hr"] = int(round(hr))
+                break
+
+    return out
 
 
 def _password_reset_serializer() -> URLSafeTimedSerializer:
@@ -2769,24 +2991,29 @@ def parse_strava_screenshot_to_activity_detailed(image_path: str) -> tuple[dict,
             img_bytes = f.read()
 
         prompt = """
-Masz zrzut ekranu aktywności ze Stravy (lub podobnej aplikacji).
-Wyciągnij z niego dane i zwróć WYŁĄCZNIE JSON (bez markdown, bez komentarzy) w formacie:
+Masz screenshot aktywności z Garmin/Strava (PL lub EN). Wyciągnij dane i zwróć WYŁĄCZNIE JSON (bez markdown).
 
+FORMAT:
 {
   "activity_type": "run|ride|swim|workout|weighttraining|yoga|hike|walk|other",
   "distance_km": number|null,
   "duration_min": number|null,
   "avg_hr": number|null,
   "start_date": "YYYY-MM-DD"|null,
-  "start_time": "HH:MM"|null
+  "start_time": "HH:MM"|null,
+  "distance_raw": "string|null",
+  "duration_raw": "string|null",
+  "avg_hr_raw": "string|null"
 }
 
-Zasady:
-- distance_km ma być w kilometrach (np. 8.42)
-- duration_min ma być w minutach (np. 46)
-- avg_hr to średnie tętno (bpm)
-- jeśli widzisz datę/godzinę rozpoczęcia, zwróć start_date i start_time
-- jeśli nie widzisz wartości, daj null
+ZASADY:
+- Obsługuj etykiety PL i EN (np. Dystans/Distance, Czas/Moving Time/Elapsed Time, Średnie tętno/Avg Heart Rate).
+- distance_km zawsze w kilometrach. Jeśli widać metry (m), przelicz na km.
+- duration_min zawsze w minutach (może pochodzić z MM:SS lub HH:MM:SS).
+- avg_hr = ŚREDNIE tętno (nie max).
+- Nie myl kalorii, przewyższenia, tempa ani max HR z dystansem/czasem/avg_hr.
+- start_date/start_time wyciągaj z linii typu: "Today at 11:53 AM", "4 lut @ 20:31", "January 29, 2026 at 6:51 PM".
+- Jeśli brak wartości, daj null.
         """.strip()
 
         resp = vision_model.generate_content([
@@ -2795,28 +3022,148 @@ Zasady:
         ])
 
         raw = (getattr(resp, "text", None) or "").strip()
-        try:
-            data = json.loads(raw)
-        except Exception:
+
+        def _load_json_relaxed(txt: str):
+            try:
+                return json.loads(txt)
+            except Exception:
+                pass
+            m = re.search(r"\{.*\}", txt, re.DOTALL)
+            if not m:
+                return None
+            try:
+                return json.loads(m.group(0))
+            except Exception:
+                return None
+
+        data = _load_json_relaxed(raw)
+        if not isinstance(data, dict):
+            # Fallback: best-effort regex extraction from free text.
+            fallback = _extract_activity_from_free_text(raw)
+            has_any_fallback = any([
+                fallback.get("distance_km"),
+                fallback.get("duration_min"),
+                fallback.get("avg_hr"),
+                fallback.get("start_date"),
+                fallback.get("start_time"),
+                fallback.get("activity_type") not in (None, "", "other"),
+            ])
+            if has_any_fallback:
+                return fallback, None
             return {}, tr(
                 "Model zwrócił nieczytelny format odpowiedzi (nie-JSON). Spróbuj wyraźniejszy screenshot.",
                 "Model returned an unreadable response format (non-JSON). Try a clearer screenshot.",
             )
 
-        # minimalna walidacja / normalizacja
-        out = {}
-        out["activity_type"] = (data.get("activity_type") or "other").strip().lower()
-        dist = _parse_decimal_input(data.get("distance_km"))
-        out["distance_km"] = dist if dist is not None and dist >= 0 else None
+        # Normalization with key fallbacks (model can use slightly different keys).
+        out = {
+            "activity_type": _normalize_activity_type_value(
+                data.get("activity_type")
+                or data.get("activity")
+                or data.get("type")
+                or data.get("sport")
+            ),
+            "distance_km": None,
+            "duration_min": None,
+            "avg_hr": None,
+            "start_date": None,
+            "start_time": None,
+        }
 
-        dur = _parse_minutes_input(data.get("duration_min"))
-        out["duration_min"] = dur if dur is not None and dur >= 0 else None
+        # Distance
+        distance_sources = [
+            ("distance_km", "km"),
+            ("distance", None),
+            ("distance_raw", None),
+            ("distance_text", None),
+            ("dystans", None),
+            ("distance_m", "m"),
+            ("meters", "m"),
+            ("metres", "m"),
+        ]
+        for key, unit_hint in distance_sources:
+            if key not in data or data.get(key) in (None, ""):
+                continue
+            if unit_hint == "m":
+                meters = _parse_decimal_input(data.get(key))
+                dist_km = (meters / 1000.0) if meters is not None else None
+            elif unit_hint == "km":
+                dist_km = _parse_decimal_input(data.get(key))
+            else:
+                dist_km = _parse_distance_km_input(data.get(key), out["activity_type"])
+            if dist_km is not None and dist_km >= 0:
+                out["distance_km"] = dist_km
+                break
 
-        hr = _parse_decimal_input(data.get("avg_hr"))
-        out["avg_hr"] = int(round(hr)) if hr is not None and hr > 0 else None
+        # Duration
+        duration_sources = [
+            "duration_min",
+            "moving_time",
+            "elapsed_time",
+            "duration",
+            "duration_raw",
+            "duration_text",
+            "czas",
+        ]
+        for key in duration_sources:
+            if key not in data or data.get(key) in (None, ""):
+                continue
+            dur = _parse_minutes_input(data.get(key))
+            if dur is not None and dur >= 0:
+                out["duration_min"] = dur
+                break
 
-        out["start_date"] = _normalize_date_input(data.get("start_date"))
-        out["start_time"] = _normalize_time_input(data.get("start_time"))
+        # HR (average only)
+        hr_sources = [
+            "avg_hr",
+            "avg_heart_rate",
+            "average_heart_rate",
+            "avg_hr_raw",
+            "srednie_tetno",
+            "średnie_tętno",
+        ]
+        for key in hr_sources:
+            if key not in data or data.get(key) in (None, ""):
+                continue
+            hr = _parse_decimal_input(data.get(key))
+            if hr is not None and 40 <= hr <= 230:
+                out["avg_hr"] = int(round(hr))
+                break
+
+        date_sources = ["start_date", "activity_date", "date", "workout_date", "start_datetime", "when"]
+        for key in date_sources:
+            if key not in data or data.get(key) in (None, ""):
+                continue
+            parsed_date = _normalize_date_input(str(data.get(key)))
+            if parsed_date:
+                out["start_date"] = parsed_date
+                break
+
+        time_sources = ["start_time", "activity_time", "clock_time", "start_datetime", "when"]
+        for key in time_sources:
+            if key not in data or data.get(key) in (None, ""):
+                continue
+            parsed_time = _normalize_time_input(str(data.get(key)))
+            if parsed_time:
+                out["start_time"] = parsed_time
+                break
+
+        # Fill missing fields from free-text fallback extracted from raw model response.
+        fb = _extract_activity_from_free_text(raw)
+        if out.get("activity_type") in ("", "other") and fb.get("activity_type") not in ("", "other", None):
+            out["activity_type"] = fb.get("activity_type")
+        for field in ("distance_km", "duration_min", "avg_hr", "start_date", "start_time"):
+            if out.get(field) in (None, "") and fb.get(field) not in (None, ""):
+                out[field] = fb.get(field)
+
+        # Sanity bounds.
+        if out["distance_km"] is not None and out["distance_km"] > 2000:
+            out["distance_km"] = out["distance_km"] / 1000.0
+        if out["duration_min"] is not None and out["duration_min"] > 24 * 60:
+            # Likely seconds accidentally parsed as minutes.
+            out["duration_min"] = out["duration_min"] / 60.0
+        if out["avg_hr"] is not None and not (40 <= out["avg_hr"] <= 230):
+            out["avg_hr"] = None
 
         has_any = (
             (out.get("distance_km") is not None and out.get("distance_km", 0) > 0)
