@@ -1131,6 +1131,16 @@ def _load_user_activities_with_fallback(
     return filtered
 
 
+def _load_exercise_map(activity_ids: list[int]) -> dict[int, list[Exercise]]:
+    if not activity_ids:
+        return {}
+    rows = Exercise.query.filter(Exercise.activity_id.in_(activity_ids)).all()
+    out: dict[int, list[Exercise]] = {}
+    for ex in rows:
+        out.setdefault(ex.activity_id, []).append(ex)
+    return out
+
+
 def _extract_estimates_from_text(text: str | None) -> tuple[float | None, int | None]:
     raw = (text or "").lower()
 
@@ -1530,6 +1540,8 @@ def get_recent_activity_details(user_id: int, days: int = 21, limit: int = 120) 
     if not activities:
         return "OSTATNIE TRENINGI: brak danych w tym oknie."
 
+    exercise_map = _load_exercise_map([a.id for a in activities])
+
     out = [f"OSTATNIE TRENINGI (ostatnie {days} dni):"]
     for act in activities:
         start_dt = _activity_start_dt(act)
@@ -1550,6 +1562,22 @@ def get_recent_activity_details(user_id: int, days: int = 21, limit: int = 120) 
         out.append(f"- {d} | {t} | {dist_km:.1f} km | {dur_min} min{hr}{pace}{elev}")
         if act.notes:
             out.append(f"  Notatka: {act.notes}")
+        exercises = exercise_map.get(act.id) or []
+        if exercises:
+            parts = []
+            for ex in exercises[:8]:
+                name = (ex.name or "").strip()
+                if not name:
+                    continue
+                sets = ex.sets or 0
+                reps = ex.reps or 0
+                weight = ex.weight if ex.weight is not None else None
+                if weight is not None and weight > 0:
+                    parts.append(f"{name} ({sets}x{reps}, {weight}kg)")
+                else:
+                    parts.append(f"{name} ({sets}x{reps})")
+            if parts:
+                out.append(f"  Ćwiczenia: {', '.join(parts)}")
     return "\n".join(out)
 
 
@@ -1585,6 +1613,8 @@ def get_execution_context(user_id: int, days: int = 10) -> str:
     if not acts:
         return "WYKONANE TRENINGI: brak danych."
 
+    exercise_map = _load_exercise_map([a.id for a in acts])
+
     today_iso = datetime.now().strftime("%Y-%m-%d")
     counts = {"run": 0, "ride": 0, "swim": 0, "gym": 0, "mobility": 0, "other": 0}
     today_counts = {"run": 0, "ride": 0, "swim": 0, "gym": 0, "mobility": 0, "other": 0}
@@ -1603,6 +1633,22 @@ def get_execution_context(user_id: int, days: int = 10) -> str:
         dist_km = (act.distance or 0.0) / 1000.0
         dur_min = int((act.duration or 0) // 60)
         lines.append(f"- {ds} | {b} | {dist_km:.1f} km | {dur_min} min")
+        exercises = exercise_map.get(act.id) or []
+        if exercises:
+            parts = []
+            for ex in exercises[:8]:
+                name = (ex.name or "").strip()
+                if not name:
+                    continue
+                sets = ex.sets or 0
+                reps = ex.reps or 0
+                weight = ex.weight if ex.weight is not None else None
+                if weight is not None and weight > 0:
+                    parts.append(f"{name} ({sets}x{reps}, {weight}kg)")
+                else:
+                    parts.append(f"{name} ({sets}x{reps})")
+            if parts:
+                lines.append(f"  Ćwiczenia: {', '.join(parts)}")
 
     lines.append(
         "PODSUMOWANIE TYPU: "
@@ -1612,6 +1658,48 @@ def get_execution_context(user_id: int, days: int = 10) -> str:
         "DZISIAJ WYKONANO: "
         + " | ".join([f"{k}={today_counts[k]}" for k in ("run", "ride", "swim", "gym", "mobility", "other")])
     )
+    return "\n".join(lines)
+
+
+def get_week_execution_context(user_id: int, week_start: date, week_end: date) -> str:
+    start_dt = datetime.combine(week_start, datetime.min.time())
+    end_dt = datetime.combine(week_end + timedelta(days=1), datetime.min.time())
+    acts = _load_user_activities_with_fallback(
+        user_id=user_id,
+        start=start_dt,
+        end=end_dt,
+        order_asc=True,
+    )
+    if not acts:
+        return "W TYM TYGODNIU: brak wykonanych treningów."
+
+    exercise_map = _load_exercise_map([a.id for a in acts])
+    lines = [f"WYKONANE W TYM TYGODNIU ({week_start.isoformat()} → {week_end.isoformat()}):"]
+    for act in acts:
+        start_act = _activity_start_dt(act)
+        if not start_act:
+            continue
+        d = start_act.strftime("%Y-%m-%d")
+        b = normalize_activity_bucket(act.activity_type, act.notes)
+        dist_km = (act.distance or 0.0) / 1000.0
+        dur_min = int((act.duration or 0) // 60)
+        lines.append(f"- {d} | {b} | {dist_km:.1f} km | {dur_min} min")
+        exercises = exercise_map.get(act.id) or []
+        if exercises:
+            parts = []
+            for ex in exercises[:8]:
+                name = (ex.name or "").strip()
+                if not name:
+                    continue
+                sets = ex.sets or 0
+                reps = ex.reps or 0
+                weight = ex.weight if ex.weight is not None else None
+                if weight is not None and weight > 0:
+                    parts.append(f"{name} ({sets}x{reps}, {weight}kg)")
+                else:
+                    parts.append(f"{name} ({sets}x{reps})")
+            if parts:
+                lines.append(f"  Ćwiczenia: {', '.join(parts)}")
     return "\n".join(lines)
 
 
@@ -4062,6 +4150,12 @@ def chat_with_coach():
     recent_details = get_recent_activity_details(user_id=current_user.id, days=21)
     recent_checkins = get_recent_checkins_summary(user_id=current_user.id, days=14)
     execution_ctx = get_execution_context(user_id=current_user.id, days=10)
+    today_dt = datetime.now().date()
+    week_execution_ctx = get_week_execution_context(
+        user_id=current_user.id,
+        week_start=today_dt - timedelta(days=today_dt.weekday()),
+        week_end=today_dt,
+    )
     checkin_signals = get_checkin_signal_snapshot(user_id=current_user.id, days=14)
     goal_progress = build_goal_progress(
         user_id=current_user.id,
@@ -4120,7 +4214,6 @@ def generate_forecast():
         stats=compute_stats(current_user.id, 30),
     )
 
-    today_dt = datetime.now().date()
     today = today_dt.strftime("%Y-%m-%d")
     days_to_generate = max(1, 7 - today_dt.weekday())  # do niedzieli włącznie
     week_start = today_dt - timedelta(days=today_dt.weekday())
@@ -4261,6 +4354,8 @@ WAŻNE:
 {recent_checkins}
 
 {execution_ctx}
+
+{week_execution_ctx}
 
 SYGNAŁY CHECK-IN:
 {json.dumps(checkin_signals, ensure_ascii=False)}
@@ -4613,6 +4708,37 @@ ZASADY:
             out["duration_min"] = out["duration_min"] / 60.0
         if out["avg_hr"] is not None and not (40 <= out["avg_hr"] <= 230):
             out["avg_hr"] = None
+
+        # Prefer "today" if screenshot text implies it, or if date is likely unreliable.
+        base_any = (
+            (out.get("distance_km") is not None and out.get("distance_km", 0) > 0)
+            or (out.get("duration_min") is not None and out.get("duration_min", 0) > 0)
+            or (out.get("avg_hr") is not None and out.get("avg_hr", 0) > 0)
+            or (out.get("activity_type") and out.get("activity_type") != "other")
+        )
+        if base_any:
+            raw_lower = raw.lower()
+            today = datetime.now().date()
+            if any(k in raw_lower for k in ("today", "dzis", "dziś")):
+                out["start_date"] = today.isoformat()
+            elif "yesterday" in raw_lower or "wczoraj" in raw_lower:
+                out["start_date"] = (today - timedelta(days=1)).isoformat()
+            else:
+                if not out.get("start_date"):
+                    out["start_date"] = today.isoformat()
+                else:
+                    try:
+                        parsed = date.fromisoformat(out["start_date"])
+                        has_year = re.search(r"\b20\d{2}\b", raw_lower) is not None
+                        month_tokens = (
+                            "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+                            "sty", "lut", "mar", "kwi", "maj", "cze", "lip", "sie", "wrz", "paz", "paź", "lis", "gru",
+                        )
+                        has_month_hint = any(tok in raw_lower for tok in month_tokens)
+                        if (not has_year and not has_month_hint) and abs((today - parsed).days) > 60:
+                            out["start_date"] = today.isoformat()
+                    except Exception:
+                        out["start_date"] = today.isoformat()
 
         has_any = (
             (out.get("distance_km") is not None and out.get("distance_km", 0) > 0)

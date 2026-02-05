@@ -577,9 +577,13 @@
           } catch (_e) {
             activities = [];
           }
-          const rows = activities.map((a) => `
-            <li>${escapeHtml(a.time || '')} • ${escapeHtml(a.label || '')} • ${normalizeNumber(a.dist_km, ' km')} • ${normalizeNumber(a.dur_min, ' min')}${a.avg_hr ? ` • HR ${a.avg_hr}` : ''}</li>
-          `).join('');
+          const rows = activities.map((a) => {
+            const base = `${escapeHtml(a.time || '')} • ${escapeHtml(a.label || '')} • ${normalizeNumber(a.dist_km, ' km')} • ${normalizeNumber(a.dur_min, ' min')}${a.avg_hr ? ` • HR ${a.avg_hr}` : ''}`;
+            if (a.id) {
+              return `<li><a href="/activity/${a.id}">${base}</a></li>`;
+            }
+            return `<li>${base}</li>`;
+          }).join('');
           modalBody.innerHTML = `
             <p><b>{{ tx('Podsumowanie','Summary') }}:</b> ${escapeHtml(String(payload.count || 0))} {{ tx('aktywności','activities') }}</p>
             <p>${normalizeNumber(payload.dist, ' km')} • ${normalizeNumber(payload.dur, ' min')}${payload.avgHr ? ` • HR ${escapeHtml(String(payload.avgHr))}` : ''}</p>
@@ -592,6 +596,14 @@
       document.addEventListener('click', (e) => {
         const btn = e.target.closest('.road-btn');
         if (!btn) return;
+        if (btn.dataset.kind === 'done') {
+          let acts = [];
+          try { acts = JSON.parse(btn.dataset.activities || '[]'); } catch (_e) { acts = []; }
+          if (acts.length === 1 && acts[0] && acts[0].id) {
+            window.location.href = `/activity/${acts[0].id}`;
+            return;
+          }
+        }
         const payload = {
           kind: btn.dataset.kind,
           date: btn.dataset.date,
