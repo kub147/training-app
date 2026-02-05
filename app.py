@@ -975,10 +975,9 @@ def _parse_route_points_json(raw_json: str | None) -> list[list[float]]:
     return points
 
 
-def _build_activity_detail_payload(activity: Activity) -> tuple[list[dict], list[dict], dict]:
+def _build_activity_detail_payload(activity: Activity) -> list[dict]:
     meta = _safe_json_dict(activity.metadata_json)
     cards: list[dict] = []
-    consumed_meta = set()
 
     def add_card(pl: str, en: str, value_text: str | None):
         if not value_text:
@@ -996,59 +995,17 @@ def _build_activity_detail_payload(activity: Activity) -> tuple[list[dict], list
     add_card("Kalorie", "Calories", (f"{_format_number(activity.calories, 0)} kcal" if activity.calories is not None else None))
     add_card("Kroki", "Steps", (_format_number(activity.steps, 0) if activity.steps is not None else None))
     add_card("VO2max", "VO2max", (f"{_format_number(activity.vo2max, 1)}" if activity.vo2max is not None else None))
-    add_card("Źródło", "Source", (str(activity.source).upper() if activity.source else None))
-    add_card("Sport (raw)", "Sport (raw)", (activity.sport_type or None))
-    add_card("Urządzenie", "Device", (activity.device_id or None))
 
     known_meta = [
-        ("lapCount", "Liczba okrążeń", "Lap count", 0, ""),
         ("avgRunCadence", "Śr. kadencja biegu", "Avg run cadence", 1, "spm"),
         ("maxRunCadence", "Maks. kadencja biegu", "Max run cadence", 1, "spm"),
         ("avgStrideLength", "Śr. długość kroku", "Avg stride length", 1, "cm"),
-        ("averagePace", "Śr. tempo", "Avg pace", 2, ""),
-        ("averageMovingPace", "Śr. tempo w ruchu", "Avg moving pace", 2, ""),
-        ("bestLapTime", "Najlepsze okrążenie", "Best lap", 2, ""),
-        ("avgPower", "Śr. moc", "Avg power", 0, "W"),
-        ("maxPower", "Maks. moc", "Max power", 0, "W"),
-        ("normPower", "Moc znormalizowana", "Normalized power", 0, "W"),
-        ("aerobicTrainingEffect", "Aerobic Training Effect", "Aerobic training effect", 1, ""),
-        ("anaerobicTrainingEffect", "Anaerobic Training Effect", "Anaerobic training effect", 1, ""),
-        ("trainingStressScore", "Training Stress Score", "Training stress score", 1, ""),
-        ("moderateIntensityMinutes", "Minuty umiarkowane", "Moderate minutes", 0, "min"),
-        ("vigorousIntensityMinutes", "Minuty intensywne", "Vigorous minutes", 0, "min"),
-        ("fit_total_elapsed_time", "FIT czas całkowity", "FIT elapsed time", -1, ""),
-        ("fit_total_timer_time", "FIT czas ruchu", "FIT moving time", -1, ""),
-        ("fit_total_distance", "FIT dystans", "FIT distance", 1, "m"),
-        ("fit_total_ascent", "FIT przewyższenie +", "FIT ascent", 1, "m"),
-        ("fit_total_descent", "FIT przewyższenie -", "FIT descent", 1, "m"),
-        ("fit_total_calories", "FIT kalorie", "FIT calories", 0, "kcal"),
-        ("fit_total_steps", "FIT kroki", "FIT steps", 0, ""),
-        ("fit_avg_speed", "FIT śr. prędkość", "FIT avg speed", 2, "m/s"),
-        ("fit_max_speed", "FIT maks. prędkość", "FIT max speed", 2, "m/s"),
-        ("fit_avg_heart_rate", "FIT śr. tętno", "FIT avg HR", 0, "bpm"),
-        ("fit_max_heart_rate", "FIT maks. tętno", "FIT max HR", 0, "bpm"),
-        ("fit_avg_cadence", "FIT śr. kadencja", "FIT avg cadence", 1, "spm"),
-        ("fit_max_cadence", "FIT maks. kadencja", "FIT max cadence", 1, "spm"),
-        ("fit_avg_running_cadence", "FIT śr. kadencja biegu", "FIT avg run cadence", 1, "spm"),
-        ("fit_max_running_cadence", "FIT maks. kadencja biegu", "FIT max run cadence", 1, "spm"),
-        ("fit_avg_power", "FIT śr. moc", "FIT avg power", 0, "W"),
-        ("fit_max_power", "FIT maks. moc", "FIT max power", 0, "W"),
-        ("fit_normalized_power", "FIT moc znormalizowana", "FIT normalized power", 0, "W"),
-        ("fit_total_training_effect", "FIT training effect", "FIT training effect", 1, ""),
-        ("fit_aerobic_training_effect", "FIT aerobic effect", "FIT aerobic effect", 1, ""),
-        ("fit_anaerobic_training_effect", "FIT anaerobic effect", "FIT anaerobic effect", 1, ""),
-        ("fit_training_stress_score", "FIT training stress", "FIT training stress", 1, ""),
-        ("fit_avg_stroke_distance", "FIT śr. długość ruchu", "FIT avg stroke distance", 2, "m"),
-        ("fit_avg_stroke_count", "FIT śr. liczba ruchów", "FIT avg stroke count", 1, ""),
-        ("fit_avg_stroke_rate", "FIT śr. stroke rate", "FIT avg stroke rate", 1, ""),
-        ("fit_max_stroke_rate", "FIT max stroke rate", "FIT max stroke rate", 1, ""),
     ]
 
     for key, label_pl, label_en, decimals, unit in known_meta:
         if key not in meta:
             continue
         value = meta.get(key)
-        consumed_meta.add(key)
         if decimals < 0:
             text = _format_duration_hms(value)
         else:
@@ -1057,56 +1014,7 @@ def _build_activity_detail_payload(activity: Activity) -> tuple[list[dict], list
                 text = f"{text} {unit}"
         add_card(label_pl, label_en, text)
 
-    # Route/map payload
-    route_points = _parse_route_points_json(activity.route_points_json)
-    if not route_points and isinstance(meta.get("routePoints"), list):
-        try:
-            route_points = _compact_route_points([
-                [_normalize_gps_coord(p[0]), _normalize_gps_coord(p[1])]
-                for p in meta.get("routePoints")
-                if isinstance(p, (list, tuple)) and len(p) >= 2
-                and _normalize_gps_coord(p[0]) is not None and _normalize_gps_coord(p[1]) is not None
-            ])
-        except Exception:
-            route_points = []
-
-    if not route_points and activity.start_lat is not None and activity.start_lng is not None:
-        start = [_normalize_gps_coord(activity.start_lat), _normalize_gps_coord(activity.start_lng)]
-        end = [_normalize_gps_coord(activity.end_lat), _normalize_gps_coord(activity.end_lng)]
-        if start[0] is not None and start[1] is not None:
-            if end[0] is not None and end[1] is not None and (start[0] != end[0] or start[1] != end[1]):
-                route_points = [[start[0], start[1]], [end[0], end[1]]]
-            else:
-                route_points = [[start[0], start[1]]]
-
-    route_payload = {
-        "points": route_points,
-        "has_points": bool(route_points),
-    }
-
-    # Remaining scalar metadata values (for transparency/debugging).
-    meta_rows = []
-    blocked_keys = consumed_meta | {
-        "splitSummaries",
-        "routePoints",
-        "sportTypeRaw",
-        "activityTypeRaw",
-        "fitRouteStartLat",
-        "fitRouteStartLng",
-        "fitRouteEndLat",
-        "fitRouteEndLng",
-    }
-    for key in sorted(meta.keys()):
-        if key in blocked_keys:
-            continue
-        value = meta.get(key)
-        if isinstance(value, (list, dict)):
-            continue
-        if value in (None, ""):
-            continue
-        meta_rows.append({"key": key, "value": str(value)})
-
-    return cards, meta_rows, route_payload
+    return cards
 
 
 def classify_sport(text: str) -> str:
@@ -1491,9 +1399,21 @@ def compute_profile_defaults_from_history(user_id: int) -> None:
         return
 
     avg_dist = sum(w["dist_km"] for w in weeks) / len(weeks)
-    avg_dur = sum(w["dur_h"] for w in weeks) / len(weeks)
     avg_days = sum(len(w["days"]) for w in weeks) / len(weeks)
     avg_count = sum(w["count"] for w in weeks) / len(weeks)
+
+    # Days per week based on last 7 days (unique active days)
+    last_week_acts = _load_user_activities_with_fallback(
+        user_id=user_id,
+        start=now - timedelta(days=7),
+        order_asc=True,
+    )
+    last_week_days = set()
+    for a in last_week_acts:
+        start_dt = _activity_start_dt(a)
+        if start_dt:
+            last_week_days.add(start_dt.date())
+    days_last_7 = len(last_week_days)
 
     changed = False
     if profile.primary_sports in (None, "") and top_sports:
@@ -1502,11 +1422,8 @@ def compute_profile_defaults_from_history(user_id: int) -> None:
     if profile.weekly_distance_km is None and avg_dist > 0:
         profile.weekly_distance_km = round(avg_dist, 1)
         changed = True
-    if profile.weekly_time_hours is None and avg_dur > 0:
-        profile.weekly_time_hours = round(avg_dur, 1)
-        changed = True
-    if profile.days_per_week is None and avg_days > 0:
-        profile.days_per_week = int(round(avg_days))
+    if profile.days_per_week is None and days_last_7 > 0:
+        profile.days_per_week = int(days_last_7)
         changed = True
     if profile.weekly_goal_workouts is None and avg_count > 0:
         profile.weekly_goal_workouts = max(1, int(round(avg_count)))
@@ -5056,14 +4973,12 @@ def add_checkin():
 def activity_detail(activity_id: int):
     activity = Activity.query.filter_by(id=activity_id, user_id=current_user.id).first_or_404()
     plans = WorkoutPlan.query.filter_by(user_id=current_user.id).all()
-    metric_cards, meta_rows, route_payload = _build_activity_detail_payload(activity)
+    metric_cards = _build_activity_detail_payload(activity)
     return render_template(
         "activity.html",
         activity=activity,
         plans=plans,
         metric_cards=metric_cards,
-        meta_rows=meta_rows,
-        route_payload=route_payload,
     )
 
 
