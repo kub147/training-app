@@ -165,7 +165,44 @@
             </div>
         </form>
     </div>
+
+    <div class="card danger-card">
+        <div class="section-title">🗑️ {{ tx('Strefa testowa: usuń konto','Test zone: delete account') }}</div>
+        <p class="help-text">{{ tx('To usunie konto i wszystkie dane użytkownika z bazy (aktywności, czat, profile, plany).','This will delete the account and all user data from the database (activities, chat, profile, plans).') }}</p>
+        <div class="actions">
+            <button class="btn btn-danger" type="button" id="openDeleteAccountModal">{{ tx('Usuń konto','Delete account') }}</button>
+        </div>
+    </div>
 </div>
+
+<div class="modal-backdrop" id="deleteAccountModal" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="deleteAccountTitle">
+        <div class="modal-head">
+            <div>
+                <div class="modal-title" id="deleteAccountTitle">{{ tx('Usuń konto','Delete account') }}</div>
+                <div class="modal-meta">{{ tx('Ta operacja jest nieodwracalna','This action is irreversible') }}</div>
+            </div>
+            <button class="modal-close" type="button" id="closeDeleteAccountModal">{{ tx('Zamknij','Close') }}</button>
+        </div>
+        <div class="modal-body">
+            <form method="POST" action="/profile/delete_account" id="deleteAccountForm">
+                <div class="field">
+                    <label>{{ tx('Wpisz hasło do konta','Enter account password') }}</label>
+                    <input type="password" name="password" autocomplete="current-password" required>
+                </div>
+                <div class="field">
+                    <label>{{ tx('Wpisz „USUN KONTO” aby potwierdzić','Type “USUN KONTO” to confirm') }}</label>
+                    <input type="text" name="confirm_phrase" placeholder="USUN KONTO" required>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-outline" type="button" id="cancelDeleteAccountModal">{{ tx('Anuluj','Cancel') }}</button>
+                    <button class="btn btn-danger" type="submit">{{ tx('Usuń konto','Delete account') }}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 (function(){
   const boxes = Array.from(document.querySelectorAll('input[name="weekly_focus_sports"]'));
@@ -187,6 +224,36 @@
 
   boxes.forEach(box => box.addEventListener('change', sync));
   sync();
+})();
+
+(function(){
+  const modal = document.getElementById('deleteAccountModal');
+  const openBtn = document.getElementById('openDeleteAccountModal');
+  const closeBtn = document.getElementById('closeDeleteAccountModal');
+  const cancelBtn = document.getElementById('cancelDeleteAccountModal');
+  const form = document.getElementById('deleteAccountForm');
+  if(!modal || !openBtn || !closeBtn || !cancelBtn || !form) return;
+
+  const closeModal = () => {
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden', 'true');
+  };
+
+  openBtn.addEventListener('click', () => {
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+  });
+
+  closeBtn.addEventListener('click', closeModal);
+  cancelBtn.addEventListener('click', closeModal);
+  modal.addEventListener('click', (e) => { if(e.target === modal) closeModal(); });
+
+  form.addEventListener('submit', (e) => {
+    const ok = window.confirm({{ tx('To na pewno usunie całe konto. Kontynuować?','This will permanently delete your account. Continue?')|tojson }});
+    if(!ok){
+      e.preventDefault();
+    }
+  });
 })();
 </script>
 {% include "_chat_widget.html" %}

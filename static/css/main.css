@@ -207,6 +207,21 @@ h1 {
     border: 1px solid #dde3ea;
 }
 
+.btn-danger {
+    background: #dc2626;
+    color: #fff;
+    border: 1px solid #b91c1c;
+}
+
+.btn-danger:hover {
+    opacity: 0.92;
+}
+
+.danger-card {
+    border-color: rgba(220, 38, 38, 0.25);
+    background: linear-gradient(180deg, rgba(254, 242, 242, 0.9), #ffffff);
+}
+
 .btn-small {
     padding: 6px 10px;
     font-size: 11px;
@@ -1778,6 +1793,17 @@ textarea {
     background: #171717;
     border-color: #323232;
     color: #f4f4f5;
+}
+
+:root[data-theme="dark"] .btn-danger {
+    background: #b91c1c;
+    border-color: #991b1b;
+    color: #ffffff;
+}
+
+:root[data-theme="dark"] .danger-card {
+    background: linear-gradient(180deg, rgba(127, 29, 29, 0.28), #111111 55%);
+    border-color: rgba(248, 113, 113, 0.35);
 }
 
 :root[data-theme="dark"] .pill {

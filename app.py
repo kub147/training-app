@@ -3129,6 +3129,46 @@ def profile():
         )
 
 
+@app.route("/profile/delete_account", methods=["POST"])
+@login_required
+def delete_account():
+    password = (request.form.get("password") or "").strip()
+    confirm_phrase = (request.form.get("confirm_phrase") or "").strip().lower()
+    allowed_phrases = {"usun konto", "usuń konto", "delete account"}
+
+    if not password:
+        flash(tr("Podaj hasło, aby usunąć konto.", "Enter your password to delete account."))
+        return redirect(url_for("profile"))
+
+    if confirm_phrase not in allowed_phrases:
+        flash(
+            tr(
+                "Wpisz dokładnie „USUN KONTO” w potwierdzeniu usunięcia.",
+                "Type exactly “DELETE ACCOUNT” in the confirmation field.",
+            )
+        )
+        return redirect(url_for("profile"))
+
+    if not check_password_hash(current_user.password_hash, password):
+        flash(tr("Nieprawidłowe hasło.", "Invalid password."))
+        return redirect(url_for("profile"))
+
+    user_id = current_user.id
+    try:
+        logout_user()
+        user = db.session.get(User, int(user_id))
+        if user:
+            db.session.delete(user)
+            db.session.commit()
+        flash(tr("Konto zostało usunięte.", "Account has been deleted."))
+        return redirect(url_for("register"))
+    except Exception as e:
+        app.logger.exception("Delete account failed for user %s: %s", user_id, e)
+        db.session.rollback()
+        flash(tr("Nie udało się usunąć konta.", "Could not delete account."))
+        return redirect(url_for("profile"))
+
+
 # -------------------- APP --------------------
 
 def compute_stats(user_id: int, range_days: int) -> dict:
