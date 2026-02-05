@@ -189,25 +189,25 @@
                             </div>
                             <div class="field">
                                 <label>{{ t('label_duration') }}</label>
-                                <input id="duration_min" type="number" name="duration_min" min="0" step="1" placeholder="{{ tx('np. 45','e.g. 45') }}">
+                                <input id="duration_min" type="text" inputmode="decimal" name="duration_min" placeholder="{{ tx('np. 45 lub 45,5','e.g. 45 or 45.5') }}">
                             </div>
                         </div>
 
                         <div class="form-row">
                             <div class="field">
                                 <label>{{ t('label_distance') }}</label>
-                                <input id="distance_km" type="number" name="distance_km" min="0" step="0.01" placeholder="{{ tx('np. 8.25','e.g. 8.25') }}">
+                                <input id="distance_km" type="text" inputmode="decimal" name="distance_km" placeholder="{{ tx('np. 8,25 lub 8.25','e.g. 8.25 or 8,25') }}">
                             </div>
                             <div class="field">
                                 <label>{{ t('label_avg_hr') }}</label>
-                                <input id="avg_hr" type="number" name="avg_hr" min="0" step="1" placeholder="{{ tx('np. 150','e.g. 150') }}">
+                                <input id="avg_hr" type="text" inputmode="decimal" name="avg_hr" placeholder="{{ tx('np. 150','e.g. 150') }}">
                             </div>
                         </div>
 
                         <div class="form-row">
                             <div class="field">
                                 <label>{{ t('label_avg_pace') }}</label>
-                                <input id="avg_pace_min_km" type="number" name="avg_pace_min_km" min="0" step="0.01" placeholder="{{ tx('np. 5.30','e.g. 5.30') }}">
+                                <input id="avg_pace_min_km" type="text" inputmode="decimal" name="avg_pace_min_km" placeholder="{{ tx('np. 5,30 lub 5.30','e.g. 5.30 or 5,30') }}">
                             </div>
                             <div class="field"></div>
                         </div>

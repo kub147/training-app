@@ -61,11 +61,11 @@
             <div class="form-row">
                 <div class="field">
                     <label>{{ tx('FAKTY: Ile masz czasu tygodniowo (h)?','FACTS: Weekly available time (h)?') }}</label>
-                    <input type="number" step="0.5" min="0" name="weekly_time_hours" value="{{ profile.weekly_time_hours if profile.weekly_time_hours is not none else '' }}" placeholder="{{ tx('np. 6','e.g. 6') }}">
+                    <input type="text" inputmode="decimal" name="weekly_time_hours" value="{{ profile.weekly_time_hours if profile.weekly_time_hours is not none else '' }}" placeholder="{{ tx('np. 6 lub 6,5','e.g. 6 or 6.5') }}">
                 </div>
                 <div class="field">
                     <label>{{ tx('FAKTY: Ile km tygodniowo (opcjonalnie)?','FACTS: Weekly km (optional)?') }}</label>
-                    <input type="number" step="1" min="0" name="weekly_distance_km" value="{{ profile.weekly_distance_km if profile.weekly_distance_km is not none else '' }}" placeholder="{{ tx('np. 30','e.g. 30') }}">
+                    <input type="text" inputmode="decimal" name="weekly_distance_km" value="{{ profile.weekly_distance_km if profile.weekly_distance_km is not none else '' }}" placeholder="{{ tx('np. 30,5 lub 30.5','e.g. 30.5 or 30,5') }}">
                 </div>
             </div>
 

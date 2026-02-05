@@ -273,6 +273,105 @@ def _clip(value: str | None, max_len: int) -> str:
     return (value or "").strip()[:max_len]
 
 
+def _parse_decimal_input(value) -> float | None:
+    """Parse decimal values from user/AI input, accepting both dot and comma."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return float(value)
+        except Exception:
+            return None
+
+    raw = str(value).strip().lower()
+    if not raw:
+        return None
+
+    norm = raw.replace(",", ".").replace("−", "-")
+    m = re.search(r"-?\d+(?:\.\d+)?", norm)
+    if not m:
+        return None
+    try:
+        return float(m.group(0))
+    except Exception:
+        return None
+
+
+def _parse_minutes_input(value) -> float | None:
+    """Parse duration in minutes from flexible formats (e.g. 45, 45.5, 45,5, 1:15:00)."""
+    if value is None:
+        return None
+
+    raw = str(value).strip().lower()
+    if not raw:
+        return None
+
+    s = raw.replace(",", ".")
+
+    # Clock formats: MM:SS or HH:MM:SS
+    if ":" in s:
+        parts = [p.strip() for p in s.split(":")]
+        if all(re.fullmatch(r"\d+(?:\.\d+)?", p or "") for p in parts):
+            try:
+                nums = [float(p) for p in parts]
+                if len(nums) == 2:
+                    # MM:SS
+                    return nums[0] + (nums[1] / 60.0)
+                if len(nums) == 3:
+                    # HH:MM:SS
+                    return nums[0] * 60.0 + nums[1] + (nums[2] / 60.0)
+            except Exception:
+                pass
+
+    # "1h 20min" style
+    h_match = re.search(r"(\d+(?:\.\d+)?)\s*h", s)
+    m_match = re.search(r"(\d+(?:\.\d+)?)\s*m(?:in)?", s)
+    if h_match or m_match:
+        hours = float(h_match.group(1)) if h_match else 0.0
+        mins = float(m_match.group(1)) if m_match else 0.0
+        return hours * 60.0 + mins
+
+    return _parse_decimal_input(s)
+
+
+def _normalize_date_input(value: str | None) -> str | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
+        except Exception:
+            continue
+    return None
+
+
+def _normalize_time_input(value: str | None) -> str | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+
+    candidates = [
+        raw,
+        raw.replace(".", ":"),
+        raw.replace(" ", ""),
+    ]
+
+    for c in candidates:
+        for fmt in ("%H:%M", "%H:%M:%S", "%I:%M%p", "%I:%M %p"):
+            try:
+                return datetime.strptime(c, fmt).strftime("%H:%M")
+            except Exception:
+                continue
+
+    # "1730" -> "17:30"
+    if re.fullmatch(r"\d{4}", raw):
+        return f"{raw[:2]}:{raw[2:]}"
+
+    return None
+
+
 def _password_reset_serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(app.config["SECRET_KEY"])
 
@@ -2707,20 +2806,17 @@ Zasady:
         # minimalna walidacja / normalizacja
         out = {}
         out["activity_type"] = (data.get("activity_type") or "other").strip().lower()
-        try:
-            out["distance_km"] = None if data.get("distance_km") is None else float(data.get("distance_km"))
-        except Exception:
-            out["distance_km"] = None
-        try:
-            out["duration_min"] = None if data.get("duration_min") is None else float(data.get("duration_min"))
-        except Exception:
-            out["duration_min"] = None
-        try:
-            out["avg_hr"] = None if data.get("avg_hr") is None else int(float(data.get("avg_hr")))
-        except Exception:
-            out["avg_hr"] = None
-        out["start_date"] = (data.get("start_date") or "").strip() or None
-        out["start_time"] = (data.get("start_time") or "").strip() or None
+        dist = _parse_decimal_input(data.get("distance_km"))
+        out["distance_km"] = dist if dist is not None and dist >= 0 else None
+
+        dur = _parse_minutes_input(data.get("duration_min"))
+        out["duration_min"] = dur if dur is not None and dur >= 0 else None
+
+        hr = _parse_decimal_input(data.get("avg_hr"))
+        out["avg_hr"] = int(round(hr)) if hr is not None and hr > 0 else None
+
+        out["start_date"] = _normalize_date_input(data.get("start_date"))
+        out["start_time"] = _normalize_time_input(data.get("start_time"))
 
         has_any = (
             (out.get("distance_km") is not None and out.get("distance_km", 0) > 0)
@@ -2800,8 +2896,8 @@ def parse_checkin_screenshot():
 # -------------------- QUICK ADD --------------------
 
 def _parse_date_time(date_str: str, time_str: str) -> datetime:
-    date_str = (date_str or "").strip()
-    time_str = (time_str or "").strip()
+    date_str = _normalize_date_input(date_str) or ""
+    time_str = _normalize_time_input(time_str) or ""
     try:
         if date_str and time_str:
             dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
@@ -2858,18 +2954,10 @@ def add_activity_manual():
     time_str = (request.form.get("time") or "").strip()
     notes = (request.form.get("notes") or "").strip()
 
-    def _to_float(v):
-        try:
-            if v in (None, ""):
-                return None
-            return float(str(v).replace(",", "."))
-        except Exception:
-            return None
-
-    duration_min = _to_float(request.form.get("duration_min"))
-    distance_km = _to_float(request.form.get("distance_km"))
-    avg_hr = _to_float(request.form.get("avg_hr"))
-    avg_pace = _to_float(request.form.get("avg_pace_min_km"))
+    duration_min = _parse_minutes_input(request.form.get("duration_min"))
+    distance_km = _parse_decimal_input(request.form.get("distance_km"))
+    avg_hr = _parse_decimal_input(request.form.get("avg_hr"))
+    avg_pace = _parse_decimal_input(request.form.get("avg_pace_min_km"))
 
     # Optional screenshot: if provided, fill only missing fields from AI parse
     image_file = request.files.get("activity_image")
@@ -3175,12 +3263,18 @@ def update_activity(activity_id: int):
     activity.activity_type = act_type
     activity.start_time = _parse_date_time(date_str, time_str)
 
-    if duration_min not in (None, ""):
-        activity.duration = max(0, int(float(duration_min))) * 60
-    if distance_km not in (None, ""):
-        activity.distance = max(0.0, float(distance_km)) * 1000.0
-    if avg_hr not in (None, ""):
-        activity.avg_hr = int(float(avg_hr))
+    duration_val = _parse_minutes_input(duration_min)
+    if duration_min not in (None, "") and duration_val is not None:
+        activity.duration = max(0, int(round(duration_val * 60)))
+
+    distance_val = _parse_decimal_input(distance_km)
+    if distance_km not in (None, "") and distance_val is not None:
+        activity.distance = max(0.0, distance_val) * 1000.0
+
+    hr_val = _parse_decimal_input(avg_hr)
+    if avg_hr not in (None, "") and hr_val is not None:
+        activity.avg_hr = int(round(hr_val))
+
     activity.notes = notes
 
     db.session.commit()

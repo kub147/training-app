@@ -1644,20 +1644,20 @@ textarea {
 
 /* === DARK MODE (toggle + saved preference) === */
 :root[data-theme="dark"] {
-    --bg: #0b1220;
-    --card-bg: #111a2e;
-    --text: #e5e7eb;
-    --gray: #9aa4ba;
+    --bg: #060606;
+    --card-bg: #101010;
+    --text: #f3f4f6;
+    --gray: #a3a3a3;
     --primary: #f3f4f6;
-    --border: #23304a;
-    --chart-text: #cbd5e1;
-    --chart-grid: rgba(148, 163, 184, 0.2);
+    --border: #2a2a2a;
+    --chart-text: #d4d4d8;
+    --chart-grid: rgba(113, 113, 122, 0.25);
 }
 
 :root[data-theme="dark"] body {
     background-image:
-        radial-gradient(900px 600px at 15% -10%, rgba(30, 64, 175, 0.25), transparent 60%),
-        radial-gradient(700px 500px at 110% 10%, rgba(6, 78, 59, 0.22), transparent 55%);
+        radial-gradient(900px 600px at 15% -10%, rgba(64, 64, 64, 0.22), transparent 62%),
+        radial-gradient(700px 500px at 110% 10%, rgba(38, 38, 38, 0.2), transparent 58%);
 }
 
 :root[data-theme="dark"] .card,
@@ -1673,8 +1673,8 @@ textarea {
 }
 
 :root[data-theme="dark"] .road-icon {
-    background: #1a263f;
-    border-color: #263754;
+    background: #171717;
+    border-color: #2e2e2e;
 }
 
 :root[data-theme="dark"] .road-title,
@@ -1689,19 +1689,19 @@ textarea {
 :root[data-theme="dark"] .road-sub,
 :root[data-theme="dark"] .stat-sub,
 :root[data-theme="dark"] .help-text {
-    color: #a9b4c8;
+    color: #a1a1aa;
 }
 
 :root[data-theme="dark"] .week-col,
 :root[data-theme="dark"] .week-summary-card,
 :root[data-theme="dark"] .week-item,
 :root[data-theme="dark"] .week-empty {
-    background: #111a2e;
-    border-color: #2a3a59;
+    background: #111111;
+    border-color: #2f2f2f;
 }
 
 :root[data-theme="dark"] .week-col-head {
-    border-bottom-color: #2a3a59;
+    border-bottom-color: #2f2f2f;
 }
 
 :root[data-theme="dark"] .week-col-weekday,
@@ -1713,18 +1713,18 @@ textarea {
 :root[data-theme="dark"] .week-col-date,
 :root[data-theme="dark"] .week-item-sub,
 :root[data-theme="dark"] .week-summary-note {
-    color: #a9b4c8;
+    color: #a1a1aa;
 }
 
 :root[data-theme="dark"] .week-item-icon {
-    background: #1a263f;
-    border-color: #263754;
+    background: #1b1b1b;
+    border-color: #323232;
 }
 
 :root[data-theme="dark"] .week-item-badge {
-    background: #1b2a44;
-    border-color: #2d3f62;
-    color: #dbeafe;
+    background: #1f1f1f;
+    border-color: #3a3a3a;
+    color: #f4f4f5;
 }
 
 :root[data-theme="dark"] .field label,
@@ -1732,7 +1732,7 @@ textarea {
 :root[data-theme="dark"] .goal-sub,
 :root[data-theme="dark"] .goal-label,
 :root[data-theme="dark"] .mini-status {
-    color: #cbd5e1;
+    color: #d4d4d8;
 }
 
 :root[data-theme="dark"] input,
@@ -1741,51 +1741,51 @@ textarea {
 :root[data-theme="dark"] .form-input,
 :root[data-theme="dark"] #chatInput,
 :root[data-theme="dark"] #chatHistory {
-    background: #0f1729;
-    color: #e5e7eb;
-    border-color: #2a3a59;
+    background: #0b0b0b;
+    color: #f3f4f6;
+    border-color: #333333;
 }
 
 :root[data-theme="dark"] .btn-outline {
-    border-color: #334969;
-    color: #dbe6ff;
+    border-color: #3f3f46;
+    color: #f3f4f6;
 }
 
 :root[data-theme="dark"] .btn-soft {
-    background: #1b2a44;
-    border-color: #2d3f62;
-    color: #e7edf9;
+    background: #171717;
+    border-color: #323232;
+    color: #f4f4f5;
 }
 
 :root[data-theme="dark"] .pill {
-    background: #1c2a43;
-    border-color: #2f466f;
-    color: #dbeafe;
+    background: #181818;
+    border-color: #343434;
+    color: #f4f4f5;
 }
 
 :root[data-theme="dark"] .date-header {
-    background: #0f1729;
-    border-color: #2a3a59;
-    color: #cbd5e1;
+    background: #0b0b0b;
+    border-color: #333333;
+    color: #d4d4d8;
 }
 
 :root[data-theme="dark"] .chat-panel {
-    background: #111a2e;
-    border-color: #2b3f62;
-    color: #e5e7eb;
+    background: #101010;
+    border-color: #333333;
+    color: #f3f4f6;
 }
 
 :root[data-theme="dark"] .road-item.is-today {
-    border-color: rgba(96, 165, 250, 0.75);
-    box-shadow: 0 10px 28px rgba(37, 99, 235, 0.25);
-    background: linear-gradient(180deg, rgba(37, 99, 235, 0.26), rgba(17, 26, 46, 1) 42%);
+    border-color: rgba(239, 68, 68, 0.55);
+    box-shadow: 0 10px 28px rgba(239, 68, 68, 0.22);
+    background: linear-gradient(180deg, rgba(239, 68, 68, 0.15), #111111 45%);
 }
 
 :root[data-theme="dark"] .today-badge,
 :root[data-theme="dark"] .road-action .pill {
-    background: rgba(59, 130, 246, 0.2);
-    border-color: rgba(96, 165, 250, 0.45);
-    color: #dbeafe;
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.45);
+    color: #ffe4e6;
 }
 /* ====================================
    RESPONSIVE - TABLET

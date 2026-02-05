@@ -110,15 +110,15 @@
                     </div>
                     <div class="field">
                         <label>{{ tx('Czas (min)','Duration (min)') }}</label>
-                        <input type="number" name="duration_min" min="0" step="1" value="{{ (activity.duration / 60)|int if activity.duration else '' }}">
+                        <input type="text" inputmode="decimal" name="duration_min" value="{{ (activity.duration / 60)|int if activity.duration else '' }}">
                     </div>
                     <div class="field">
                         <label>{{ tx('Dystans (km)','Distance (km)') }}</label>
-                        <input type="number" name="distance_km" min="0" step="0.01" value="{{ (activity.distance / 1000)|round(2) if activity.distance else '' }}">
+                        <input type="text" inputmode="decimal" name="distance_km" value="{{ (activity.distance / 1000)|round(2) if activity.distance else '' }}">
                     </div>
                     <div class="field">
                         <label>{{ tx('Śr. tętno (bpm)','Avg HR (bpm)') }}</label>
-                        <input type="number" name="avg_hr" min="0" step="1" value="{{ activity.avg_hr if activity.avg_hr else '' }}">
+                        <input type="text" inputmode="decimal" name="avg_hr" value="{{ activity.avg_hr if activity.avg_hr else '' }}">
                     </div>
                 </div>
 
