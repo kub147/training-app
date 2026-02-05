@@ -17,6 +17,10 @@ from datetime import datetime, timedelta, date, timezone
 
 from dotenv import load_dotenv
 import google.generativeai as genai
+try:
+    from fitparse import FitFile
+except Exception:  # optional dependency for Garmin route/stat parsing
+    FitFile = None
 
 
 
@@ -788,6 +792,7 @@ def ensure_schema() -> None:
             'start_lng': "start_lng REAL",
             'end_lat': "end_lat REAL",
             'end_lng': "end_lng REAL",
+            'route_points_json': "route_points_json TEXT",
             'source': "source TEXT DEFAULT 'manual'",
             'external_id': "external_id TEXT",
             'device_id': "device_id TEXT",
@@ -922,6 +927,186 @@ def format_dt(value: datetime | date | None, style: str = "list") -> str:
 
 
 app.jinja_env.globals["format_dt"] = format_dt
+
+
+def _format_duration_hms(seconds_value) -> str | None:
+    total_seconds = _safe_int(seconds_value)
+    if total_seconds is None or total_seconds < 0:
+        return None
+    h = total_seconds // 3600
+    m = (total_seconds % 3600) // 60
+    s = total_seconds % 60
+    if h > 0:
+        return f"{h}h {m:02d}m {s:02d}s"
+    return f"{m}m {s:02d}s"
+
+
+def _format_number(value, decimals: int = 1) -> str | None:
+    num = _safe_float(value)
+    if num is None:
+        return None
+    if decimals <= 0:
+        return str(int(round(num)))
+    text = f"{num:.{decimals}f}"
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
+
+
+def _parse_route_points_json(raw_json: str | None) -> list[list[float]]:
+    if not raw_json:
+        return []
+    try:
+        data = json.loads(raw_json)
+    except Exception:
+        return []
+    if not isinstance(data, list):
+        return []
+
+    points: list[list[float]] = []
+    for item in data:
+        if not isinstance(item, (list, tuple)) or len(item) < 2:
+            continue
+        lat = _normalize_gps_coord(item[0])
+        lng = _normalize_gps_coord(item[1])
+        if lat is None or lng is None:
+            continue
+        points.append([lat, lng])
+    return points
+
+
+def _build_activity_detail_payload(activity: Activity) -> tuple[list[dict], list[dict], dict]:
+    meta = _safe_json_dict(activity.metadata_json)
+    cards: list[dict] = []
+    consumed_meta = set()
+
+    def add_card(pl: str, en: str, value_text: str | None):
+        if not value_text:
+            return
+        cards.append({"pl": pl, "en": en, "value": value_text})
+
+    # Core activity metrics
+    add_card("Maks. tętno", "Max HR", (f"{int(activity.max_hr)} bpm" if activity.max_hr else None))
+    add_card("Czas ruchu", "Moving time", _format_duration_hms(activity.moving_duration))
+    add_card("Czas całkowity", "Elapsed time", _format_duration_hms(activity.elapsed_duration))
+    add_card("Śr. prędkość", "Avg speed", (f"{_format_number((activity.avg_speed_mps or 0) * 3.6, 2)} km/h" if activity.avg_speed_mps else None))
+    add_card("Maks. prędkość", "Max speed", (f"{_format_number((activity.max_speed_mps or 0) * 3.6, 2)} km/h" if activity.max_speed_mps else None))
+    add_card("Przewyższenie +", "Elevation gain", (f"{_format_number(activity.elevation_gain, 1)} m" if activity.elevation_gain is not None else None))
+    add_card("Przewyższenie -", "Elevation loss", (f"{_format_number(activity.elevation_loss, 1)} m" if activity.elevation_loss is not None else None))
+    add_card("Kalorie", "Calories", (f"{_format_number(activity.calories, 0)} kcal" if activity.calories is not None else None))
+    add_card("Kroki", "Steps", (_format_number(activity.steps, 0) if activity.steps is not None else None))
+    add_card("VO2max", "VO2max", (f"{_format_number(activity.vo2max, 1)}" if activity.vo2max is not None else None))
+    add_card("Źródło", "Source", (str(activity.source).upper() if activity.source else None))
+    add_card("Sport (raw)", "Sport (raw)", (activity.sport_type or None))
+    add_card("Urządzenie", "Device", (activity.device_id or None))
+
+    known_meta = [
+        ("lapCount", "Liczba okrążeń", "Lap count", 0, ""),
+        ("avgRunCadence", "Śr. kadencja biegu", "Avg run cadence", 1, "spm"),
+        ("maxRunCadence", "Maks. kadencja biegu", "Max run cadence", 1, "spm"),
+        ("avgStrideLength", "Śr. długość kroku", "Avg stride length", 1, "cm"),
+        ("averagePace", "Śr. tempo", "Avg pace", 2, ""),
+        ("averageMovingPace", "Śr. tempo w ruchu", "Avg moving pace", 2, ""),
+        ("bestLapTime", "Najlepsze okrążenie", "Best lap", 2, ""),
+        ("avgPower", "Śr. moc", "Avg power", 0, "W"),
+        ("maxPower", "Maks. moc", "Max power", 0, "W"),
+        ("normPower", "Moc znormalizowana", "Normalized power", 0, "W"),
+        ("aerobicTrainingEffect", "Aerobic Training Effect", "Aerobic training effect", 1, ""),
+        ("anaerobicTrainingEffect", "Anaerobic Training Effect", "Anaerobic training effect", 1, ""),
+        ("trainingStressScore", "Training Stress Score", "Training stress score", 1, ""),
+        ("moderateIntensityMinutes", "Minuty umiarkowane", "Moderate minutes", 0, "min"),
+        ("vigorousIntensityMinutes", "Minuty intensywne", "Vigorous minutes", 0, "min"),
+        ("fit_total_elapsed_time", "FIT czas całkowity", "FIT elapsed time", -1, ""),
+        ("fit_total_timer_time", "FIT czas ruchu", "FIT moving time", -1, ""),
+        ("fit_total_distance", "FIT dystans", "FIT distance", 1, "m"),
+        ("fit_total_ascent", "FIT przewyższenie +", "FIT ascent", 1, "m"),
+        ("fit_total_descent", "FIT przewyższenie -", "FIT descent", 1, "m"),
+        ("fit_total_calories", "FIT kalorie", "FIT calories", 0, "kcal"),
+        ("fit_total_steps", "FIT kroki", "FIT steps", 0, ""),
+        ("fit_avg_speed", "FIT śr. prędkość", "FIT avg speed", 2, "m/s"),
+        ("fit_max_speed", "FIT maks. prędkość", "FIT max speed", 2, "m/s"),
+        ("fit_avg_heart_rate", "FIT śr. tętno", "FIT avg HR", 0, "bpm"),
+        ("fit_max_heart_rate", "FIT maks. tętno", "FIT max HR", 0, "bpm"),
+        ("fit_avg_cadence", "FIT śr. kadencja", "FIT avg cadence", 1, "spm"),
+        ("fit_max_cadence", "FIT maks. kadencja", "FIT max cadence", 1, "spm"),
+        ("fit_avg_running_cadence", "FIT śr. kadencja biegu", "FIT avg run cadence", 1, "spm"),
+        ("fit_max_running_cadence", "FIT maks. kadencja biegu", "FIT max run cadence", 1, "spm"),
+        ("fit_avg_power", "FIT śr. moc", "FIT avg power", 0, "W"),
+        ("fit_max_power", "FIT maks. moc", "FIT max power", 0, "W"),
+        ("fit_normalized_power", "FIT moc znormalizowana", "FIT normalized power", 0, "W"),
+        ("fit_total_training_effect", "FIT training effect", "FIT training effect", 1, ""),
+        ("fit_aerobic_training_effect", "FIT aerobic effect", "FIT aerobic effect", 1, ""),
+        ("fit_anaerobic_training_effect", "FIT anaerobic effect", "FIT anaerobic effect", 1, ""),
+        ("fit_training_stress_score", "FIT training stress", "FIT training stress", 1, ""),
+        ("fit_avg_stroke_distance", "FIT śr. długość ruchu", "FIT avg stroke distance", 2, "m"),
+        ("fit_avg_stroke_count", "FIT śr. liczba ruchów", "FIT avg stroke count", 1, ""),
+        ("fit_avg_stroke_rate", "FIT śr. stroke rate", "FIT avg stroke rate", 1, ""),
+        ("fit_max_stroke_rate", "FIT max stroke rate", "FIT max stroke rate", 1, ""),
+    ]
+
+    for key, label_pl, label_en, decimals, unit in known_meta:
+        if key not in meta:
+            continue
+        value = meta.get(key)
+        consumed_meta.add(key)
+        if decimals < 0:
+            text = _format_duration_hms(value)
+        else:
+            text = _format_number(value, decimals)
+            if text and unit:
+                text = f"{text} {unit}"
+        add_card(label_pl, label_en, text)
+
+    # Route/map payload
+    route_points = _parse_route_points_json(activity.route_points_json)
+    if not route_points and isinstance(meta.get("routePoints"), list):
+        try:
+            route_points = _compact_route_points([
+                [_normalize_gps_coord(p[0]), _normalize_gps_coord(p[1])]
+                for p in meta.get("routePoints")
+                if isinstance(p, (list, tuple)) and len(p) >= 2
+                and _normalize_gps_coord(p[0]) is not None and _normalize_gps_coord(p[1]) is not None
+            ])
+        except Exception:
+            route_points = []
+
+    if not route_points and activity.start_lat is not None and activity.start_lng is not None:
+        start = [_normalize_gps_coord(activity.start_lat), _normalize_gps_coord(activity.start_lng)]
+        end = [_normalize_gps_coord(activity.end_lat), _normalize_gps_coord(activity.end_lng)]
+        if start[0] is not None and start[1] is not None:
+            if end[0] is not None and end[1] is not None and (start[0] != end[0] or start[1] != end[1]):
+                route_points = [[start[0], start[1]], [end[0], end[1]]]
+            else:
+                route_points = [[start[0], start[1]]]
+
+    route_payload = {
+        "points": route_points,
+        "has_points": bool(route_points),
+    }
+
+    # Remaining scalar metadata values (for transparency/debugging).
+    meta_rows = []
+    blocked_keys = consumed_meta | {
+        "splitSummaries",
+        "routePoints",
+        "sportTypeRaw",
+        "activityTypeRaw",
+        "fitRouteStartLat",
+        "fitRouteStartLng",
+        "fitRouteEndLat",
+        "fitRouteEndLng",
+    }
+    for key in sorted(meta.keys()):
+        if key in blocked_keys:
+            continue
+        value = meta.get(key)
+        if isinstance(value, (list, dict)):
+            continue
+        if value in (None, ""):
+            continue
+        meta_rows.append({"key": key, "value": str(value)})
+
+    return cards, meta_rows, route_payload
 
 
 def classify_sport(text: str) -> str:
@@ -2239,6 +2424,252 @@ def _to_seconds_from_ms(raw_ms) -> int:
     return max(0, int(round(val / 1000.0)))
 
 
+def _to_naive_utc(dt_value: datetime | None) -> datetime | None:
+    if not isinstance(dt_value, datetime):
+        return None
+    if dt_value.tzinfo is None:
+        return dt_value
+    return dt_value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _normalize_gps_coord(raw_value) -> float | None:
+    value = _safe_float(raw_value)
+    if value is None:
+        return None
+    if abs(value) > 180:
+        # FIT stores coordinates as semicircles.
+        value = value * (180.0 / 2147483648.0)
+    if abs(value) > 180:
+        return None
+    return round(value, 7)
+
+
+def _compact_route_points(points: list[list[float]], max_points: int = 1200) -> list[list[float]]:
+    if len(points) <= max_points:
+        return points
+
+    out: list[list[float]] = []
+    step = (len(points) - 1) / float(max_points - 1)
+    for i in range(max_points):
+        idx = int(round(i * step))
+        idx = min(max(idx, 0), len(points) - 1)
+        out.append(points[idx])
+
+    # remove duplicates generated by index rounding
+    deduped: list[list[float]] = []
+    prev = None
+    for p in out:
+        if prev is None or p[0] != prev[0] or p[1] != prev[1]:
+            deduped.append(p)
+            prev = p
+    return deduped
+
+
+def _extract_fit_activity_payload(fit_blob: bytes, source_name: str) -> dict | None:
+    if FitFile is None or not fit_blob:
+        return None
+
+    try:
+        try:
+            fit_file = FitFile(io.BytesIO(fit_blob), check_crc=False)
+        except TypeError:
+            fit_file = FitFile(io.BytesIO(fit_blob))
+
+        session_values = {}
+        for session_msg in fit_file.get_messages("session"):
+            try:
+                session_values = session_msg.get_values() or {}
+            except Exception:
+                session_values = {}
+            break
+
+        start_time = _to_naive_utc(session_values.get("start_time"))
+        route_points: list[list[float]] = []
+        hr_values: list[int] = []
+        cad_values: list[float] = []
+        power_values: list[float] = []
+        first_ts = None
+
+        for rec in fit_file.get_messages("record"):
+            try:
+                values = rec.get_values() or {}
+            except Exception:
+                continue
+
+            if first_ts is None:
+                first_ts = _to_naive_utc(values.get("timestamp"))
+
+            lat = _normalize_gps_coord(values.get("position_lat"))
+            lng = _normalize_gps_coord(values.get("position_long"))
+            if lat is not None and lng is not None:
+                route_points.append([lat, lng])
+
+            hr = _safe_int(values.get("heart_rate"))
+            if hr is not None and hr > 0:
+                hr_values.append(hr)
+
+            cadence = _safe_float(values.get("cadence") or values.get("fractional_cadence"))
+            if cadence is not None and cadence > 0:
+                cad_values.append(cadence)
+
+            power = _safe_float(values.get("power"))
+            if power is not None and power > 0:
+                power_values.append(power)
+
+        if not start_time:
+            start_time = first_ts
+
+        fit_meta = {}
+        important_fields = (
+            "sport",
+            "sub_sport",
+            "total_distance",
+            "total_elapsed_time",
+            "total_timer_time",
+            "total_ascent",
+            "total_descent",
+            "total_calories",
+            "total_steps",
+            "avg_speed",
+            "max_speed",
+            "avg_heart_rate",
+            "max_heart_rate",
+            "avg_cadence",
+            "max_cadence",
+            "avg_running_cadence",
+            "max_running_cadence",
+            "avg_power",
+            "max_power",
+            "normalized_power",
+            "training_stress_score",
+            "total_training_effect",
+            "aerobic_training_effect",
+            "anaerobic_training_effect",
+            "avg_stroke_distance",
+            "avg_stroke_count",
+            "avg_stroke_rate",
+            "max_stroke_rate",
+        )
+        for key in important_fields:
+            value = session_values.get(key)
+            if value in (None, ""):
+                continue
+            fit_meta[f"fit_{key}"] = value
+
+        if "fit_avg_heart_rate" not in fit_meta and hr_values:
+            fit_meta["fit_avg_heart_rate"] = round(sum(hr_values) / len(hr_values), 1)
+        if "fit_max_heart_rate" not in fit_meta and hr_values:
+            fit_meta["fit_max_heart_rate"] = max(hr_values)
+        if "fit_avg_cadence" not in fit_meta and cad_values:
+            fit_meta["fit_avg_cadence"] = round(sum(cad_values) / len(cad_values), 1)
+        if "fit_max_cadence" not in fit_meta and cad_values:
+            fit_meta["fit_max_cadence"] = max(cad_values)
+        if "fit_avg_power" not in fit_meta and power_values:
+            fit_meta["fit_avg_power"] = round(sum(power_values) / len(power_values), 1)
+        if "fit_max_power" not in fit_meta and power_values:
+            fit_meta["fit_max_power"] = max(power_values)
+
+        route_points = _compact_route_points(route_points, max_points=1200)
+        start_lat = route_points[0][0] if route_points else None
+        start_lng = route_points[0][1] if route_points else None
+        end_lat = route_points[-1][0] if route_points else None
+        end_lng = route_points[-1][1] if route_points else None
+
+        return {
+            "source_name": source_name,
+            "start_time": start_time,
+            "route_points": route_points,
+            "start_lat": start_lat,
+            "start_lng": start_lng,
+            "end_lat": end_lat,
+            "end_lng": end_lng,
+            "meta": fit_meta,
+            "_used": False,
+        }
+    except Exception:
+        return None
+
+
+def _iter_fit_blobs_from_zip(z: zipfile.ZipFile):
+    names = z.namelist()
+    for member in names:
+        lower = member.lower()
+        if lower.endswith(".fit"):
+            try:
+                yield member, z.read(member)
+            except Exception:
+                continue
+            continue
+
+        # Garmin export often stores FIT files in nested UploadedFiles_*.zip archives.
+        if lower.endswith(".zip") and ("uploadedfiles" in lower or "fit" in lower):
+            try:
+                nested_raw = z.read(member)
+                with zipfile.ZipFile(io.BytesIO(nested_raw)) as nested:
+                    for n2 in nested.namelist():
+                        if not n2.lower().endswith(".fit"):
+                            continue
+                        try:
+                            yield f"{member}::{n2}", nested.read(n2)
+                        except Exception:
+                            continue
+            except Exception:
+                continue
+
+
+def _build_fit_payload_index(z: zipfile.ZipFile) -> tuple[list[dict], dict[int, list[int]]]:
+    if FitFile is None:
+        return [], {}
+
+    payloads: list[dict] = []
+    minute_index: dict[int, list[int]] = {}
+
+    for source_name, fit_blob in _iter_fit_blobs_from_zip(z):
+        payload = _extract_fit_activity_payload(fit_blob, source_name)
+        if not payload or not payload.get("start_time"):
+            continue
+        payloads.append(payload)
+        idx = len(payloads) - 1
+        minute_key = int(payload["start_time"].timestamp() // 60)
+        minute_index.setdefault(minute_key, []).append(idx)
+
+    return payloads, minute_index
+
+
+def _match_fit_payload(start_dt: datetime | None, fit_payloads: list[dict], minute_index: dict[int, list[int]]) -> dict | None:
+    if not start_dt or not fit_payloads or not minute_index:
+        return None
+
+    base_key = int(start_dt.timestamp() // 60)
+    best_idx = None
+    best_diff = None
+
+    for delta in range(0, 61):  # +/- 60 minutes tolerance
+        keys = [base_key] if delta == 0 else [base_key - delta, base_key + delta]
+        for key in keys:
+            for idx in minute_index.get(key, []):
+                item = fit_payloads[idx]
+                if item.get("_used"):
+                    continue
+                item_start = item.get("start_time")
+                if not item_start:
+                    continue
+                diff = abs((item_start - start_dt).total_seconds())
+                if diff > 3600:
+                    continue
+                if best_diff is None or diff < best_diff:
+                    best_diff = diff
+                    best_idx = idx
+        if best_idx is not None and best_diff is not None and best_diff <= 120:
+            break
+
+    if best_idx is None:
+        return None
+
+    fit_payloads[best_idx]["_used"] = True
+    return fit_payloads[best_idx]
+
+
 def _load_garmin_profile_snapshot(z: zipfile.ZipFile) -> dict:
     snapshot = {
         "first_name": None,
@@ -2438,6 +2869,31 @@ def _apply_imported_profile_snapshot(user_id: int, snapshot: dict) -> None:
     db.session.commit()
 
 
+def _safe_json_dict(raw_value) -> dict:
+    if isinstance(raw_value, dict):
+        return dict(raw_value)
+    if not raw_value:
+        return {}
+    try:
+        data = json.loads(raw_value)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+
+def _prune_meta(meta: dict) -> dict:
+    out = {}
+    for key, value in (meta or {}).items():
+        if value in (None, ""):
+            continue
+        if isinstance(value, (list, dict)) and len(value) == 0:
+            continue
+        out[key] = value
+    return out
+
+
 def import_strava_zip_for_user(zip_file, user_id: int) -> tuple[int, int]:
     """Importuje activities.csv z archiwum Stravy dla wskazanego usera.
 
@@ -2583,6 +3039,14 @@ def import_garmin_zip_for_user(zip_file, user_id: int) -> tuple[int, int]:
             # Do not fail activity import if profile snapshot fails.
             pass
 
+        fit_payloads: list[dict] = []
+        fit_minute_index: dict[int, list[int]] = {}
+        if FitFile is not None:
+            try:
+                fit_payloads, fit_minute_index = _build_fit_payload_index(z)
+            except Exception as e:
+                app.logger.warning("Garmin FIT parse skipped for user %s: %s", user_id, e)
+
         # Deduplicate by Garmin activityId.
         added_count = 0
         skipped_count = 0
@@ -2600,19 +3064,16 @@ def import_garmin_zip_for_user(zip_file, user_id: int) -> tuple[int, int]:
                 continue
             seen_external.add(external_id)
 
+            start_dt = _ms_to_datetime_utc(row.get("startTimeGmt") or row.get("startTimeLocal") or row.get("beginTimestamp"))
+            if not start_dt:
+                skipped_count += 1
+                continue
+
             existing = Activity.query.filter_by(
                 user_id=user_id,
                 source="garmin",
                 external_id=external_id,
             ).first()
-            if existing:
-                skipped_count += 1
-                continue
-
-            start_dt = _ms_to_datetime_utc(row.get("startTimeGmt") or row.get("startTimeLocal") or row.get("beginTimestamp"))
-            if not start_dt:
-                skipped_count += 1
-                continue
 
             raw_type = (row.get("activityType") or "").strip()
             sport_type = (row.get("sportType") or "").strip()
@@ -2642,15 +3103,119 @@ def import_garmin_zip_for_user(zip_file, user_id: int) -> tuple[int, int]:
                 "eventTypeId": row.get("eventTypeId"),
                 "manufacturer": row.get("manufacturer"),
                 "lapCount": row.get("lapCount"),
+                "averagePace": row.get("averagePace"),
+                "averageMovingPace": row.get("averageMovingPace"),
+                "bestLapTime": row.get("bestLapTime"),
+                "moderateIntensityMinutes": row.get("moderateIntensityMinutes"),
+                "vigorousIntensityMinutes": row.get("vigorousIntensityMinutes"),
+                "differenceBodyBattery": row.get("differenceBodyBattery"),
                 "avgRunCadence": row.get("avgRunCadence"),
                 "maxRunCadence": row.get("maxRunCadence"),
                 "avgStrideLength": row.get("avgStrideLength"),
+                "avgPower": row.get("avgPower"),
+                "maxPower": row.get("maxPower"),
+                "normPower": row.get("normPower"),
+                "aerobicTrainingEffect": row.get("aerobicTrainingEffect"),
+                "anaerobicTrainingEffect": row.get("anaerobicTrainingEffect"),
+                "trainingStressScore": row.get("trainingStressScore"),
                 "workoutFeel": row.get("workoutFeel"),
                 "workoutRpe": row.get("workoutRpe"),
                 "splitSummaries": row.get("splitSummaries"),
                 "sportTypeRaw": row.get("sportType"),
                 "activityTypeRaw": row.get("activityType"),
             }
+            fit_payload = _match_fit_payload(start_dt, fit_payloads, fit_minute_index)
+            route_points = None
+            if fit_payload:
+                meta.update(_prune_meta(fit_payload.get("meta") or {}))
+                route_points = fit_payload.get("route_points") or None
+
+                # Fill route endpoints from FIT when available.
+                if fit_payload.get("start_lat") is not None:
+                    meta["fitRouteStartLat"] = fit_payload.get("start_lat")
+                if fit_payload.get("start_lng") is not None:
+                    meta["fitRouteStartLng"] = fit_payload.get("start_lng")
+                if fit_payload.get("end_lat") is not None:
+                    meta["fitRouteEndLat"] = fit_payload.get("end_lat")
+                if fit_payload.get("end_lng") is not None:
+                    meta["fitRouteEndLng"] = fit_payload.get("end_lng")
+
+            meta = _prune_meta(meta)
+            start_lat = _normalize_gps_coord(row.get("startLatitude"))
+            start_lng = _normalize_gps_coord(row.get("startLongitude"))
+            end_lat = _normalize_gps_coord(row.get("endLatitude"))
+            end_lng = _normalize_gps_coord(row.get("endLongitude"))
+            if fit_payload:
+                if fit_payload.get("start_lat") is not None:
+                    start_lat = fit_payload.get("start_lat")
+                if fit_payload.get("start_lng") is not None:
+                    start_lng = fit_payload.get("start_lng")
+                if fit_payload.get("end_lat") is not None:
+                    end_lat = fit_payload.get("end_lat")
+                if fit_payload.get("end_lng") is not None:
+                    end_lng = fit_payload.get("end_lng")
+
+            route_points_json = None
+            if route_points:
+                try:
+                    route_points_json = json.dumps(route_points, ensure_ascii=False, separators=(",", ":"))
+                except Exception:
+                    route_points_json = None
+
+            if existing:
+                # Keep manual edits, but enrich existing Garmin rows with extra stats and route.
+                if not existing.activity_type or existing.activity_type == "other":
+                    existing.activity_type = mapped_type
+                if not existing.start_time:
+                    existing.start_time = start_dt
+                if (existing.duration or 0) <= 0 and duration_s > 0:
+                    existing.duration = duration_s
+                if (existing.distance or 0) <= 0 and distance_m > 0:
+                    existing.distance = distance_m
+                if existing.avg_hr is None:
+                    existing.avg_hr = _safe_int(row.get("avgHr"))
+                if existing.max_hr is None:
+                    existing.max_hr = _safe_int(row.get("maxHr"))
+                if (existing.moving_duration or 0) <= 0 and moving_s > 0:
+                    existing.moving_duration = moving_s
+                if (existing.elapsed_duration or 0) <= 0 and elapsed_s > 0:
+                    existing.elapsed_duration = elapsed_s
+                if existing.avg_speed_mps is None and avg_speed_mps is not None:
+                    existing.avg_speed_mps = round(avg_speed_mps, 3)
+                if existing.max_speed_mps is None and max_speed_mps is not None:
+                    existing.max_speed_mps = round(max_speed_mps, 3)
+                if existing.elevation_gain is None and elev_gain_raw is not None:
+                    existing.elevation_gain = round(elev_gain_raw / 100.0, 2)
+                if existing.elevation_loss is None and elev_loss_raw is not None:
+                    existing.elevation_loss = round(elev_loss_raw / 100.0, 2)
+                if existing.calories is None:
+                    existing.calories = _safe_float(row.get("calories"))
+                if existing.steps is None:
+                    existing.steps = _safe_int(row.get("steps"))
+                if existing.vo2max is None:
+                    existing.vo2max = _safe_float(row.get("vO2MaxValue"))
+                if existing.start_lat is None and start_lat is not None:
+                    existing.start_lat = start_lat
+                if existing.start_lng is None and start_lng is not None:
+                    existing.start_lng = start_lng
+                if existing.end_lat is None and end_lat is not None:
+                    existing.end_lat = end_lat
+                if existing.end_lng is None and end_lng is not None:
+                    existing.end_lng = end_lng
+                if not existing.route_points_json and route_points_json:
+                    existing.route_points_json = route_points_json
+                if not existing.device_id and row.get("deviceId") is not None:
+                    existing.device_id = str(row.get("deviceId"))
+                if not existing.sport_type and sport_type:
+                    existing.sport_type = sport_type
+                if not (existing.notes or "").strip() and notes:
+                    existing.notes = notes
+
+                merged_meta = _safe_json_dict(existing.metadata_json)
+                merged_meta.update(meta)
+                existing.metadata_json = json.dumps(_prune_meta(merged_meta), ensure_ascii=False)
+                skipped_count += 1
+                continue
 
             act = Activity(
                 user_id=user_id,
@@ -2669,10 +3234,11 @@ def import_garmin_zip_for_user(zip_file, user_id: int) -> tuple[int, int]:
                 calories=_safe_float(row.get("calories")),
                 steps=_safe_int(row.get("steps")),
                 vo2max=_safe_float(row.get("vO2MaxValue")),
-                start_lat=_safe_float(row.get("startLatitude")),
-                start_lng=_safe_float(row.get("startLongitude")),
-                end_lat=_safe_float(row.get("endLatitude")),
-                end_lng=_safe_float(row.get("endLongitude")),
+                start_lat=start_lat,
+                start_lng=start_lng,
+                end_lat=end_lat,
+                end_lng=end_lng,
+                route_points_json=route_points_json,
                 source="garmin",
                 external_id=external_id,
                 device_id=str(row.get("deviceId")) if row.get("deviceId") is not None else None,
@@ -4490,7 +5056,15 @@ def add_checkin():
 def activity_detail(activity_id: int):
     activity = Activity.query.filter_by(id=activity_id, user_id=current_user.id).first_or_404()
     plans = WorkoutPlan.query.filter_by(user_id=current_user.id).all()
-    return render_template("activity.html", activity=activity, plans=plans)
+    metric_cards, meta_rows, route_payload = _build_activity_detail_payload(activity)
+    return render_template(
+        "activity.html",
+        activity=activity,
+        plans=plans,
+        metric_cards=metric_cards,
+        meta_rows=meta_rows,
+        route_payload=route_payload,
+    )
 
 
 @app.route("/import_zip", methods=["POST"])

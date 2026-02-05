@@ -121,6 +121,7 @@ class Activity(db.Model):
     start_lng = db.Column(db.Float)
     end_lat = db.Column(db.Float)
     end_lng = db.Column(db.Float)
+    route_points_json = db.Column(db.Text)  # compact [[lat, lng], ...] route for map rendering
     source = db.Column(db.String(20), default="manual", nullable=False, index=True)
     external_id = db.Column(db.String(80), index=True)
     device_id = db.Column(db.String(80))

@@ -9,6 +9,9 @@
     <link rel="manifest" href="/static/manifest.webmanifest">
     <meta name="theme-color" content="#0f172a">
     <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+          crossorigin="">
     </head>
 <body class="activity-page">
     <div class="container">
@@ -82,6 +85,45 @@
                 {% endif %}
             </div>
         </div>
+
+        {% if metric_cards %}
+        <div class="main-card">
+            <div class="card-subtitle">📊 {{ tx('Statystyki z Garmina','Garmin stats') }}</div>
+            <div class="stats-grid stats-grid--dense">
+                {% for item in metric_cards %}
+                <div class="stat-item">
+                    <div class="stat-label">{{ tx(item.pl, item.en) }}</div>
+                    <div class="stat-value">{{ item.value }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="main-card map-card">
+            <div class="card-subtitle">🗺️ {{ tx('Mapa aktywności','Activity map') }}</div>
+            {% if route_payload and route_payload.has_points %}
+                <div id="activityMap" class="activity-map"></div>
+            {% else %}
+                <div class="empty-note">{{ tx('Brak mapy dla tej aktywności.','No map available for this activity.') }}</div>
+            {% endif %}
+        </div>
+
+        {% if meta_rows %}
+        <div class="gym-section">
+            <details class="meta-details">
+                <summary>🧩 {{ tx('Dodatkowe dane Garmin','Additional Garmin data') }}</summary>
+                <div class="meta-grid">
+                    {% for row in meta_rows %}
+                    <div class="meta-row">
+                        <span class="meta-key">{{ row.key }}</span>
+                        <span class="meta-value">{{ row.value }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </details>
+        </div>
+        {% endif %}
 
         <div class="gym-section">
             <h3 class="section-title">✏️ {{ tx('Edytuj trening','Edit workout') }}</h3>
@@ -278,6 +320,31 @@
             btn.disabled = true;
         });
     })();
+    </script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+            crossorigin=""></script>
+    <script>
+        const routePayload = {{ route_payload|tojson }};
+        if (routePayload && routePayload.has_points) {
+            const points = routePayload.points || [];
+            if (points.length) {
+                const map = L.map('activityMap', {scrollWheelZoom: false});
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 18,
+                    attribution: '&copy; OpenStreetMap'
+                }).addTo(map);
+                const latlngs = points.map((p) => [p[0], p[1]]);
+                if (latlngs.length === 1) {
+                    map.setView(latlngs[0], 14);
+                    L.marker(latlngs[0]).addTo(map);
+                } else {
+                    const line = L.polyline(latlngs, {color: '#ff6a00', weight: 3});
+                    line.addTo(map);
+                    map.fitBounds(line.getBounds(), {padding: [20, 20]});
+                }
+            }
+        }
     </script>
     {% include "_chat_widget.html" %}
 </body>
