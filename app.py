@@ -4743,6 +4743,9 @@ ZASADY:
                         has_month_hint = any(tok in raw_lower for tok in month_tokens)
                         if (not has_year and not has_month_hint) and abs((today - parsed).days) > 60:
                             out["start_date"] = today.isoformat()
+                        elif abs(parsed.year - today.year) >= 2:
+                            # Treat far-off years as unreliable OCR and default to today.
+                            out["start_date"] = today.isoformat()
                     except Exception:
                         out["start_date"] = today.isoformat()
 
