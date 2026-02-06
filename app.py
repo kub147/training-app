@@ -4206,6 +4206,7 @@ def generate_forecast():
     recent_details = get_recent_activity_details(user_id=current_user.id, days=21)
     recent_checkins = get_recent_checkins_summary(user_id=current_user.id, days=14)
     execution_ctx = get_execution_context(user_id=current_user.id, days=10)
+    today_dt = datetime.now().date()
     checkin_signals = get_checkin_signal_snapshot(user_id=current_user.id, days=14)
     goal_progress = build_goal_progress(
         user_id=current_user.id,
