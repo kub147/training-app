@@ -49,6 +49,21 @@
     </div>
 
     <div class="card">
+        <div class="section-title">📅 {{ tx('Kalendarz Google (subskrypcja planu)','Google Calendar (plan subscription)') }}</div>
+        <p class="help-text">{{ tx('Dodaj ten link w Google Calendar przez: Inne kalendarze → Z adresu URL. Plan odświeża się automatycznie po zmianach, ale Google może mieć opóźnienie synchronizacji.','Add this URL in Google Calendar via: Other calendars → From URL. The plan updates automatically after changes, but Google sync may be delayed.') }}</p>
+        <div class="field">
+            <label>{{ tx('Prywatny link ICS','Private ICS URL') }}</label>
+            <input type="text" id="calendarFeedLink" value="{{ calendar_feed_link }}" readonly>
+        </div>
+        <div class="actions actions-row">
+            <button class="btn btn-outline" type="button" id="copyCalendarFeedLink">{{ tx('Kopiuj link','Copy URL') }}</button>
+            <form method="POST" action="/profile/calendar/regenerate">
+                <button class="btn btn-soft" type="submit">{{ tx('Wygeneruj nowy link','Regenerate URL') }}</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
         <div class="section-title">🧠 {{ tx('Dane do personalizacji','Personalization data') }}</div>
         <form method="POST" action="/profile">
             <input type="hidden" name="action" value="save">
@@ -204,6 +219,21 @@
 </div>
 
 <script>
+(function(){
+  const copyBtn = document.getElementById('copyCalendarFeedLink');
+  const linkInput = document.getElementById('calendarFeedLink');
+  if(copyBtn && linkInput){
+    copyBtn.addEventListener('click', async () => {
+      try{
+        await navigator.clipboard.writeText(linkInput.value || '');
+      }catch(_e){
+        linkInput.select();
+        document.execCommand('copy');
+      }
+    });
+  }
+})();
+
 (function(){
   const boxes = Array.from(document.querySelectorAll('input[name="weekly_focus_sports"]'));
   const fields = Array.from(document.querySelectorAll('.weekly-target-field'));

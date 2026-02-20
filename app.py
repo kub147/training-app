@@ -24,7 +24,7 @@ except Exception:  # optional dependency for Garmin route/stat parsing
 
 
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session, Response, abort
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import text, inspect
@@ -712,6 +712,7 @@ def ensure_schema() -> None:
             'first_name': "first_name TEXT",
             'last_name': "last_name TEXT",
             'preferred_lang': "preferred_lang TEXT DEFAULT 'pl'",
+            'calendar_token': "calendar_token TEXT",
             'created_at': "created_at DATETIME",
             'onboarding_completed': "onboarding_completed BOOLEAN DEFAULT 0",
         }
@@ -927,6 +928,125 @@ def format_dt(value: datetime | date | None, style: str = "list") -> str:
 
 
 app.jinja_env.globals["format_dt"] = format_dt
+
+
+def _ensure_calendar_token(user: User) -> str:
+    token = (getattr(user, "calendar_token", None) or "").strip()
+    if token:
+        return token
+
+    # Generate a stable high-entropy token for public ICS feed URL.
+    while True:
+        candidate = (uuid4().hex + uuid4().hex)[:64]
+        exists = User.query.filter_by(calendar_token=candidate).first()
+        if not exists:
+            user.calendar_token = candidate
+            db.session.commit()
+            return candidate
+
+
+def _regenerate_calendar_token(user: User) -> str:
+    while True:
+        candidate = (uuid4().hex + uuid4().hex)[:64]
+        exists = User.query.filter_by(calendar_token=candidate).first()
+        if not exists:
+            user.calendar_token = candidate
+            db.session.commit()
+            return candidate
+
+
+def _ics_escape(text: str | None) -> str:
+    if text is None:
+        return ""
+    value = str(text)
+    value = value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,")
+    value = value.replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n")
+    return value
+
+
+def _ics_utc_stamp(value: datetime | None = None) -> str:
+    dt = _to_naive_utc(value) if isinstance(value, datetime) else None
+    if dt is None:
+        dt = datetime.utcnow()
+    return dt.strftime("%Y%m%dT%H%M%SZ")
+
+
+def _build_plan_ics(user: User, plan: GeneratedPlan | None) -> str:
+    now_stamp = _ics_utc_stamp()
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//JWAPP//Training Plan//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        f"X-WR-CALNAME:{_ics_escape('JWAPP - Plan treningowy')}",
+        f"X-WR-TIMEZONE:{_ics_escape('UTC')}",
+    ]
+
+    if plan and plan.html_content:
+        plan_days = parse_plan_html(plan.html_content)
+        sorted_days = sorted(
+            [d for d in plan_days if d.get("date") and d.get("workout")],
+            key=lambda x: x.get("date"),
+        )
+        plan_stamp = _ics_utc_stamp(getattr(plan, "created_at", None))
+        for day in sorted_days:
+            date_str = (day.get("date") or "").strip()
+            try:
+                event_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            except Exception:
+                continue
+            next_day = event_date + timedelta(days=1)
+
+            summary = (day.get("workout") or "").strip()
+            details_parts = []
+            if day.get("details"):
+                details_parts.append(str(day.get("details")).strip())
+            else:
+                warm = (day.get("warmup") or "").strip()
+                main = (day.get("main_set") or "").strip()
+                cool = (day.get("cooldown") or "").strip()
+                if warm:
+                    details_parts.append(f"Rozgrzewka: {warm}")
+                if main:
+                    details_parts.append(f"Trening główny: {main}")
+                if cool:
+                    details_parts.append(f"Schłodzenie: {cool}")
+
+            if day.get("why"):
+                details_parts.append(f"Dlaczego: {str(day.get('why')).strip()}")
+            if day.get("duration_min") not in (None, ""):
+                details_parts.append(f"Czas: {day.get('duration_min')} min")
+            if day.get("distance_km") not in (None, ""):
+                details_parts.append(f"Dystans: {day.get('distance_km')} km")
+
+            description = "\n".join([x for x in details_parts if x])
+            uid = f"jwapp-plan-{user.id}-{event_date.isoformat()}@jwapp.local"
+
+            lines.extend([
+                "BEGIN:VEVENT",
+                f"UID:{_ics_escape(uid)}",
+                f"DTSTAMP:{plan_stamp}",
+                f"LAST-MODIFIED:{plan_stamp}",
+                f"SUMMARY:{_ics_escape(summary)}",
+                f"DESCRIPTION:{_ics_escape(description)}",
+                f"DTSTART;VALUE=DATE:{event_date.strftime('%Y%m%d')}",
+                f"DTEND;VALUE=DATE:{next_day.strftime('%Y%m%d')}",
+                "TRANSP:OPAQUE",
+                "END:VEVENT",
+            ])
+
+    lines.extend([
+        f"X-PUBLISHED-TTL:{_ics_escape('PT30M')}",
+        f"DTSTAMP:{now_stamp}",
+        "END:VCALENDAR",
+    ])
+    return "\r\n".join(lines) + "\r\n"
+
+
+def _build_calendar_feed_link(user: User) -> str:
+    token = _ensure_calendar_token(user)
+    return url_for("calendar_feed", token=token, _external=True)
 
 
 def _format_duration_hms(seconds_value) -> str | None:
@@ -3688,6 +3808,7 @@ def profile():
             target_sport_fields=TARGET_SPORT_FIELDS,
             focus_sports=focus_sports,
             target_values=target_values,
+            calendar_feed_link=_build_calendar_feed_link(current_user),
         )
     except Exception as e:
         app.logger.exception("Profile render failed for user %s: %s", current_user.id, e)
@@ -3698,6 +3819,42 @@ def profile():
             ),
             500,
         )
+
+
+@app.route("/calendar/<token>.ics", methods=["GET"])
+def calendar_feed(token: str):
+    safe_token = (token or "").strip()
+    if not safe_token:
+        abort(404)
+
+    user = User.query.filter_by(calendar_token=safe_token).first()
+    if not user:
+        abort(404)
+
+    active_plan = (
+        GeneratedPlan.query
+        .filter_by(user_id=user.id, is_active=True)
+        .order_by(GeneratedPlan.created_at.desc())
+        .first()
+    )
+    ics_body = _build_plan_ics(user=user, plan=active_plan)
+    resp = Response(ics_body, mimetype="text/calendar; charset=utf-8")
+    resp.headers["Content-Disposition"] = f'inline; filename="jwapp-plan-{user.id}.ics"'
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
+
+
+@app.route("/profile/calendar/regenerate", methods=["POST"])
+@login_required
+def regenerate_calendar_link():
+    _regenerate_calendar_token(current_user)
+    flash(
+        tr(
+            "Wygenerowano nowy prywatny link kalendarza.",
+            "Generated a new private calendar link.",
+        )
+    )
+    return redirect(url_for("profile"))
 
 
 @app.route("/profile/delete_account", methods=["POST"])
