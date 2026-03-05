@@ -46,6 +46,8 @@ def build_chat_prompt(
     recent_details: str,
     recent_checkins: str,
     execution_context: str,
+    week_execution_context: str,
+    active_plan_context: str,
     checkin_signals: str,
     goal_context: str,
     chat_history: str,
@@ -65,6 +67,10 @@ KONTEKST (warstwowo, nie pełna baza):
 {recent_checkins}
 
 {execution_context}
+
+{week_execution_context}
+
+{active_plan_context}
 
 SYGNAŁY CHECK-IN (JSON):
 {checkin_signals}
@@ -90,4 +96,5 @@ ZASADY ODPOWIEDZI:
 - Jeśli brakuje krytycznej informacji, zadaj maksymalnie 1 krótkie pytanie doprecyzowujące.
 - Używaj prostego HTML tylko gdy pomaga czytelności (<b>, <br>, opcjonalnie <ul><li>). Bez Markdown.
 - Unikaj powtórzeń, sztucznego tonu i klisz typu "na podstawie wskazane regularne elementy".
+- Traktuj AKTYWNY PLAN jako źródło prawdy dla zaplanowanych dni; jeśli sugerujesz zmianę, powiedz jasno co i dlaczego zmieniasz.
 """

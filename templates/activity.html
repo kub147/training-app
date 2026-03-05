@@ -103,7 +103,7 @@
                 <div class="form-grid">
                     <div class="field">
                         <label>{{ tx('Typ','Type') }}</label>
-                        <select name="activity_type">
+                        <select name="activity_type" id="activity_type_select">
                             <option value="run" {% if activity.activity_type == 'run' %}selected{% endif %}>{{ t('opt_run') }}</option>
                             <option value="ride" {% if activity.activity_type == 'ride' %}selected{% endif %}>{{ t('opt_ride') }}</option>
                             <option value="swim" {% if activity.activity_type == 'swim' %}selected{% endif %}>{{ t('opt_swim') }}</option>
@@ -133,6 +133,16 @@
                     <div class="field">
                         <label>{{ tx('Śr. tętno (bpm)','Avg HR (bpm)') }}</label>
                         <input type="text" inputmode="decimal" name="avg_hr" value="{{ activity.avg_hr if activity.avg_hr else '' }}">
+                    </div>
+                    <div class="field" id="avg_cadence_field" {% if activity.activity_type != 'run' %}hidden{% endif %}>
+                        <label>{{ tx('Śr. kadencja (spm) (opcjonalnie)','Avg cadence (spm) (optional)') }}</label>
+                        <input
+                            type="text"
+                            inputmode="decimal"
+                            name="avg_run_cadence"
+                            value="{{ avg_run_cadence if avg_run_cadence is not none else '' }}"
+                            placeholder="{{ tx('np. 168','e.g. 168') }}"
+                        >
                     </div>
                 </div>
 
@@ -219,6 +229,19 @@
     </div>
 
     <script>
+    (function () {
+        const typeSelect = document.getElementById('activity_type_select');
+        const cadenceField = document.getElementById('avg_cadence_field');
+        if (!typeSelect || !cadenceField) return;
+
+        function syncCadenceVisibility() {
+            cadenceField.hidden = typeSelect.value !== 'run';
+        }
+
+        typeSelect.addEventListener('change', syncCadenceVisibility);
+        syncCadenceVisibility();
+    })();
+
     // Funkcja Auto-Save
     async function updateEx(id, field, inputElement) {
         const val = inputElement.value;

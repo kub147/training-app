@@ -131,23 +131,17 @@
                     <p><b>{{ tx('Dni do startu','Days to event') }}:</b> {{ goal_progress.days_left }}</p>
                     <p><b>{{ tx('Faza przygotowania','Training phase') }}:</b> {{ goal_progress.phase }}</p>
                     <p><b>{{ tx('Dyscyplina celu','Goal discipline') }}:</b> {{ activity_label(goal_progress.goal_discipline) }}</p>
-                    <p><b>{{ tx('Objętość tygodniowa teraz','Weekly volume now') }}:</b> {{ goal_progress.weekly_volume_now }} km</p>
-                    <p><b>{{ tx('Objętość docelowa','Target weekly volume') }}:</b> {{ goal_progress.weekly_volume_target }} km</p>
-                    {% if goal_progress.weekly_volume_target_min is not none and goal_progress.weekly_volume_target_max is not none %}
-                    <p class="goal-sub">{{ tx('Zakres orientacyjny','Recommended range') }}: {{ goal_progress.weekly_volume_target_min }} - {{ goal_progress.weekly_volume_target_max }} km</p>
-                    {% endif %}
-                    <p class="goal-sub">{{ tx('Bezpieczny limit (rampa)','Safe ramp cap') }}: {{ goal_progress.weekly_volume_safe_cap }} km</p>
-                    <p><b>{{ tx('Prognoza za 4 tygodnie','Projected in 4 weeks') }}:</b> {{ goal_progress.weekly_volume_projected_4w }} km</p>
-                    <p><b>{{ tx('Gotowość objętości','Volume readiness') }}:</b> {{ goal_progress.readiness_pct }}%</p>
-                    <p><b>{{ tx('Realizacja celu treningów (ten tydzień)','Workout goal completion (this week)') }}:</b> {{ goal_progress.completion_pct }}% ({{ goal_progress.workouts_done_this_week }}/{{ goal_progress.weekly_goal }})</p>
-                    {% if goal_progress.focus_sports %}
-                        <p class="goal-sub">
-                            {{ tx('Sesje tygodniowe','Weekly sessions') }}:
-                            {% for sport in goal_progress.focus_sports %}
-                                {{ activity_label(sport) }} {{ goal_progress.weekly_done_targets.get(sport, 0) }}/{{ goal_progress.weekly_targets.get(sport, 0) }}{% if not loop.last %}, {% endif %}
-                            {% endfor %}
-                        </p>
-                    {% endif %}
+                    <p><b>{{ tx('Ten tydzień (zrobione)','This week (done)') }}:</b> {{ goal_progress.weekly_series[-1] if goal_progress.weekly_series else 0 }} km</p>
+                    <p><b>{{ tx('Cel na ten tydzień','Target for this week') }}:</b> {{ goal_progress.weekly_target_current }} km</p>
+                    <p><b>{{ tx('Cel na następny tydzień','Target for next week') }}:</b> {{ goal_progress.weekly_target_next }} km</p>
+                    <p><b>{{ tx('Potrzebny wzrost','Needed increase') }}:</b> +{{ goal_progress.weekly_target_needed_delta_km }} km{% if goal_progress.weekly_target_needed_delta_pct > 0 %} ({{ goal_progress.weekly_target_needed_delta_pct }}%){% endif %}</p>
+                    <p>
+                        <b>{{ tx('Status przygotowania','Preparation status') }}:</b>
+                        <span class="goal-track goal-track-{{ goal_progress.track_level }}">{{ goal_progress.track_status }}</span>
+                    </p>
+                    <p class="goal-reco">{{ goal_progress.recommendation_text }}</p>
+                    <p class="goal-sub">{{ tx('Plan tygodnia i ten wykres używają tego samego celu km na tydzień.','Weekly plan and this chart use the same weekly km target.') }}</p>
+                    <p class="goal-sub">{{ tx('Cel objętości rośnie stopniowo (5-10% tygodniowo), żeby bezpiecznie przygotować organizm.','Weekly target grows gradually (5-10%) to prepare safely.') }}</p>
                     <p class="goal-sub">{{ tx('Źródło wyliczeń','Data source') }}: {{ goal_progress.volume_source }} • {{ tx('Aktualizacja','Updated') }}: {{ goal_progress.updated_on }}</p>
                     {% if goal_progress.target_time_text %}
                     <p><b>{{ tx('Docelowy czas','Target time') }}:</b> {{ goal_progress.target_time_text }}</p>
@@ -299,28 +293,31 @@
     {% if goal_progress %}
     const goalLabels = {{ goal_progress.weekly_labels|tojson }};
     const goalSeries = {{ goal_progress.weekly_series|tojson }};
-    const goalTargetWeekly = {{ goal_progress.weekly_volume_target|tojson }};
+    const goalTargetSeries = {{ goal_progress.weekly_target_series|tojson }};
     const goalCtx = document.getElementById('goalVolumeChart').getContext('2d');
     new Chart(goalCtx, {
-        type: 'line',
+        type: 'bar',
         data: {
             labels: goalLabels,
             datasets: [
                 {
-                    label: {{ tx('Objętość tygodniowa (km)','Weekly volume (km)')|tojson }},
+                    type: 'bar',
+                    label: {{ tx('Przebiegnięte km / tydzień','Completed km / week')|tojson }},
                     data: goalSeries,
                     borderColor: '#10b981',
-                    backgroundColor: 'rgba(16,185,129,0.14)',
-                    tension: 0.35,
-                    fill: true,
-                    pointRadius: 3
+                    backgroundColor: 'rgba(16,185,129,0.35)',
+                    borderWidth: 1,
+                    borderRadius: 6
                 },
                 {
-                    label: {{ tx('Cel tygodniowy (km)','Weekly target (km)')|tojson }},
-                    data: goalLabels.map(() => goalTargetWeekly),
+                    type: 'line',
+                    label: {{ tx('Cel tygodniowy (progres)','Weekly target (progression)')|tojson }},
+                    data: goalTargetSeries,
                     borderColor: '#2563eb',
-                    borderDash: [6, 6],
-                    pointRadius: 0,
+                    backgroundColor: 'rgba(37,99,235,0.1)',
+                    pointRadius: 2,
+                    pointHoverRadius: 4,
+                    tension: 0.3,
                     fill: false
                 }
             ]
@@ -328,7 +325,12 @@
         options: {
             maintainAspectRatio: false,
             plugins: {
-                legend: { labels: { color: chartText } }
+                legend: { labels: { color: chartText } },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y || 0} km`
+                    }
+                }
             },
             scales: {
                 y: { beginAtZero: true, grid: { color: chartGrid }, ticks: { color: chartText } },

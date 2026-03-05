@@ -6,10 +6,12 @@ warnings.filterwarnings("ignore", category=UserWarning)
 import csv
 import io
 import json
+import math
 import os
 import re
 import smtplib
 import ssl
+import statistics
 import zipfile
 from email.message import EmailMessage
 from uuid import uuid4
@@ -27,7 +29,7 @@ except Exception:  # optional dependency for Garmin route/stat parsing
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session, Response, abort
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import text, inspect
+from sqlalchemy import text, inspect, or_
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 
 from models import db, User, UserProfile, UserState, GeneratedPlan, Activity, Exercise, WorkoutPlan, PlanExercise, \
@@ -1823,6 +1825,73 @@ def get_week_execution_context(user_id: int, week_start: date, week_end: date) -
     return "\n".join(lines)
 
 
+def get_active_plan_context(user_id: int, from_day: date | None = None, days_ahead: int = 10) -> str:
+    if from_day is None:
+        from_day = datetime.now().date()
+    end_day = from_day + timedelta(days=max(1, days_ahead))
+
+    active_plan = (
+        GeneratedPlan.query
+        .filter_by(user_id=user_id, is_active=True)
+        .order_by(GeneratedPlan.created_at.desc())
+        .first()
+    )
+    if not active_plan:
+        return "AKTYWNY PLAN: brak aktywnego planu."
+
+    plan_days = parse_plan_html(active_plan.html_content)
+    if not plan_days:
+        return "AKTYWNY PLAN: plan istnieje, ale brak czytelnych dni."
+
+    lines = [f"AKTYWNY PLAN (od {from_day.isoformat()} do {end_day.isoformat()}):"]
+    run_sessions = 0
+    planned_km = 0.0
+
+    for item in plan_days:
+        ds = (item.get("date") or "").strip()
+        if not ds:
+            continue
+        try:
+            d = datetime.strptime(ds, "%Y-%m-%d").date()
+        except Exception:
+            continue
+        if d < from_day or d > end_day:
+            continue
+
+        sport = normalize_activity_bucket(item.get("sport") or item.get("activity_type"), item.get("workout"))
+        workout = (item.get("workout") or "").strip()
+        intensity = (item.get("intensity") or "").strip().lower()
+        dist_km = item.get("distance_km")
+        dur_min = item.get("duration_min")
+        if dist_km is None or dur_min is None:
+            parsed_dist, parsed_dur = _extract_estimates_from_text(workout)
+            dist_km = dist_km if dist_km is not None else parsed_dist
+            dur_min = dur_min if dur_min is not None else parsed_dur
+        try:
+            dist_km = float(dist_km) if dist_km is not None else None
+        except Exception:
+            dist_km = None
+        try:
+            dur_min = int(round(float(dur_min))) if dur_min is not None else None
+        except Exception:
+            dur_min = None
+
+        if sport == "run":
+            run_sessions += 1
+            if dist_km is not None and dist_km > 0:
+                planned_km += dist_km
+
+        lines.append(
+            f"- {ds} | {sport} | {dist_km if dist_km is not None else '?'} km | "
+            f"{dur_min if dur_min is not None else '?'} min | {intensity or 'n/a'} | {workout[:160]}"
+        )
+
+    lines.append(
+        f"PODSUMOWANIE PLANU: run_sessions={run_sessions} | planned_run_km={round(planned_km, 1)}"
+    )
+    return "\n".join(lines)
+
+
 def get_checkin_signal_snapshot(user_id: int, days: int = 14, limit: int = 30) -> dict:
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     rows = (
@@ -1940,6 +2009,263 @@ def get_recent_weekly_volume_km(user_id: int, weeks: int = 4, include_types: set
         "avg_week_km": avg,
         "last_week_km": last_week,
         "prev_week_km": prev_week,
+    }
+
+
+def _get_active_injury_severity(user_id: int) -> int:
+    state = (
+        UserState.query
+        .filter_by(user_id=user_id, kind="injury", is_active=True)
+        .order_by(UserState.updated_at.desc())
+        .first()
+    )
+    if not state:
+        return 0
+    try:
+        sev = int(state.severity or 0)
+    except Exception:
+        sev = 0
+    return max(0, sev)
+
+
+def _build_recent_run_profile(user_id: int, today: date) -> dict:
+    start = datetime.combine(today - timedelta(days=56), datetime.min.time())
+    acts = _load_user_activities_with_fallback(
+        user_id=user_id,
+        start=start,
+        order_asc=True,
+    )
+    runs = []
+    for a in acts:
+        t = (a.activity_type or "").lower()
+        if t not in {"run", "trailrun", "virtualrun"}:
+            continue
+        dist_km = float(a.distance or 0.0) / 1000.0
+        if dist_km < 2.0:
+            continue
+        dur_min = float(a.duration or 0.0) / 60.0 if a.duration else None
+        pace = (dur_min / dist_km) if (dur_min and dist_km > 0) else None
+        dt = _activity_start_dt(a)
+        runs.append({
+            "date": dt.date() if dt else None,
+            "km": dist_km,
+            "pace": pace,
+        })
+
+    if not runs:
+        return {
+            "runs_count": 0,
+            "typical_easy_km": 6.0,
+            "easy_floor_km": 5.0,
+            "easy_low_km": 6.0,
+            "easy_high_km": 8.0,
+            "long_low_km": 10.0,
+            "long_high_km": 14.0,
+            "easy_pace_min_km": 6.8,
+            "last_run_gap_days": 999,
+            "short_break": False,
+        }
+
+    runs_sorted = sorted(runs, key=lambda x: x["km"])
+    km_values = [r["km"] for r in runs_sorted]
+    lower_count = max(1, int(math.ceil(len(km_values) * 0.6)))
+    lower_slice = km_values[:lower_count]
+    typical_easy = float(statistics.median(lower_slice))
+
+    top_count = min(3, len(km_values))
+    top_slice = km_values[-top_count:]
+    long_ref = float(statistics.median(top_slice))
+
+    if long_ref >= 10.0 and typical_easy >= 5.0:
+        easy_low = max(6.0, round(typical_easy * 0.95, 1))
+        easy_high = max(easy_low + 1.0, round(typical_easy * 1.30, 1))
+    else:
+        easy_low = max(5.0, round(typical_easy * 0.90, 1))
+        easy_high = max(easy_low + 0.8, round(typical_easy * 1.25, 1))
+
+    easy_floor = max(4.5, round(typical_easy * 0.65, 1))
+    long_low = max(10.0, round(long_ref * 0.85, 1))
+    long_high = min(14.0, round(max(long_low + 1.0, long_ref * 1.10), 1))
+
+    pace_values = [r["pace"] for r in runs if r.get("pace") and 4.2 <= float(r["pace"]) <= 9.5]
+    if pace_values:
+        easy_pace = float(statistics.median(pace_values))
+    else:
+        easy_pace = 6.8
+    easy_pace = min(9.2, max(4.8, easy_pace))
+
+    valid_dates = [r["date"] for r in runs if r.get("date")]
+    last_run_date = max(valid_dates) if valid_dates else None
+    gap_days = (today - last_run_date).days if last_run_date else 999
+
+    return {
+        "runs_count": len(runs),
+        "typical_easy_km": round(typical_easy, 1),
+        "easy_floor_km": round(easy_floor, 1),
+        "easy_low_km": round(easy_low, 1),
+        "easy_high_km": round(easy_high, 1),
+        "long_low_km": round(long_low, 1),
+        "long_high_km": round(long_high, 1),
+        "easy_pace_min_km": round(easy_pace, 2),
+        "last_run_gap_days": int(gap_days),
+        "short_break": bool(gap_days <= 7),
+    }
+
+
+def _get_current_week_run_km(user_id: int, today: date) -> float:
+    week_start = today - timedelta(days=today.weekday())
+    acts = _load_user_activities_with_fallback(
+        user_id=user_id,
+        start=datetime.combine(week_start, datetime.min.time()),
+        end=datetime.combine(today + timedelta(days=1), datetime.min.time()),
+        order_asc=True,
+    )
+    total = 0.0
+    for a in acts:
+        t = (a.activity_type or "").lower()
+        if t not in {"run", "trailrun", "virtualrun"}:
+            continue
+        start_dt = _activity_start_dt(a)
+        if not start_dt or start_dt.date() > today:
+            continue
+        total += float(a.distance or 0.0) / 1000.0
+    return round(total, 1)
+
+
+def _get_run_cycle_context(user_id: int, today: date) -> dict:
+    week_start = today - timedelta(days=today.weekday())
+    lookback_start = week_start - timedelta(weeks=48)
+    acts = _load_user_activities_with_fallback(
+        user_id=user_id,
+        start=datetime.combine(lookback_start, datetime.min.time()),
+        end=datetime.combine(week_start, datetime.min.time()),
+        order_asc=True,
+    )
+    active_weeks = set()
+    for a in acts:
+        t = (a.activity_type or "").lower()
+        if t not in {"run", "trailrun", "virtualrun"}:
+            continue
+        dist_km = float(a.distance or 0.0) / 1000.0
+        if dist_km <= 0:
+            continue
+        dt = _activity_start_dt(a)
+        if not dt:
+            continue
+        d = dt.date()
+        ws = d - timedelta(days=d.weekday())
+        active_weeks.add(ws)
+
+    completed_active_weeks = len(active_weeks)
+    cycle_week = (completed_active_weeks % 4) + 1
+    is_deload_week = (cycle_week == 4 and completed_active_weeks >= 3)
+    return {
+        "completed_active_weeks": completed_active_weeks,
+        "cycle_week": cycle_week,
+        "is_deload_week": is_deload_week,
+        "target_reduction_pct": 0.25 if is_deload_week else 0.0,
+    }
+
+
+def _compute_run_fatigue_context(
+    user_id: int,
+    today: date,
+    run_vol: dict,
+    checkin_signals: dict,
+    injury_severity: int,
+    run_profile: dict,
+) -> dict:
+    start = datetime.combine(today - timedelta(days=10), datetime.min.time())
+    acts = _load_user_activities_with_fallback(
+        user_id=user_id,
+        start=start,
+        end=datetime.combine(today + timedelta(days=1), datetime.min.time()),
+        order_asc=True,
+    )
+
+    run_distances = []
+    run_avg_hrs = []
+    for a in acts:
+        t = (a.activity_type or "").lower()
+        if t not in {"run", "trailrun", "virtualrun"}:
+            continue
+        dist_km = float(a.distance or 0.0) / 1000.0
+        if dist_km > 0:
+            run_distances.append(dist_km)
+        if a.avg_hr:
+            try:
+                run_avg_hrs.append(float(a.avg_hr))
+            except Exception:
+                pass
+
+    recent_long_km = max(run_distances) if run_distances else 0.0
+    hr_threshold = 155.0
+    if run_avg_hrs:
+        hr_threshold = max(150.0, float(statistics.median(run_avg_hrs)) + 6.0)
+    hard_hr_sessions = sum(1 for h in run_avg_hrs if h >= hr_threshold)
+
+    prev_week_km = float(run_vol.get("prev_week_km", 0.0) or 0.0)
+    last_week_km = float(run_vol.get("last_week_km", 0.0) or 0.0)
+    weekly_delta_pct = 0.0
+    if prev_week_km > 0:
+        weekly_delta_pct = ((last_week_km - prev_week_km) / prev_week_km) * 100.0
+
+    pain = str(checkin_signals.get("pain") or "unknown").lower()
+    fatigue = str(checkin_signals.get("fatigue") or "unknown").lower()
+    readiness = str(checkin_signals.get("readiness") or "flat").lower()
+
+    score = 0
+    reasons = []
+    if recent_long_km >= max(10.0, float(run_profile.get("long_low_km", 10.0)) * 0.95):
+        score += 2
+        reasons.append("recent_long_run_load")
+    if hard_hr_sessions >= 2:
+        score += 2
+        reasons.append("high_hr_density")
+    elif hard_hr_sessions == 1:
+        score += 1
+    if weekly_delta_pct >= 12.0:
+        score += 2
+        reasons.append("weekly_jump")
+    elif weekly_delta_pct >= 7.0:
+        score += 1
+    if injury_severity >= 4:
+        score += 3
+        reasons.append("high_injury_severity")
+    elif injury_severity >= 3:
+        score += 2
+        reasons.append("active_injury")
+    if pain == "high":
+        score += 3
+        reasons.append("pain_high")
+    elif pain == "medium":
+        score += 2
+    if fatigue == "high":
+        score += 2
+    elif fatigue == "medium":
+        score += 1
+    if readiness == "down":
+        score += 1
+
+    if score >= 7:
+        level = "high"
+        reduction_pct = 0.30 if (pain == "high" or injury_severity >= 4) else 0.22
+    elif score >= 4:
+        level = "medium"
+        reduction_pct = 0.12
+    else:
+        level = "low"
+        reduction_pct = 0.0
+
+    return {
+        "score": score,
+        "level": level,
+        "reduction_pct": reduction_pct,
+        "recent_long_km": round(recent_long_km, 1),
+        "hard_hr_sessions": int(hard_hr_sessions),
+        "hr_threshold": round(hr_threshold, 1),
+        "weekly_delta_pct": round(weekly_delta_pct, 1),
+        "reasons": reasons,
     }
 
 
@@ -2139,7 +2465,7 @@ def build_goal_progress(user_id: int, profile_obj: UserProfile | None, range_day
         current_weekly = max(float(x or 0.0) for x in vol["weekly_series"])
 
     risk = (profile_obj.risk_tolerance or "balanced").lower()
-    ramp_pct = {"conservative": 0.05, "aggressive": 0.11}.get(risk, 0.08)
+    ramp_pct = {"conservative": 0.05, "aggressive": 0.10}.get(risk, 0.08)
 
     weeks_left = max(0, int((days_left + 6) // 7))
     low_rec, high_rec = _recommended_weekly_volume_range_km(
@@ -2189,6 +2515,79 @@ def build_goal_progress(user_id: int, profile_obj: UserProfile | None, range_day
     if target_weekly > 0:
         readiness_pct = int(round(min(100.0, (current_weekly / target_weekly) * 100.0)))
 
+    weekly_labels = vol.get("weekly_labels", []) or []
+    weekly_series = [float(x or 0.0) for x in (vol.get("weekly_series", []) or [])]
+
+    # Build a readable weekly target line that grows gradually (5-10% based on risk)
+    # and remains anchored in user ability and event goal-derived volume caps.
+    target_series = []
+    if weekly_labels:
+        hist_weeks = len(weekly_labels)
+        if current_weekly > 0:
+            base_target = max(6.0, current_weekly / ((1.0 + ramp_pct) ** max(0, hist_weeks - 1)))
+        elif weekly_series and any(v > 0 for v in weekly_series):
+            first_non_zero = next((v for v in weekly_series if v > 0), 6.0)
+            base_target = max(6.0, first_non_zero)
+        else:
+            base_target = 6.0
+
+        t = float(base_target)
+        for idx in range(hist_weeks):
+            if idx > 0:
+                t = min(target_weekly, t * (1.0 + ramp_pct))
+            if target_series and t <= target_series[-1] and target_series[-1] < target_weekly:
+                t = min(target_weekly, target_series[-1] + 0.3)
+            target_series.append(round(t, 1))
+
+    current_target = float(target_series[-1]) if target_series else round(target_weekly, 1)
+    next_week_target = current_target
+    if days_left > 0:
+        if days_left <= 14:
+            next_week_target = max(6.0, current_target * 0.85)
+        elif days_left <= 7:
+            next_week_target = max(5.0, current_target * 0.75)
+        else:
+            next_week_target = min(target_weekly, current_target * (1.0 + ramp_pct))
+    next_week_target = round(next_week_target, 1)
+
+    done_reference = float(last_week or 0.0)
+    needed_delta_km = round(max(0.0, next_week_target - done_reference), 1)
+    needed_delta_pct = int(round((needed_delta_km / done_reference) * 100.0)) if done_reference > 0 else 0
+
+    if target_weekly <= 0:
+        track_level = "neutral"
+        track_status = tr("brak celu", "no goal")
+    elif last_week >= current_target * 0.92:
+        track_level = "good"
+        track_status = tr("na dobrym torze", "on track")
+    elif last_week >= current_target * 0.75:
+        track_level = "warn"
+        track_status = tr("lekko poniżej planu", "slightly below plan")
+    else:
+        track_level = "risk"
+        track_status = tr("za nisko vs plan", "below target")
+
+    if days_left <= 0:
+        recommendation_text = tr(
+            "Start już za Tobą — przejdź na tydzień regeneracyjny i potem wróć do budowania bazy.",
+            "Race is done — take a recovery week, then return to base building.",
+        )
+    elif target_weekly <= 0:
+        recommendation_text = tr(
+            "Ustaw cel i datę startu w profilu, a system wyliczy bezpieczny progres km/tydzień.",
+            "Set your goal and race date in profile to get a safe weekly km progression.",
+        )
+    elif needed_delta_km <= 0.2:
+        recommendation_text = tr(
+            "Utrzymaj obecną objętość. Priorytet: regularność i spokojne jednostki Z2.",
+            "Keep current volume. Priority: consistency and easy Z2 work.",
+        )
+    else:
+        recommendation_text = tr(
+            f"W kolejnym tygodniu dołóż około {needed_delta_km:.1f} km (+{max(0, needed_delta_pct)}%), najlepiej rozkładając to na 2 lekkie jednostki.",
+            f"Add about {needed_delta_km:.1f} km next week (+{max(0, needed_delta_pct)}%), best split across 2 easy sessions.",
+        )
+
     return {
         "event": profile_obj.target_event or tr("Cel", "Goal"),
         "target_date": profile_obj.target_date.isoformat(),
@@ -2205,8 +2604,17 @@ def build_goal_progress(user_id: int, profile_obj: UserProfile | None, range_day
         "weekly_volume_safe_cap": round(safe_cap, 1),
         "weekly_volume_projected_4w": round(projected_4w, 1),
         "target_time_text": profile_obj.target_time_text or "",
-        "weekly_labels": vol.get("weekly_labels", []),
-        "weekly_series": vol.get("weekly_series", []),
+        "weekly_labels": weekly_labels,
+        "weekly_series": weekly_series,
+        "weekly_target_series": target_series,
+        "weekly_target_current": round(current_target, 1),
+        "weekly_target_next": next_week_target,
+        "weekly_target_needed_delta_km": needed_delta_km,
+        "weekly_target_needed_delta_pct": needed_delta_pct,
+        "weekly_target_cap_for_plan": round(current_target, 1),
+        "track_level": track_level,
+        "track_status": track_status,
+        "recommendation_text": recommendation_text,
         "readiness_pct": readiness_pct,
         "completion_pct": completion_pct,
         "weekly_goal": weekly_goal,
@@ -3019,6 +3427,87 @@ def _prune_meta(meta: dict) -> dict:
     return out
 
 
+def _find_fuzzy_existing_activity_for_garmin(
+    *,
+    user_id: int,
+    start_dt: datetime,
+    activity_type: str,
+    distance_m: float,
+    duration_s: int,
+) -> Activity | None:
+    """Find likely matching existing user workout to avoid duplicate import rows.
+
+    Matching intentionally prefers preserving user-edited activities (notes/exercises)
+    when Garmin timestamps differ slightly from manual entries.
+    """
+    if not isinstance(start_dt, datetime):
+        return None
+
+    window = timedelta(hours=18)
+    candidates = (
+        Activity.query
+        .filter(Activity.user_id == user_id)
+        .filter(Activity.start_time >= (start_dt - window))
+        .filter(Activity.start_time <= (start_dt + window))
+        .filter(or_(Activity.external_id.is_(None), Activity.external_id == ""))
+        .order_by(Activity.start_time.asc())
+        .all()
+    )
+    if not candidates:
+        return None
+
+    wanted_bucket = normalize_activity_bucket(activity_type, None)
+    best = None
+    best_score = None
+
+    for cand in candidates:
+        cand_dt = _activity_start_dt(cand)
+        if not cand_dt:
+            continue
+        time_diff_s = abs((cand_dt - start_dt).total_seconds())
+        if time_diff_s > window.total_seconds():
+            continue
+
+        cand_bucket = normalize_activity_bucket(cand.activity_type, cand.notes)
+        bucket_match = (cand_bucket == wanted_bucket) or ("other" in {cand_bucket, wanted_bucket})
+        if not bucket_match:
+            continue
+
+        cand_dist = float(cand.distance or 0.0)
+        cand_dur = int(cand.duration or 0)
+
+        dist_ok = None
+        if distance_m > 0 and cand_dist > 0:
+            dist_delta = abs(cand_dist - distance_m)
+            dist_tol = max(1200.0, 0.25 * max(cand_dist, distance_m))
+            dist_ok = dist_delta <= dist_tol
+        dur_ok = None
+        if duration_s > 0 and cand_dur > 0:
+            dur_delta = abs(cand_dur - duration_s)
+            dur_tol = max(20 * 60, int(round(0.30 * max(cand_dur, duration_s))))
+            dur_ok = dur_delta <= dur_tol
+
+        # Strong match gate: close in time OR distance OR duration.
+        strong = (time_diff_s <= 90 * 60) or (dist_ok is True) or (dur_ok is True)
+        if not strong:
+            continue
+        # If both metrics exist and both disagree, skip.
+        if dist_ok is False and dur_ok is False:
+            continue
+
+        score = (time_diff_s / 3600.0)
+        if distance_m > 0 and cand_dist > 0:
+            score += (abs(cand_dist - distance_m) / max(cand_dist, distance_m)) * 2.0
+        if duration_s > 0 and cand_dur > 0:
+            score += (abs(cand_dur - duration_s) / max(cand_dur, duration_s)) * 1.5
+
+        if best_score is None or score < best_score:
+            best = cand
+            best_score = score
+
+    return best
+
+
 def import_strava_zip_for_user(zip_file, user_id: int) -> tuple[int, int]:
     """Importuje activities.csv z archiwum Stravy dla wskazanego usera.
 
@@ -3194,12 +3683,6 @@ def import_garmin_zip_for_user(zip_file, user_id: int) -> tuple[int, int]:
                 skipped_count += 1
                 continue
 
-            existing = Activity.query.filter_by(
-                user_id=user_id,
-                source="garmin",
-                external_id=external_id,
-            ).first()
-
             raw_type = (row.get("activityType") or "").strip()
             sport_type = (row.get("sportType") or "").strip()
             activity_name = (row.get("name") or "").strip()
@@ -3209,6 +3692,22 @@ def import_garmin_zip_for_user(zip_file, user_id: int) -> tuple[int, int]:
             duration_s = _to_seconds_from_ms(row.get("duration"))
             moving_s = _to_seconds_from_ms(row.get("movingDuration")) or duration_s
             elapsed_s = _to_seconds_from_ms(row.get("elapsedDuration")) or duration_s
+
+            existing = (
+                Activity.query
+                .filter(Activity.user_id == user_id)
+                .filter(Activity.external_id == external_id)
+                .filter(or_(Activity.source == "garmin", Activity.source == "manual", Activity.source.is_(None)))
+                .first()
+            )
+            if not existing:
+                existing = _find_fuzzy_existing_activity_for_garmin(
+                    user_id=user_id,
+                    start_dt=start_dt,
+                    activity_type=mapped_type,
+                    distance_m=distance_m,
+                    duration_s=duration_s,
+                )
 
             avg_speed_mps = (distance_m / moving_s) if (distance_m > 0 and moving_s > 0) else None
             max_speed_raw = _safe_float(row.get("maxSpeed"))
@@ -3289,6 +3788,8 @@ def import_garmin_zip_for_user(zip_file, user_id: int) -> tuple[int, int]:
 
             if existing:
                 # Keep manual edits, but enrich existing Garmin rows with extra stats and route.
+                if not (existing.external_id or "").strip():
+                    existing.external_id = external_id
                 if not existing.activity_type or existing.activity_type == "other":
                     existing.activity_type = mapped_type
                 if not existing.start_time:
@@ -4313,6 +4814,11 @@ def chat_with_coach():
         week_start=today_dt - timedelta(days=today_dt.weekday()),
         week_end=today_dt,
     )
+    active_plan_ctx = get_active_plan_context(
+        user_id=current_user.id,
+        from_day=today_dt,
+        days_ahead=10,
+    )
     checkin_signals = get_checkin_signal_snapshot(user_id=current_user.id, days=14)
     goal_progress = build_goal_progress(
         user_id=current_user.id,
@@ -4330,6 +4836,8 @@ def chat_with_coach():
         recent_details=recent_details,
         recent_checkins=recent_checkins,
         execution_context=execution_ctx,
+        week_execution_context=week_execution_ctx,
+        active_plan_context=active_plan_ctx,
         checkin_signals=json.dumps(checkin_signals, ensure_ascii=False),
         goal_context=json.dumps(goal_progress, ensure_ascii=False) if goal_progress else "Brak aktywnego celu z datą.",
         chat_history=chat_history_text,
@@ -4376,6 +4884,16 @@ def generate_forecast():
         range_days=30,
         stats=compute_stats(current_user.id, 30),
     )
+    linked_weekly_target_km = 0.0
+    if goal_progress:
+        try:
+            linked_weekly_target_km = float(
+                goal_progress.get("weekly_target_cap_for_plan")
+                or goal_progress.get("weekly_target_current")
+                or 0.0
+            )
+        except Exception:
+            linked_weekly_target_km = 0.0
 
     today = today_dt.strftime("%Y-%m-%d")
     days_to_generate = max(1, 7 - today_dt.weekday())  # do niedzieli włącznie
@@ -4399,6 +4917,22 @@ def generate_forecast():
         "done_until_today": {k: int(weekly_done.get(k, 0) or 0) for k in focus_sports},
         "remaining_to_fill": weekly_remaining,
     }
+    run_profile = _build_recent_run_profile(user_id=current_user.id, today=today_dt)
+    injury_severity = _get_active_injury_severity(current_user.id)
+    run_vol = get_recent_weekly_volume_km(
+        user_id=current_user.id,
+        weeks=6,
+        include_types={"run", "trailrun", "virtualrun"},
+    )
+    cycle_ctx = _get_run_cycle_context(user_id=current_user.id, today=today_dt)
+    fatigue_ctx = _compute_run_fatigue_context(
+        user_id=current_user.id,
+        today=today_dt,
+        run_vol=run_vol,
+        checkin_signals=checkin_signals,
+        injury_severity=injury_severity,
+        run_profile=run_profile,
+    )
 
     language_hint = tr(
         "Opis i uzasadnienie pisz po polsku.",
@@ -4406,15 +4940,31 @@ def generate_forecast():
     )
 
     def _apply_plan_rules(days: list[dict]) -> list[dict]:
-        """Rule layer: avoid obvious overload and improve consistency."""
-        risk = (profile_obj.risk_tolerance or "balanced").lower() if profile_obj else "balanced"
-        ramp_pct = {"conservative": 0.06, "aggressive": 0.14}.get(risk, 0.10)
-        vol = get_recent_weekly_volume_km(user_id=current_user.id, weeks=4)
-        base_week_km = max(float(vol.get("avg_week_km", 0.0) or 0.0), float(vol.get("last_week_km", 0.0) or 0.0))
-        if profile_obj and profile_obj.weekly_distance_km:
-            base_week_km = max(base_week_km, float(profile_obj.weekly_distance_km))
-        allowed_week_km = max(6.0, round(base_week_km * (1.0 + ramp_pct), 1))
-        allowed_window_km = round((allowed_week_km * float(days_to_generate)) / 7.0, 1)
+        """Rule layer for workload realism and safety."""
+        pain_level = str(checkin_signals.get("pain") or "unknown").lower()
+        fatigue_level = str(checkin_signals.get("fatigue") or "unknown").lower()
+        readiness = str(checkin_signals.get("readiness") or "flat").lower()
+        high_caution = (injury_severity >= 4) or (pain_level == "high")
+        medium_caution = high_caution or (injury_severity >= 3) or (pain_level == "medium") or (fatigue_level == "high") or (readiness == "down")
+        is_taper = str((goal_progress or {}).get("phase") or "").lower().startswith("taper")
+
+        prev_run_km = float(run_vol.get("prev_week_km", 0.0) or 0.0)
+        avg_run_km = float(run_vol.get("avg_week_km", 0.0) or 0.0)
+        if prev_run_km <= 0:
+            prev_run_km = max(avg_run_km, float(run_profile.get("easy_low_km", 6.0)) * 3.0)
+        if prev_run_km <= 0:
+            prev_run_km = 18.0
+
+        weekly_run_cap = round(prev_run_km * 1.10, 1)  # hard cap: +10% week-over-week
+        if linked_weekly_target_km > 0:
+            # Keep forecast aligned with "Goal preparation" weekly target.
+            weekly_run_cap = round(linked_weekly_target_km, 1)
+        if cycle_ctx.get("is_deload_week") and not is_taper:
+            deload_cap = round(prev_run_km * (1.0 - float(cycle_ctx.get("target_reduction_pct", 0.25))), 1)
+            weekly_run_cap = min(weekly_run_cap, deload_cap)
+
+        week_run_done_km = _get_current_week_run_km(user_id=current_user.id, today=today_dt)
+        allowed_window_km = round(max(4.0, weekly_run_cap - week_run_done_km), 1)
 
         def parse_km(workout: str | None) -> float:
             txt = (workout or "").lower()
@@ -4427,18 +4977,17 @@ def generate_forecast():
                     continue
             return out
 
-        def scale_first_km(workout: str | None, factor: float) -> str:
+        def replace_first_km(workout: str | None, new_km: float) -> str:
             if not workout:
-                return ""
-            def repl(match):
-                raw = match.group(1)
-                try:
-                    val = float(raw.replace(",", "."))
-                    scaled = max(2.0, round(val * factor, 1))
-                    return f"{scaled} km"
-                except Exception:
-                    return match.group(0)
-            return re.sub(r'(\d+(?:[.,]\d+)?)\s*km', repl, workout, count=1, flags=re.IGNORECASE)
+                return f"{new_km:.1f} km"
+
+            def repl(_match):
+                return f"{new_km:.1f} km"
+
+            updated = re.sub(r'(\d+(?:[.,]\d+)?)\s*km', repl, workout, count=1, flags=re.IGNORECASE)
+            if updated == workout:
+                updated = f"{workout} • {new_km:.1f} km"
+            return updated
 
         def is_hard(item: dict) -> bool:
             txt = " ".join([
@@ -4449,6 +4998,149 @@ def generate_forecast():
             hard_tokens = ["hard", "wysoka", "interwa", "interwał", "tempo", "threshold", "vo2", "maks", "max"]
             return any(t in txt for t in hard_tokens)
 
+        def is_run(item: dict) -> bool:
+            t = (item.get("activity_type") or "").strip().lower()
+            if t in {"run", "trailrun", "virtualrun"}:
+                return True
+            txt = " ".join([
+                str(item.get("workout") or ""),
+                str(item.get("details") or ""),
+            ]).lower()
+            return any(k in txt for k in ("bieg", "run", "wybiegan"))
+
+        def has_cadence_focus(item: dict) -> bool:
+            txt = " ".join([
+                str(item.get("workout") or ""),
+                str(item.get("details") or ""),
+                str(item.get("main_set") or ""),
+                str(item.get("why") or ""),
+            ]).lower()
+            return any(k in txt for k in ("kadenc", "cadence", "spm"))
+
+        def strip_cadence_lines(text: str) -> str:
+            if not text:
+                return text
+            out_lines = []
+            for line in text.splitlines():
+                low = line.lower()
+                if any(k in low for k in ("kadenc", "cadence", "spm")):
+                    continue
+                out_lines.append(line)
+            return "\n".join(out_lines).strip()
+
+        def ensure_effort_hint(item: dict) -> None:
+            txt = " ".join([
+                str(item.get("workout") or ""),
+                str(item.get("details") or ""),
+                str(item.get("main_set") or ""),
+                str(item.get("why") or ""),
+            ]).lower()
+            if any(k in txt for k in ("z2", "zone 2", "strefa 2", "hr zone 2")):
+                return
+            hint = tr(
+                "Wysiłek: strefa tętna Z2 (swobodna rozmowa).",
+                "Effort: HR Zone 2 (conversational effort).",
+            )
+            if item.get("main_set"):
+                item["main_set"] = f"{item.get('main_set')} {hint}".strip()
+            elif item.get("details"):
+                item["details"] = f"{item.get('details')}\n{hint}".strip()
+            else:
+                item["why"] = ((item.get("why") or "").strip() + " " + hint).strip()
+
+        def ensure_cadence_hint(item: dict) -> None:
+            hint = tr(
+                "Akcent techniki: 6-8 min pracy nad kadencją 160-170 spm przy łatwym wysiłku.",
+                "Technique focus: 6-8 min cadence focus at 160-170 spm at easy effort.",
+            )
+            if item.get("main_set"):
+                item["main_set"] = f"{item.get('main_set')} {hint}".strip()
+            elif item.get("details"):
+                item["details"] = f"{item.get('details')}\n{hint}".strip()
+            else:
+                item["why"] = ((item.get("why") or "").strip() + " " + hint).strip()
+
+        def classify_run_kind(item: dict, idx: int, total: int) -> str:
+            txt = " ".join([
+                str(item.get("workout") or ""),
+                str(item.get("details") or ""),
+                str(item.get("why") or ""),
+            ]).lower()
+            if any(k in txt for k in ("long run", "wybiegan", "długi bieg", "dlugi bieg")):
+                return "long"
+            intensity = str(item.get("intensity") or "").lower()
+            if intensity in {"moderate", "hard"} or any(k in txt for k in ("tempo", "interwa", "threshold", "vo2")):
+                return "moderate"
+            if idx == total - 1 and run_profile.get("runs_count", 0) >= 3:
+                return "long"
+            return "easy"
+
+        def set_run_distance(item: dict, km: float, kind: str) -> None:
+            km = round(max(2.0, float(km)), 1)
+            base_pace = float(run_profile.get("easy_pace_min_km", 6.8))
+            pace_factor = 1.0 if kind == "easy" else (0.96 if kind == "moderate" else 1.08)
+            duration = int(round(max(25.0, km * base_pace * pace_factor)))
+
+            item["activity_type"] = "run"
+            item["distance_km"] = km
+            item["duration_min"] = duration
+            item["workout"] = replace_first_km(item.get("workout"), km)
+            if kind == "easy":
+                item["intensity"] = "easy"
+            elif kind == "moderate" and str(item.get("intensity") or "").lower() == "":
+                item["intensity"] = "moderate"
+            ensure_effort_hint(item)
+
+        def apply_run_volume(item: dict, kind: str) -> None:
+            km = None
+            if item.get("distance_km") not in (None, ""):
+                try:
+                    km = float(item.get("distance_km"))
+                except Exception:
+                    km = None
+            if km is None:
+                parsed = parse_km(item.get("workout"))
+                if parsed > 0:
+                    km = parsed
+
+            if kind == "long":
+                target_min = float(run_profile.get("long_low_km", 10.0))
+                target_max = float(run_profile.get("long_high_km", 14.0))
+            elif kind == "moderate":
+                target_min = float(run_profile.get("easy_low_km", 6.0))
+                target_max = float(run_profile.get("easy_high_km", 8.0)) + 1.0
+            else:
+                target_min = float(run_profile.get("easy_low_km", 6.0))
+                target_max = float(run_profile.get("easy_high_km", 8.0))
+
+            if run_profile.get("short_break") and not medium_caution:
+                target_min = round(target_min * 0.85, 1)
+                target_max = round(target_max * 0.90, 1)
+            elif high_caution:
+                target_min = round(target_min * 0.70, 1)
+                target_max = round(target_max * 0.80, 1)
+
+            fatigue_reduction = float(fatigue_ctx.get("reduction_pct", 0.0) or 0.0)
+            if fatigue_reduction > 0:
+                target_min = round(target_min * (1.0 - fatigue_reduction), 1)
+                target_max = round(target_max * (1.0 - fatigue_reduction), 1)
+
+            if not high_caution and kind in {"easy", "moderate"}:
+                target_min = max(target_min, float(run_profile.get("easy_floor_km", target_min)))
+
+            if km is None or km <= 0:
+                km = (target_min + target_max) / 2.0
+            km = max(target_min, min(target_max, float(km)))
+            set_run_distance(item, km, "easy" if fatigue_ctx.get("level") == "high" and kind != "long" else kind)
+
+        def run_km_of(item: dict) -> float:
+            if item.get("distance_km") not in (None, ""):
+                try:
+                    return max(0.0, float(item.get("distance_km")))
+                except Exception:
+                    pass
+            return max(0.0, parse_km(item.get("workout")))
+
         out = []
         hard_count = 0
         for idx, day in enumerate(days):
@@ -4457,7 +5149,6 @@ def generate_forecast():
             item["_km"] = km
 
             if idx > 0 and is_hard(out[-1]) and is_hard(item):
-                # Soften consecutive hard session by changing intensity and adding rationale.
                 item["intensity"] = "easy"
                 why = (item.get("why") or "").strip()
                 why += " " + tr(
@@ -4469,7 +5160,6 @@ def generate_forecast():
                 hard_count += 1
             out.append(item)
 
-        # If event is close, keep max one hard day in a 4-day block.
         if profile_obj and profile_obj.target_date:
             days_left = (profile_obj.target_date - datetime.now().date()).days
             if days_left <= 14 and hard_count > 1:
@@ -4484,15 +5174,105 @@ def generate_forecast():
                                 "Taper: lowered intensity before race day.",
                             )).strip()
 
-        # Keep 4-day km load near safe ramp based on recent weeks.
-        total_plan_km = sum(float(x.get("_km", 0.0) or 0.0) for x in out)
-        if total_plan_km > 0 and total_plan_km > allowed_window_km:
-            factor = max(0.55, allowed_window_km / total_plan_km)
+        run_target = int(weekly_target_context.get("targets", {}).get("run", 0) or 0)
+        run_done = int(weekly_target_context.get("done_until_today", {}).get("run", 0) or 0)
+        run_remaining = max(0, int(weekly_target_context.get("remaining_to_fill", {}).get("run", 0) or 0))
+        desired_runs = run_remaining
+        if run_target >= 3:
+            desired_runs = max(desired_runs, max(0, 3 - run_done))
+        desired_runs = min(desired_runs, len(out))
+
+        run_idx = [i for i, item in enumerate(out) if is_run(item)]
+        if len(run_idx) < desired_runs:
+            candidates = [i for i, item in enumerate(out) if i not in run_idx and not is_hard(item)]
+            for idx in candidates:
+                if len(run_idx) >= desired_runs:
+                    break
+                out[idx]["activity_type"] = "run"
+                out[idx]["workout"] = out[idx].get("workout") or tr("Bieg spokojny", "Easy run")
+                out[idx]["why"] = ((out[idx].get("why") or "").strip() + " " + tr(
+                    "Uzupełnienie rytmu biegowego tygodnia.",
+                    "Added to preserve weekly running rhythm.",
+                )).strip()
+                run_idx.append(idx)
+
+        run_idx = sorted(set(run_idx))
+        if not run_idx:
             for item in out:
-                item["workout"] = scale_first_km(item.get("workout"), factor)
-                item["why"] = ((item.get("why") or "").strip() + " " + tr(
-                    f"Dopasowano obciążenie (limit okna: {allowed_window_km} km).",
-                    f"Load adjusted (window cap: {allowed_window_km} km).",
+                item.pop("_km", None)
+            return out
+
+        run_kind_by_idx = {}
+        long_idx = None
+        for i in run_idx:
+            kind = classify_run_kind(out[i], i, len(out))
+            run_kind_by_idx[i] = kind
+            if kind == "long":
+                long_idx = i
+        if long_idx is None:
+            long_idx = run_idx[-1]
+            run_kind_by_idx[long_idx] = "long"
+
+        for i in run_idx:
+            kind = run_kind_by_idx.get(i, "easy")
+            if i == long_idx and run_target < 2:
+                kind = "easy"
+            apply_run_volume(out[i], kind)
+            run_kind_by_idx[i] = kind
+
+        # Enforce week cap and progression cap for remaining days.
+        total_plan_run_km = sum(run_km_of(out[i]) for i in run_idx)
+        if total_plan_run_km > allowed_window_km and total_plan_run_km > 0:
+            scale_factor = max(0.72 if medium_caution else 0.80, allowed_window_km / total_plan_run_km)
+            for i in run_idx:
+                cur = run_km_of(out[i])
+                kind = run_kind_by_idx.get(i, "easy")
+                set_run_distance(out[i], cur * scale_factor, "easy" if high_caution else kind)
+                out[i]["why"] = ((out[i].get("why") or "").strip() + " " + tr(
+                    f"Dopasowano obciążenie: limit tygodniowy {weekly_run_cap:.1f} km (+max 10% vs poprzedni tydzień).",
+                    f"Load adjusted: weekly cap {weekly_run_cap:.1f} km (+max 10% vs previous week).",
+                )).strip()
+
+        # Long run = longest run and 30-40% of planned run volume.
+        total_plan_run_km = sum(run_km_of(out[i]) for i in run_idx)
+        if total_plan_run_km > 0 and long_idx in run_idx and len(run_idx) >= 2:
+            long_km = run_km_of(out[long_idx])
+            min_share_km = total_plan_run_km * 0.30
+            max_share_km = total_plan_run_km * 0.40
+            target_long = long_km
+            if long_km < min_share_km:
+                target_long = min_share_km
+            elif long_km > max_share_km:
+                target_long = max_share_km
+            target_long = max(float(run_profile.get("long_low_km", 10.0)), target_long)
+            target_long = min(float(run_profile.get("long_high_km", 14.0)), target_long)
+
+            max_other = max((run_km_of(out[i]) for i in run_idx if i != long_idx), default=0.0)
+            if target_long <= max_other:
+                target_long = max_other + 0.6
+            set_run_distance(out[long_idx], target_long, "long")
+
+            for i in run_idx:
+                if i == long_idx:
+                    continue
+                if run_km_of(out[i]) >= run_km_of(out[long_idx]):
+                    set_run_distance(out[i], max(2.0, run_km_of(out[long_idx]) - 0.7), run_kind_by_idx.get(i, "easy"))
+
+        # Cadence technique run: at most once per week.
+        cadence_idx = [i for i in run_idx if has_cadence_focus(out[i])]
+        if len(cadence_idx) > 1:
+            for i in cadence_idx[1:]:
+                out[i]["main_set"] = strip_cadence_lines(out[i].get("main_set") or "")
+                out[i]["details"] = strip_cadence_lines(out[i].get("details") or "")
+        elif len(cadence_idx) == 0 and fatigue_ctx.get("level") != "high":
+            candidate = next((i for i in run_idx if i != long_idx), run_idx[0])
+            ensure_cadence_hint(out[candidate])
+
+        if cycle_ctx.get("is_deload_week") and not is_taper:
+            for i in run_idx:
+                out[i]["why"] = ((out[i].get("why") or "").strip() + " " + tr(
+                    "Tydzień deload: celowo obniżona objętość o ok. 20-30%.",
+                    "Deload week: volume intentionally reduced by ~20-30%.",
                 )).strip()
 
         for item in out:
@@ -4507,6 +5287,9 @@ WAŻNE:
 - Jeżeli STATE wskazuje aktywny uraz/ograniczenia — plan ma być konserwatywny.
 - Uwzględnij WYKONANE TRENINGI: nie dubluj jednostek już wykonanych, chyba że to celowe.
 - Jeśli dziś wykonano już siłę/mobility, jutro preferuj inną modalność (np. bieg easy / regeneracja), chyba że cel wymaga inaczej.
+- Dla biegów opieraj objętość na realnej historii biegowej (poniżej). Nie zaniżaj easy run bez twardego powodu klinicznego.
+- Jeśli przerwa od ostatniego biegu ≤ 7 dni i brak wysokiego bólu/urazu: redukcja objętości maksymalnie o 10-20%.
+- Easy run ma być oparty na wysiłku (strefa HR Z2), nie tylko na "małym dystansie".
 
 {profile_state}
 
@@ -4528,6 +5311,21 @@ KONTEKST CELU:
 
 CELE TYGODNIOWE UŻYTKOWNIKA (MUSISZ UWZGLĘDNIĆ):
 {json.dumps(weekly_target_context, ensure_ascii=False)}
+
+POWIĄZANIE Z METRYKAMI (MUSISZ UWZGLĘDNIĆ):
+{json.dumps({"weekly_target_km": round(linked_weekly_target_km, 1)}, ensure_ascii=False)}
+
+PROFIL BIEGOWY Z HISTORII (MUSISZ UWZGLĘDNIĆ):
+{json.dumps(run_profile, ensure_ascii=False)}
+
+SYGNAŁY RYZYKA:
+{json.dumps({"injury_severity": injury_severity, "pain": checkin_signals.get("pain"), "fatigue": checkin_signals.get("fatigue"), "readiness": checkin_signals.get("readiness")}, ensure_ascii=False)}
+
+KONTEKST ZMĘCZENIA BIEGOWEGO:
+{json.dumps(fatigue_ctx, ensure_ascii=False)}
+
+KONTEKST CYKLU TYGODNIOWEGO:
+{json.dumps(cycle_ctx, ensure_ascii=False)}
 
 FORMAT (BARDZO WAŻNE):
 - Zwróć WYŁĄCZNIE JSON (bez markdown, bez komentarzy) w formie:
@@ -4556,6 +5354,11 @@ FORMAT (BARDZO WAŻNE):
 - Każdy dzień MUSI mieć: warmup, main_set, cooldown (bez pustych pól).
 - Priorytet: plan na pozostałe dni tygodnia powinien dążyć do domknięcia `remaining_to_fill`.
 - Nie dokładamy zbędnie modalności z `remaining_to_fill = 0`, chyba że wymagają tego regeneracja lub bezpieczeństwo.
+- Jeśli cel biegowy tygodnia implikuje 3 biegi, zachowaj rytm: easy + easy/moderate + long run.
+- Długi bieg w fazie base/build zwykle utrzymuj w widełkach 10-14 km (chyba że aktywny uraz wysokiego ryzyka).
+- Easy run nie powinien spadać poniżej ~60-70% typowego dystansu easy z historii, chyba że uraz/pain są wysokie.
+- W tygodniu może pojawić się maksymalnie jeden akcent kadencji/techniki biegu.
+- Jeśli `is_deload_week = true`, obniż tygodniową objętość biegową o ok. 20-30%.
 """
 
     try:
@@ -5266,11 +6069,19 @@ def activity_detail(activity_id: int):
     activity = Activity.query.filter_by(id=activity_id, user_id=current_user.id).first_or_404()
     plans = WorkoutPlan.query.filter_by(user_id=current_user.id).all()
     metric_cards = _build_activity_detail_payload(activity)
+    meta = _safe_json_dict(activity.metadata_json)
+    avg_run_cadence = meta.get("avgRunCadence")
+    if avg_run_cadence is not None:
+        try:
+            avg_run_cadence = round(float(avg_run_cadence), 1)
+        except Exception:
+            avg_run_cadence = None
     return render_template(
         "activity.html",
         activity=activity,
         plans=plans,
         metric_cards=metric_cards,
+        avg_run_cadence=avg_run_cadence,
     )
 
 
@@ -5355,6 +6166,7 @@ def update_activity(activity_id: int):
     duration_min = request.form.get("duration_min")
     distance_km = request.form.get("distance_km")
     avg_hr = request.form.get("avg_hr")
+    avg_run_cadence_raw = request.form.get("avg_run_cadence")
     notes = request.form.get("notes")
 
     activity.activity_type = act_type
@@ -5371,6 +6183,17 @@ def update_activity(activity_id: int):
     hr_val = _parse_decimal_input(avg_hr)
     if avg_hr not in (None, "") and hr_val is not None:
         activity.avg_hr = int(round(hr_val))
+
+    cadence_val = _parse_decimal_input(avg_run_cadence_raw)
+    meta = _safe_json_dict(activity.metadata_json)
+    if act_type == "run":
+        if avg_run_cadence_raw in (None, ""):
+            meta.pop("avgRunCadence", None)
+        elif cadence_val is not None and cadence_val > 0:
+            meta["avgRunCadence"] = round(float(cadence_val), 1)
+    else:
+        meta.pop("avgRunCadence", None)
+    activity.metadata_json = json.dumps(_prune_meta(meta), ensure_ascii=False)
 
     activity.notes = notes
 
