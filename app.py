@@ -2313,6 +2313,43 @@ def _infer_goal_distance_km(profile_obj: UserProfile | None) -> float | None:
     return None
 
 
+def _extract_date_from_target_event_text(text: str | None) -> date | None:
+    raw = (text or "").strip()
+    if not raw:
+        return None
+
+    candidates: list[date] = []
+    for pattern, fmt in (
+        (r'(\d{4}-\d{2}-\d{2})', "%Y-%m-%d"),
+        (r'(\d{2}\.\d{2}\.\d{4})', "%d.%m.%Y"),
+        (r'(\d{2}-\d{2}-\d{4})', "%d-%m-%Y"),
+    ):
+        for m in re.finditer(pattern, raw):
+            token = (m.group(1) or "").strip()
+            try:
+                candidates.append(datetime.strptime(token, fmt).date())
+            except Exception:
+                continue
+
+    if not candidates:
+        return None
+
+    today = datetime.now().date()
+    future = [d for d in candidates if d >= today]
+    if future:
+        return min(future)
+    return max(candidates)
+
+
+def _effective_target_date(profile_obj: UserProfile | None) -> date | None:
+    if not profile_obj:
+        return None
+    explicit_from_event = _extract_date_from_target_event_text(profile_obj.target_event)
+    if explicit_from_event:
+        return explicit_from_event
+    return profile_obj.target_date
+
+
 def _recommended_weekly_volume_range_km(goal_discipline: str, goal_distance_km: float | None, days_per_week: int | None) -> tuple[float, float]:
     dpw = max(2, min(7, int(days_per_week or 4)))
     factor_map = {2: 0.75, 3: 0.88, 4: 1.0, 5: 1.12, 6: 1.22, 7: 1.30}
@@ -2441,11 +2478,12 @@ def _count_week_sessions_by_target(user_id: int, week_start: date, week_end: dat
 
 
 def build_goal_progress(user_id: int, profile_obj: UserProfile | None, range_days: int, stats: dict) -> dict | None:
-    if not profile_obj or not profile_obj.target_date:
+    target_date = _effective_target_date(profile_obj)
+    if not profile_obj or not target_date:
         return None
 
     today = datetime.now().date()
-    days_left = (profile_obj.target_date - today).days
+    days_left = (target_date - today).days
 
     goal_discipline = _infer_goal_discipline(profile_obj)
     include_types = None
@@ -2590,8 +2628,8 @@ def build_goal_progress(user_id: int, profile_obj: UserProfile | None, range_day
 
     return {
         "event": profile_obj.target_event or tr("Cel", "Goal"),
-        "target_date": profile_obj.target_date.isoformat(),
-        "target_date_pretty": format_dt(profile_obj.target_date, "long"),
+        "target_date": target_date.isoformat(),
+        "target_date_pretty": format_dt(target_date, "long"),
         "days_left": max(0, days_left),
         "phase": phase,
         "risk": risk,
@@ -2641,8 +2679,9 @@ def get_training_phase_for_day(target_date: date | None, day_date: date) -> str:
 
 def build_goal_link_text(profile_obj: UserProfile | None, day_date: date) -> str:
     event = (profile_obj.target_event if profile_obj and profile_obj.target_event else tr("cel treningowy", "training goal"))
-    if profile_obj and profile_obj.target_date:
-        days_left = max(0, (profile_obj.target_date - day_date).days)
+    target_date = _effective_target_date(profile_obj)
+    if target_date:
+        days_left = max(0, (target_date - day_date).days)
         return tr(
             f"Wspiera przygotowanie do: {event} (do startu: {days_left} dni).",
             f"Supports preparation for: {event} (days to event: {days_left}).",
@@ -2702,8 +2741,9 @@ def get_profile_and_state_context(user: User) -> str:
             goals.append(profile.goals_text)
         if profile.target_event:
             goals.append(f"Wydarzenie docelowe: {profile.target_event}")
-        if profile.target_date:
-            goals.append(f"Data: {profile.target_date.isoformat()}")
+        effective_date = _effective_target_date(profile)
+        if effective_date:
+            goals.append(f"Data: {effective_date.isoformat()}")
         lines.append("GOALS: " + (" | ".join(goals) if goals else "brak"))
 
         if profile.preferences_text:
@@ -4866,6 +4906,7 @@ def chat_with_coach():
 def generate_forecast():
     """Generuje plan od dziś do końca tygodnia i zapisuje go jako aktywny."""
     profile_obj = UserProfile.query.filter_by(user_id=current_user.id).first()
+    target_date_effective = _effective_target_date(profile_obj)
     profile_state = get_profile_and_state_context(current_user)
     weekly_agg = get_weekly_aggregates(user_id=current_user.id, weeks=12)
     recent_details = get_recent_activity_details(user_id=current_user.id, days=21)
@@ -5160,8 +5201,8 @@ def generate_forecast():
                 hard_count += 1
             out.append(item)
 
-        if profile_obj and profile_obj.target_date:
-            days_left = (profile_obj.target_date - datetime.now().date()).days
+        if target_date_effective:
+            days_left = (target_date_effective - datetime.now().date()).days
             if days_left <= 14 and hard_count > 1:
                 kept_hard = 0
                 for item in out:
@@ -5382,7 +5423,7 @@ FORMAT (BARDZO WAŻNE):
             item["date"] = day_date.strftime("%Y-%m-%d")
             if not item.get("phase"):
                 item["phase"] = get_training_phase_for_day(
-                    profile_obj.target_date if profile_obj else None,
+                    target_date_effective,
                     day_date,
                 )
             if not item.get("goal_link"):
