@@ -511,6 +511,33 @@
         modalTitle.textContent = detailsLabel + ': ' + (payload.date || '');
         modalMeta.textContent = payload.kind === 'planned' ? {{ t('calendar_planned')|tojson }} : {{ t('calendar_done')|tojson }};
 
+        function humanizeSourceFact(rawFact) {
+          const raw = String(rawFact || '').trim();
+          if (!raw) return '';
+
+          const runRemain = raw.match(/remaining_to_fill\s*:\s*run\s*(\d+)/i);
+          if (runRemain) {
+            return {{ tx('Do domknięcia celu tygodnia: bieganie ', 'To complete weekly goal: running ')|tojson }} + runRemain[1];
+          }
+
+          const easyFloor = raw.match(/easy_floor_km\s*:\s*([0-9]+(?:[.,][0-9]+)?)/i);
+          if (easyFloor) {
+            return {{ tx('Bezpieczne minimum biegu easy: ', 'Safe minimum easy run: ')|tojson }} + easyFloor[1] + ' km';
+          }
+
+          const injury = raw.match(/injury\s*:\s*(.+)$/i);
+          if (injury) {
+            return {{ tx('Ograniczenie zdrowotne: ', 'Health limitation: ')|tojson }} + injury[1].trim();
+          }
+
+          // Hide raw technical keys from user-facing modal.
+          if (/^[a-z_][a-z0-9_]*\s*:/i.test(raw)) {
+            return '';
+          }
+
+          return raw;
+        }
+
         if (payload.kind === 'planned') {
           const why = payload.why ? `<p><b>{{ tx('Dlaczego','Why') }}:</b> ${escapeHtml(payload.why)}</p>` : '';
           const phase = payload.phase ? `<p><b>{{ tx('Faza','Phase') }}:</b> ${escapeHtml(payload.phase)}</p>` : '';
@@ -522,8 +549,11 @@
           const details = (payload.details && !structured)
             ? `<p><b>{{ tx('Szczegóły','Details') }}:</b><br>${escapeHtml(payload.details).replaceAll('\n', '<br>')}</p>`
             : '';
-          const facts = Array.isArray(payload.sourceFacts) && payload.sourceFacts.length
-            ? `<p><b>{{ tx('Na podstawie','Based on') }}:</b> ${payload.sourceFacts.map((x) => escapeHtml(String(x))).join('; ')}</p>`
+          const factsPretty = Array.isArray(payload.sourceFacts)
+            ? payload.sourceFacts.map(humanizeSourceFact).filter(Boolean)
+            : [];
+          const facts = factsPretty.length
+            ? `<p><b>{{ tx('Na podstawie','Based on') }}:</b> ${factsPretty.map((x) => escapeHtml(String(x))).join('; ')}</p>`
             : '';
           modalBody.innerHTML = `
             <p><b>{{ tx('Trening','Workout') }}:</b> ${escapeHtml(payload.workout || {{ t('label_training')|tojson }})}</p>

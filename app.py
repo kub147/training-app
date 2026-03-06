@@ -5400,6 +5400,7 @@ FORMAT (BARDZO WAŻNE):
 - Easy run nie powinien spadać poniżej ~60-70% typowego dystansu easy z historii, chyba że uraz/pain są wysokie.
 - W tygodniu może pojawić się maksymalnie jeden akcent kadencji/techniki biegu.
 - Jeśli `is_deload_week = true`, obniż tygodniową objętość biegową o ok. 20-30%.
+- `source_facts` mają być krótkie i zrozumiałe dla użytkownika (bez nazw technicznych typu `remaining_to_fill`, `easy_floor_km`).
 """
 
     try:
