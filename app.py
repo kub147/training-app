@@ -2065,6 +2065,8 @@ def _build_recent_run_profile(user_id: int, today: date) -> dict:
             "long_high_km": 14.0,
             "longest_recent_km": 14.0,
             "easy_pace_min_km": 6.8,
+            "last_run_km": None,
+            "last_run_date": None,
             "last_run_gap_days": 999,
             "short_break": False,
         }
@@ -2111,6 +2113,8 @@ def _build_recent_run_profile(user_id: int, today: date) -> dict:
 
     valid_dates = [r["date"] for r in runs if r.get("date")]
     last_run_date = max(valid_dates) if valid_dates else None
+    last_runs = [r for r in runs if r.get("date") == last_run_date] if last_run_date else []
+    last_run_km = max((float(r.get("km") or 0.0) for r in last_runs), default=0.0) if last_runs else None
     gap_days = (today - last_run_date).days if last_run_date else 999
 
     return {
@@ -2123,6 +2127,8 @@ def _build_recent_run_profile(user_id: int, today: date) -> dict:
         "long_high_km": round(long_high, 1),
         "longest_recent_km": round(longest_recent, 1),
         "easy_pace_min_km": round(easy_pace, 2),
+        "last_run_km": round(last_run_km, 1) if last_run_km else None,
+        "last_run_date": last_run_date.isoformat() if last_run_date else None,
         "last_run_gap_days": int(gap_days),
         "short_break": bool(gap_days <= 7),
     }
@@ -5457,6 +5463,8 @@ def generate_forecast():
 
         week_run_done_km = _get_current_week_run_km(user_id=current_user.id, today=today_dt)
         allowed_window_km = round(max(0.0, weekly_run_cap - week_run_done_km), 1)
+        longest_recent_km = float(run_profile.get("longest_recent_km", 0.0) or 0.0)
+        easy_run_min_distance = round(max(5.0, longest_recent_km * 0.35), 1)
 
         def parse_km(workout: str | None) -> float:
             txt = (workout or "").lower()
@@ -5480,6 +5488,47 @@ def generate_forecast():
             if updated == workout:
                 updated = f"{workout} • {new_km:.1f} km"
             return updated
+
+        def build_run_title(kind: str, km: float) -> str:
+            if kind == "long":
+                return tr("Długie wybieganie HR Z2", "Long run HR Z2") + f" • {km:.1f} km"
+            if kind == "moderate":
+                return tr("Bieg spokojny + akcent", "Easy-moderate run") + f" • {km:.1f} km"
+            if kind == "recovery":
+                return tr("Bieg regeneracyjny HR Z2", "Recovery run HR Z2") + f" • {km:.1f} km"
+            return tr("Bieg spokojny HR Z2", "Easy run HR Z2") + f" • {km:.1f} km"
+
+        def sync_run_session_text(
+            item: dict,
+            km: float,
+            duration: int,
+            kind: str,
+            warm_min: int,
+            main_min: int,
+            cool_min: int,
+        ) -> None:
+            hr_hint = tr("strefie HR Z2", "HR Zone 2")
+            if kind == "moderate":
+                hr_hint = tr("strefie HR Z2-Z3", "HR Zone 2-3")
+
+            item["workout"] = build_run_title(kind, km)
+            item["warmup"] = tr(
+                f"{warm_min} min truchtu + mobilizacja bioder/ankle.",
+                f"{warm_min} min easy jog + hips/ankle mobility.",
+            )
+            item["main_set"] = tr(
+                f"Bieg {km:.1f} km w {hr_hint} (około {main_min} min).",
+                f"Run {km:.1f} km in {hr_hint} (about {main_min} min).",
+            )
+            item["cooldown"] = tr(
+                f"{cool_min} min marszu/truchtu + lekkie rozciąganie.",
+                f"{cool_min} min walk/jog + light stretching.",
+            )
+            item["details"] = "\n".join([
+                f"{tr('Rozgrzewka', 'Warm-up')}: {item['warmup']}",
+                f"{tr('Trening główny', 'Main set')}: {item['main_set']}",
+                f"{tr('Schłodzenie', 'Cool-down')}: {item['cooldown']}",
+            ])
 
         def is_hard(item: dict) -> bool:
             txt = " ".join([
@@ -5538,17 +5587,33 @@ def generate_forecast():
         def set_run_distance(item: dict, km: float, kind: str) -> None:
             km = round(max(2.0, float(km)), 1)
             base_pace = float(run_profile.get("easy_pace_min_km", 6.8))
-            pace_factor = 1.0 if kind == "easy" else (0.96 if kind == "moderate" else 1.08)
-            duration = int(round(max(25.0, km * base_pace * pace_factor)))
+            if kind == "recovery":
+                pace_factor = 1.05
+                warm_min = 6
+            elif kind == "moderate":
+                pace_factor = 0.96
+                warm_min = 8
+            elif kind == "long":
+                pace_factor = 1.08
+                warm_min = 10
+            else:
+                pace_factor = 1.0
+                warm_min = 8
+            cool_min = 5
+            main_min = int(round(max(10.0 if kind == "recovery" else 14.0, km * base_pace * pace_factor)))
+            duration = int(round(max(20.0, warm_min + main_min + cool_min)))
 
             item["activity_type"] = "run"
             item["distance_km"] = km
             item["duration_min"] = duration
-            item["workout"] = replace_first_km(item.get("workout"), km)
-            if kind == "easy":
+            if kind in {"easy", "recovery"}:
                 item["intensity"] = "easy"
             elif kind == "moderate" and str(item.get("intensity") or "").lower() == "":
                 item["intensity"] = "moderate"
+            elif kind == "long":
+                item["intensity"] = "easy"
+
+            sync_run_session_text(item, km, duration, kind, warm_min, main_min, cool_min)
             ensure_effort_hint(item)
 
         def apply_run_volume(item: dict, kind: str) -> None:
@@ -5563,9 +5628,14 @@ def generate_forecast():
                 if parsed > 0:
                     km = parsed
 
+            typical_easy_km = float(run_profile.get("typical_easy_km", run_profile.get("easy_low_km", 6.0)) or 6.0)
+
             if kind == "long":
                 target_min = float(run_profile.get("long_low_km", 10.0))
                 target_max = float(run_profile.get("long_high_km", 14.0))
+            elif kind == "recovery":
+                target_min = max(easy_run_min_distance, round(typical_easy_km * 0.60, 1))
+                target_max = max(target_min, round(typical_easy_km * 0.70, 1))
             elif kind == "moderate":
                 target_min = float(run_profile.get("easy_low_km", 6.0))
                 target_max = float(run_profile.get("easy_high_km", 8.0)) + 1.0
@@ -5585,8 +5655,10 @@ def generate_forecast():
                 target_min = round(target_min * (1.0 - fatigue_reduction), 1)
                 target_max = round(target_max * (1.0 - fatigue_reduction), 1)
 
-            if not high_caution and kind in {"easy", "moderate"}:
-                target_min = max(target_min, float(run_profile.get("easy_floor_km", target_min)))
+            if kind in {"easy", "moderate", "recovery"}:
+                floor = max(float(run_profile.get("easy_floor_km", target_min)), easy_run_min_distance)
+                target_min = max(target_min, floor)
+                target_max = max(target_min, target_max)
 
             if km is None or km <= 0:
                 km = (target_min + target_max) / 2.0
@@ -5603,6 +5675,42 @@ def generate_forecast():
                 except Exception:
                     pass
             return max(0.0, parse_km(item.get("workout")))
+
+        def validate_and_repair_run_sessions(days_out: list[dict], kind_map: dict[int, str]) -> None:
+            run_ids = [i for i, x in enumerate(days_out) if str(x.get("activity_type") or "").lower() in {"run", "trailrun", "virtualrun"}]
+            if not run_ids:
+                return
+
+            typical_easy = float(run_profile.get("typical_easy_km", run_profile.get("easy_low_km", 6.0)) or 6.0)
+            for i in run_ids:
+                kind = kind_map.get(i, "easy")
+                km = run_km_of(days_out[i])
+                if kind in {"easy", "recovery"}:
+                    km = max(easy_run_min_distance, km)
+                if kind == "recovery":
+                    rec_low = max(easy_run_min_distance, round(typical_easy * 0.60, 1))
+                    rec_high = max(rec_low, round(typical_easy * 0.70, 1))
+                    km = min(rec_high, max(rec_low, km))
+                if kind == "long":
+                    km = max(float(run_profile.get("long_low_km", 10.0)), km)
+                    km = min(float(run_profile.get("long_high_km", 14.0)), km)
+
+                # Rebuild duration/text from one source of truth (distance + kind).
+                set_run_distance(days_out[i], km, kind)
+
+                # Validation: description must mention same distance.
+                desc_km = parse_km(days_out[i].get("main_set") or days_out[i].get("details"))
+                if desc_km > 0 and abs(desc_km - km) > 0.35:
+                    set_run_distance(days_out[i], km, kind)
+
+            # Validation: long run must stay the longest running session.
+            long_ids = [i for i in run_ids if kind_map.get(i) == "long"]
+            if long_ids:
+                lid = long_ids[-1]
+                long_km = run_km_of(days_out[lid])
+                max_other = max((run_km_of(days_out[j]) for j in run_ids if j != lid), default=0.0)
+                if long_km <= max_other:
+                    set_run_distance(days_out[lid], max_other + 0.6, "long")
 
         out = []
         hard_count = 0
@@ -5715,11 +5823,60 @@ def generate_forecast():
                 if easy_now >= easy_needed:
                     break
 
+        # Post-long-run recovery rule:
+        # - if last completed run was long, first planned run should be recovery
+        # - if a planned long run is followed by another run, the next run should be recovery
+        recent_long_threshold = max(8.0, max(prev_full_week_km, weekly_run_cap) * 0.30)
+        last_run_km = float(run_profile.get("last_run_km") or 0.0)
+        last_gap = int(run_profile.get("last_run_gap_days") or 999)
+        if run_idx and last_gap <= 2 and last_run_km >= recent_long_threshold:
+            first_idx = run_idx[0]
+            if first_idx != long_idx:
+                run_kind_by_idx[first_idx] = "recovery"
+
+        sorted_runs = sorted(run_idx)
+        for pos, idx_run in enumerate(sorted_runs[:-1]):
+            if run_kind_by_idx.get(idx_run) != "long":
+                continue
+            next_idx = sorted_runs[pos + 1]
+            if next_idx != long_idx:
+                run_kind_by_idx[next_idx] = "recovery"
+
+        preset_distances: dict[int, float] = {}
+        if len(run_idx) == 3 and week_run_done_km <= 1.0:
+            weekly_target = max(
+                weekly_run_cap,
+                sum(run_km_of(out[i]) for i in run_idx),
+                (easy_run_min_distance * 2.0) + float(run_profile.get("long_low_km", 10.0)),
+            )
+            long_id = long_idx if long_idx in run_idx else sorted_runs[-1]
+            long_target = enforce_long_run_ratio(
+                long_km=weekly_target * 0.38,
+                projected_week_km=weekly_target,
+                run_profile=run_profile,
+            )
+            easy_high = float(run_profile.get("easy_high_km", 8.0) or 8.0)
+            first_two = [i for i in sorted_runs if i != long_id]
+            if len(first_two) == 2:
+                d1 = min(easy_high, max(easy_run_min_distance, weekly_target * 0.22))
+                d2 = min(easy_high + 1.0, max(easy_run_min_distance, weekly_target * 0.27))
+                if d2 < d1:
+                    d2 = d1
+                preset_distances[first_two[0]] = round(d1, 1)
+                preset_distances[first_two[1]] = round(d2, 1)
+                preset_distances[long_id] = round(long_target, 1)
+                run_kind_by_idx[first_two[0]] = "easy"
+                run_kind_by_idx[first_two[1]] = "moderate" if not medium_caution else "easy"
+                run_kind_by_idx[long_id] = "long"
+
         for i in run_idx:
             kind = run_kind_by_idx.get(i, "easy")
             if i == long_idx and run_target < 2:
                 kind = "easy"
-            apply_run_volume(out[i], kind)
+            if i in preset_distances:
+                set_run_distance(out[i], preset_distances[i], kind)
+            else:
+                apply_run_volume(out[i], kind)
             run_kind_by_idx[i] = kind
 
         # Enforce week cap/progression cap for remaining days.
@@ -5827,6 +5984,8 @@ def generate_forecast():
                     "Deload week: volume intentionally reduced by ~20-30%.",
                 )).strip()
 
+        validate_and_repair_run_sessions(out, run_kind_by_idx)
+
         normalize_non_running_sessions(out)
         for item in out:
             item.pop("_km", None)
@@ -5908,6 +6067,7 @@ FORMAT (BARDZO WAŻNE):
 - Dokładnie {days_to_generate} dni.
 - {language_hint}
 - Każdy dzień MUSI mieć: warmup, main_set, cooldown (bez pustych pól).
+- Dla biegu `main_set` ma być dystansowy (km), a czas (`duration_min`) musi być spójny z dystansem i tempem easy z historii.
 - Priorytet: plan na pozostałe dni tygodnia powinien dążyć do domknięcia `remaining_to_fill`.
 - Nie dokładamy zbędnie modalności z `remaining_to_fill = 0`, chyba że wymagają tego regeneracja lub bezpieczeństwo.
 - Jeśli cel biegowy tygodnia implikuje 3 biegi, zachowaj rytm: easy + easy/moderate + long run.
