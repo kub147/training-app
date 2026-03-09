@@ -78,6 +78,7 @@ I18N = {
         "calendar_reorder_err": "Nie udało się zapisać zmiany",
         "calendar_weather_loading": "Pogoda...",
         "calendar_weather_error": "Brak pogody",
+        "calendar_weather_refresh": "🌤️ Odśwież lokalizację pogody",
         "calendar_city_prompt": "Podaj miasto do prognozy pogody (np. Warszawa):",
         "calendar_city_not_found": "Nie znaleziono miasta",
         "calendar_progress": "Realizacja tygodnia",
@@ -178,6 +179,7 @@ I18N = {
         "calendar_reorder_err": "Could not save changes",
         "calendar_weather_loading": "Loading weather...",
         "calendar_weather_error": "No weather",
+        "calendar_weather_refresh": "🌤️ Refresh weather location",
         "calendar_city_prompt": "Provide city for weather forecast (e.g. London):",
         "calendar_city_not_found": "City not found",
         "calendar_progress": "Weekly completion",
@@ -2061,6 +2063,7 @@ def _build_recent_run_profile(user_id: int, today: date) -> dict:
             "easy_high_km": 8.0,
             "long_low_km": 10.0,
             "long_high_km": 14.0,
+            "longest_recent_km": 14.0,
             "easy_pace_min_km": 6.8,
             "last_run_gap_days": 999,
             "short_break": False,
@@ -2075,6 +2078,7 @@ def _build_recent_run_profile(user_id: int, today: date) -> dict:
     top_count = min(3, len(km_values))
     top_slice = km_values[-top_count:]
     long_ref = float(statistics.median(top_slice))
+    longest_recent = float(max(km_values))
 
     if long_ref >= 10.0 and typical_easy >= 5.0:
         easy_low = max(6.0, round(typical_easy * 0.95, 1))
@@ -2083,11 +2087,22 @@ def _build_recent_run_profile(user_id: int, today: date) -> dict:
         easy_low = max(5.0, round(typical_easy * 0.90, 1))
         easy_high = max(easy_low + 0.8, round(typical_easy * 1.25, 1))
 
-    easy_floor = max(4.5, round(typical_easy * 0.65, 1))
+    easy_floor = max(5.0, round(typical_easy * 0.60, 1))
     long_low = max(10.0, round(long_ref * 0.85, 1))
     long_high = min(14.0, round(max(long_low + 1.0, long_ref * 1.10), 1))
 
-    pace_values = [r["pace"] for r in runs if r.get("pace") and 4.2 <= float(r["pace"]) <= 9.5]
+    easy_pace_values = []
+    easy_pace_cap = float(statistics.quantiles(km_values, n=10)[5]) if len(km_values) >= 5 else float(statistics.median(km_values))
+    for r in runs:
+        p = r.get("pace")
+        if p is None:
+            continue
+        p = float(p)
+        if not (4.2 <= p <= 9.5):
+            continue
+        if float(r.get("km") or 0.0) <= easy_pace_cap:
+            easy_pace_values.append(p)
+    pace_values = easy_pace_values or [r["pace"] for r in runs if r.get("pace") and 4.2 <= float(r["pace"]) <= 9.5]
     if pace_values:
         easy_pace = float(statistics.median(pace_values))
     else:
@@ -2106,6 +2121,7 @@ def _build_recent_run_profile(user_id: int, today: date) -> dict:
         "easy_high_km": round(easy_high, 1),
         "long_low_km": round(long_low, 1),
         "long_high_km": round(long_high, 1),
+        "longest_recent_km": round(longest_recent, 1),
         "easy_pace_min_km": round(easy_pace, 2),
         "last_run_gap_days": int(gap_days),
         "short_break": bool(gap_days <= 7),
@@ -2130,6 +2146,124 @@ def _get_current_week_run_km(user_id: int, today: date) -> float:
             continue
         total += float(a.distance or 0.0) / 1000.0
     return round(total, 1)
+
+
+def calculate_weekly_baseline(
+    *,
+    user_id: int,
+    today: date,
+    lookback_weeks: int = 6,
+    include_types: set[str] | None = None,
+) -> dict:
+    """Compute stable baseline from recent completed calendar weeks.
+
+    Baseline is derived from last 3-6 completed weeks (excluding current partial week).
+    """
+    if include_types is None:
+        include_types = {"run", "trailrun", "virtualrun"}
+    allowed = {t.lower() for t in include_types}
+
+    monday = today - timedelta(days=today.weekday())
+    first_week = monday - timedelta(weeks=max(1, lookback_weeks))
+
+    acts = _load_user_activities_with_fallback(
+        user_id=user_id,
+        start=datetime.combine(first_week, datetime.min.time()),
+        end=datetime.combine(monday, datetime.min.time()),
+        order_asc=True,
+    )
+
+    buckets: dict[date, float] = {}
+    for a in acts:
+        t = (a.activity_type or "").lower()
+        if t not in allowed:
+            continue
+        dt = _activity_start_dt(a)
+        if not dt:
+            continue
+        d = dt.date()
+        ws = d - timedelta(days=d.weekday())
+        buckets[ws] = buckets.get(ws, 0.0) + float(a.distance or 0.0) / 1000.0
+
+    weekly_series = []
+    weekly_labels = []
+    cur = first_week
+    for _ in range(max(1, lookback_weeks)):
+        weekly_series.append(round(buckets.get(cur, 0.0), 1))
+        weekly_labels.append(cur.isoformat())
+        cur += timedelta(weeks=1)
+
+    non_zero = [v for v in weekly_series if v > 0]
+    if len(non_zero) >= 3:
+        pool = non_zero[-min(6, len(non_zero)):]
+        baseline = float(statistics.median(pool))
+    elif non_zero:
+        baseline = float(statistics.median(non_zero))
+    else:
+        baseline = 0.0
+
+    last_week_km = float(weekly_series[-1]) if weekly_series else 0.0
+    prev_week_km = float(weekly_series[-2]) if len(weekly_series) > 1 else 0.0
+    max_recent_week_km = max(non_zero) if non_zero else 0.0
+
+    return {
+        "baseline_weekly_km": round(baseline, 1),
+        "weekly_series": weekly_series,
+        "weekly_labels": weekly_labels,
+        "last_week_km": round(last_week_km, 1),
+        "prev_week_km": round(prev_week_km, 1),
+        "max_recent_week_km": round(max_recent_week_km, 1),
+    }
+
+
+def apply_weekly_progression(
+    *,
+    baseline_weekly_km: float,
+    risk_tolerance: str | None,
+    short_break: bool = False,
+    explicit_weekly_km: float | None = None,
+    max_recent_week_km: float | None = None,
+) -> float:
+    """Apply safe progression (+5..10%) from baseline with short-break handling."""
+    risk = (risk_tolerance or "balanced").lower()
+    growth = {"conservative": 0.05, "aggressive": 0.10}.get(risk, 0.08)
+    growth = min(0.10, max(0.05, growth))
+
+    base = max(0.0, float(baseline_weekly_km or 0.0))
+    if base <= 0 and explicit_weekly_km and explicit_weekly_km > 0:
+        base = float(explicit_weekly_km)
+    if base <= 0:
+        base = 12.0
+
+    target = base * (1.0 + growth)
+    if short_break:
+        # Short breaks should not reset volume; only minor downshift.
+        target = max(base * 0.90, target * 0.95)
+
+    if explicit_weekly_km and explicit_weekly_km > 0:
+        explicit_val = float(explicit_weekly_km)
+        safe_max = base * 1.10
+        safe_min = base * 0.85
+        target = max(safe_min, min(safe_max, max(target, explicit_val)))
+
+    # Absolute safety cap against sudden jumps.
+    mrw = float(max_recent_week_km or 0.0)
+    if mrw > 0:
+        target = min(target, mrw * 1.15)
+
+    return round(max(6.0, target), 1)
+
+
+def apply_deload_week(
+    *,
+    target_weekly_km: float,
+    is_deload_week: bool,
+    deload_reduction_pct: float = 0.25,
+) -> float:
+    if not is_deload_week:
+        return round(max(0.0, float(target_weekly_km or 0.0)), 1)
+    reduction = min(0.30, max(0.20, float(deload_reduction_pct or 0.25)))
+    return round(max(4.0, float(target_weekly_km or 0.0) * (1.0 - reduction)), 1)
 
 
 def _get_run_cycle_context(user_id: int, today: date) -> dict:
@@ -2185,9 +2319,11 @@ def _compute_run_fatigue_context(
 
     run_distances = []
     run_avg_hrs = []
+    cross_train_minutes = 0
     for a in acts:
         t = (a.activity_type or "").lower()
         if t not in {"run", "trailrun", "virtualrun"}:
+            cross_train_minutes += int((a.duration or 0) // 60)
             continue
         dist_km = float(a.distance or 0.0) / 1000.0
         if dist_km > 0:
@@ -2214,59 +2350,327 @@ def _compute_run_fatigue_context(
     fatigue = str(checkin_signals.get("fatigue") or "unknown").lower()
     readiness = str(checkin_signals.get("readiness") or "flat").lower()
 
-    score = 0
+    active_days = sorted({
+        _activity_start_dt(a).date()
+        for a in acts
+        if _activity_start_dt(a) is not None and float(a.duration or 0) > 0
+    })
+    longest_streak = 0
+    cur_streak = 0
+    prev_day = None
+    for d in active_days:
+        if prev_day and (d - prev_day).days == 1:
+            cur_streak += 1
+        else:
+            cur_streak = 1
+        prev_day = d
+        longest_streak = max(longest_streak, cur_streak)
+
     reasons = []
-    if recent_long_km >= max(10.0, float(run_profile.get("long_low_km", 10.0)) * 0.95):
-        score += 2
+    score_100 = 0.0
+
+    # Recent long-run load
+    long_ref = max(8.0, float(run_profile.get("long_low_km", 10.0) or 10.0))
+    if recent_long_km >= long_ref * 1.05:
+        score_100 += 18
         reasons.append("recent_long_run_load")
-    if hard_hr_sessions >= 2:
-        score += 2
+    elif recent_long_km >= long_ref * 0.90:
+        score_100 += 10
+
+    # Intensity density from heart rate
+    if hard_hr_sessions >= 3:
+        score_100 += 18
         reasons.append("high_hr_density")
+    elif hard_hr_sessions == 2:
+        score_100 += 12
     elif hard_hr_sessions == 1:
-        score += 1
-    if weekly_delta_pct >= 12.0:
-        score += 2
+        score_100 += 6
+
+    # Week-over-week run volume jump
+    if weekly_delta_pct >= 20.0:
+        score_100 += 20
+        reasons.append("weekly_jump")
+    elif weekly_delta_pct >= 12.0:
+        score_100 += 14
         reasons.append("weekly_jump")
     elif weekly_delta_pct >= 7.0:
-        score += 1
+        score_100 += 8
+
+    # Injury / pain state
     if injury_severity >= 4:
-        score += 3
+        score_100 += 28
         reasons.append("high_injury_severity")
     elif injury_severity >= 3:
-        score += 2
+        score_100 += 18
         reasons.append("active_injury")
+
     if pain == "high":
-        score += 3
+        score_100 += 24
         reasons.append("pain_high")
     elif pain == "medium":
-        score += 2
-    if fatigue == "high":
-        score += 2
-    elif fatigue == "medium":
-        score += 1
-    if readiness == "down":
-        score += 1
+        score_100 += 14
 
-    if score >= 7:
+    # Subjective fatigue / readiness from check-ins
+    if fatigue == "high":
+        score_100 += 14
+    elif fatigue == "medium":
+        score_100 += 8
+    if readiness == "down":
+        score_100 += 10
+    elif readiness == "up":
+        score_100 -= 4
+
+    # Cross-training can also accumulate fatigue.
+    if cross_train_minutes >= 420:
+        score_100 += 10
+        reasons.append("high_cross_training_load")
+    elif cross_train_minutes >= 300:
+        score_100 += 6
+
+    # Consecutive days without recovery raise risk.
+    if longest_streak >= 6:
+        score_100 += 14
+        reasons.append("long_training_streak")
+    elif longest_streak >= 4:
+        score_100 += 8
+
+    score_100 = max(0.0, min(100.0, score_100))
+
+    if score_100 >= 80:
+        level = "very_high"
+        reduction_pct = 0.30
+    elif score_100 >= 60:
         level = "high"
-        reduction_pct = 0.30 if (pain == "high" or injury_severity >= 4) else 0.22
-    elif score >= 4:
-        level = "medium"
-        reduction_pct = 0.12
+        reduction_pct = 0.20
+    elif score_100 >= 30:
+        level = "moderate"
+        reduction_pct = 0.10
     else:
         level = "low"
         reduction_pct = 0.0
 
     return {
-        "score": score,
+        "score": int(round(score_100)),
         "level": level,
         "reduction_pct": reduction_pct,
         "recent_long_km": round(recent_long_km, 1),
         "hard_hr_sessions": int(hard_hr_sessions),
         "hr_threshold": round(hr_threshold, 1),
         "weekly_delta_pct": round(weekly_delta_pct, 1),
+        "cross_train_minutes_7d": int(cross_train_minutes),
+        "consecutive_training_days": int(longest_streak),
         "reasons": reasons,
     }
+
+
+def estimate_fatigue_score(
+    *,
+    user_id: int,
+    today: date,
+    run_vol: dict,
+    checkin_signals: dict,
+    injury_severity: int,
+    run_profile: dict,
+) -> dict:
+    """Public fatigue estimator wrapper used by planning rules."""
+    return _compute_run_fatigue_context(
+        user_id=user_id,
+        today=today,
+        run_vol=run_vol,
+        checkin_signals=checkin_signals,
+        injury_severity=injury_severity,
+        run_profile=run_profile,
+    )
+
+
+def calculate_monotony_score(user_id: int, today: date, window_days: int = 7) -> dict:
+    """Compute simple training monotony score: avg daily load / stddev daily load."""
+    days = max(5, int(window_days or 7))
+    start_day = today - timedelta(days=days - 1)
+    acts = _load_user_activities_with_fallback(
+        user_id=user_id,
+        start=datetime.combine(start_day, datetime.min.time()),
+        end=datetime.combine(today + timedelta(days=1), datetime.min.time()),
+        order_asc=True,
+    )
+
+    daily = {start_day + timedelta(days=i): 0.0 for i in range(days)}
+    for a in acts:
+        dt = _activity_start_dt(a)
+        if not dt:
+            continue
+        d = dt.date()
+        if d not in daily:
+            continue
+
+        t = (a.activity_type or "").lower()
+        dur_min = float((a.duration or 0) / 60.0)
+        dist_km = float(a.distance or 0.0) / 1000.0
+
+        # Lightweight load proxy (no full TRIMP dependency).
+        load = dur_min
+        if t in {"run", "trailrun", "virtualrun"}:
+            load += dist_km * 3.0
+        elif t in {"ride", "virtualride"}:
+            load += dur_min * 0.3
+        elif t in {"swim"}:
+            load += dur_min * 0.4
+        else:
+            load += dur_min * 0.2
+
+        if a.avg_hr:
+            try:
+                hr = float(a.avg_hr)
+                if hr >= 155:
+                    load *= 1.10
+                elif hr <= 120:
+                    load *= 0.95
+            except Exception:
+                pass
+
+        daily[d] += max(0.0, load)
+
+    loads = [round(float(v), 2) for _, v in sorted(daily.items(), key=lambda x: x[0])]
+    avg_load = float(statistics.mean(loads)) if loads else 0.0
+    std_load = float(statistics.pstdev(loads)) if len(loads) > 1 else 0.0
+    if std_load <= 0.1:
+        monotony = (avg_load / 0.1) if avg_load > 0 else 0.0
+    else:
+        monotony = avg_load / std_load
+
+    if monotony >= 2.0:
+        level = "high"
+    elif monotony >= 1.7:
+        level = "medium"
+    else:
+        level = "low"
+
+    return {
+        "window_days": days,
+        "daily_loads": loads,
+        "avg_daily_load": round(avg_load, 2),
+        "std_daily_load": round(std_load, 2),
+        "monotony_score": round(monotony, 2),
+        "level": level,
+    }
+
+
+def enforce_long_run_ratio(
+    *,
+    long_km: float,
+    projected_week_km: float,
+    run_profile: dict,
+) -> float:
+    """Constrain long run to 30-40% of projected weekly run volume + recent ability floor."""
+    week_km = max(0.0, float(projected_week_km or 0.0))
+    if week_km <= 0:
+        return round(max(0.0, long_km), 1)
+
+    ratio_low = week_km * 0.30
+    ratio_high = week_km * 0.40
+
+    hist_low = float(run_profile.get("long_low_km", 8.0) or 8.0)
+    hist_high = float(run_profile.get("long_high_km", 14.0) or 14.0)
+
+    low = max(5.0, min(hist_low, ratio_high))
+    high = min(hist_high, ratio_high)
+
+    # Keep long run near demonstrated capacity when possible.
+    longest_recent = float(run_profile.get("longest_recent_km", 0.0) or 0.0)
+    if longest_recent > 0:
+        recent_floor = longest_recent * 0.80
+        if recent_floor > high:
+            high = recent_floor
+        low = max(low, min(recent_floor, high))
+
+    if high < low:
+        low = high
+    if high <= 0:
+        return round(max(0.0, long_km), 1)
+
+    return round(max(low, min(high, float(long_km))), 1)
+
+
+def inject_cadence_run(
+    *,
+    plan_days: list[dict],
+    run_indexes: list[int],
+    long_run_index: int | None,
+    fatigue_level: str,
+) -> None:
+    """Ensure cadence/technique cue appears at most once per week."""
+    if not plan_days or not run_indexes:
+        return
+
+    def _has_cadence(item: dict) -> bool:
+        txt = " ".join([
+            str(item.get("workout") or ""),
+            str(item.get("details") or ""),
+            str(item.get("main_set") or ""),
+            str(item.get("why") or ""),
+        ]).lower()
+        return any(k in txt for k in ("kadenc", "cadence", "spm"))
+
+    def _strip_cadence_lines(text: str) -> str:
+        if not text:
+            return text
+        out_lines = []
+        for line in text.splitlines():
+            low = line.lower()
+            if any(k in low for k in ("kadenc", "cadence", "spm")):
+                continue
+            out_lines.append(line)
+        return "\n".join(out_lines).strip()
+
+    def _inject_hint(item: dict) -> None:
+        hint = tr(
+            "Akcent techniki: 6-8 min pracy nad kadencją 160-170 spm przy łatwym wysiłku.",
+            "Technique focus: 6-8 min cadence focus at 160-170 spm at easy effort.",
+        )
+        if item.get("main_set"):
+            item["main_set"] = f"{item.get('main_set')} {hint}".strip()
+        elif item.get("details"):
+            item["details"] = f"{item.get('details')}\n{hint}".strip()
+        else:
+            item["why"] = ((item.get("why") or "").strip() + " " + hint).strip()
+
+    cadence_idx = [i for i in run_indexes if _has_cadence(plan_days[i])]
+    if len(cadence_idx) > 1:
+        for i in cadence_idx[1:]:
+            plan_days[i]["main_set"] = _strip_cadence_lines(plan_days[i].get("main_set") or "")
+            plan_days[i]["details"] = _strip_cadence_lines(plan_days[i].get("details") or "")
+        return
+
+    if cadence_idx or str(fatigue_level).lower() in {"high", "very_high"}:
+        return
+
+    candidate = next((i for i in run_indexes if i != long_run_index), run_indexes[0])
+    _inject_hint(plan_days[candidate])
+
+
+def normalize_non_running_session(item: dict) -> None:
+    """Only running workouts should carry km targets in generated plans."""
+    if not isinstance(item, dict):
+        return
+
+    kind = (item.get("activity_type") or "").strip().lower()
+    if kind in {"run", "trailrun", "virtualrun"}:
+        return
+
+    item["distance_km"] = None
+    workout = str(item.get("workout") or "").strip()
+    if workout:
+        cleaned = re.sub(r'(\d+(?:[.,]\d+)?)\s*km\b', "", workout, flags=re.IGNORECASE)
+        cleaned = re.sub(r'\s{2,}', " ", cleaned)
+        cleaned = cleaned.strip(" •,-")
+        if cleaned:
+            item["workout"] = cleaned
+
+
+def normalize_non_running_sessions(plan_days: list[dict]) -> None:
+    """Batch wrapper to normalize non-running session output."""
+    for item in plan_days or []:
+        normalize_non_running_session(item)
 
 
 def _infer_goal_discipline(profile_obj: UserProfile | None) -> str:
@@ -2494,16 +2898,26 @@ def build_goal_progress(user_id: int, profile_obj: UserProfile | None, range_day
     elif goal_discipline == "swim":
         include_types = {"swim"}
 
-    vol = get_recent_weekly_volume_km(user_id=user_id, weeks=6, include_types=include_types)
-    avg_week = float(vol.get("avg_week_km", 0.0) or 0.0)
-    last_week = float(vol.get("last_week_km", 0.0) or 0.0)
+    vol_hist = calculate_weekly_baseline(
+        user_id=user_id,
+        today=today,
+        lookback_weeks=6,
+        include_types=include_types or {"run", "trailrun", "virtualrun"},
+    )
+    baseline_weekly = float(vol_hist.get("baseline_weekly_km", 0.0) or 0.0)
+    last_week = float(vol_hist.get("last_week_km", 0.0) or 0.0)
+    prev_week = float(vol_hist.get("prev_week_km", 0.0) or 0.0)
     declared_weekly = float(profile_obj.weekly_distance_km or 0.0)
-    current_weekly = max(avg_week, last_week, declared_weekly, 0.0)
-    if current_weekly <= 0 and vol.get("weekly_series"):
-        current_weekly = max(float(x or 0.0) for x in vol["weekly_series"])
 
+    run_profile = _build_recent_run_profile(user_id=user_id, today=today)
     risk = (profile_obj.risk_tolerance or "balanced").lower()
     ramp_pct = {"conservative": 0.05, "aggressive": 0.10}.get(risk, 0.08)
+
+    current_weekly = max(last_week, baseline_weekly, 0.0)
+    if current_weekly <= 0:
+        current_weekly = max(declared_weekly, 0.0)
+    if current_weekly <= 0 and vol_hist.get("weekly_series"):
+        current_weekly = max(float(x or 0.0) for x in vol_hist["weekly_series"])
 
     weeks_left = max(0, int((days_left + 6) // 7))
     low_rec, high_rec = _recommended_weekly_volume_range_km(
@@ -2512,25 +2926,34 @@ def build_goal_progress(user_id: int, profile_obj: UserProfile | None, range_day
         days_per_week=profile_obj.days_per_week,
     )
 
-    bias = {"conservative": 0.35, "aggressive": 0.75}.get(risk, 0.55)
-    recommended_peak = low_rec + (high_rec - low_rec) * bias if high_rec > 0 else 0.0
-    if declared_weekly > 0:
-        recommended_peak = max(recommended_peak, declared_weekly)
-    if recommended_peak <= 0:
-        recommended_peak = max(current_weekly, declared_weekly)
+    progression_target = apply_weekly_progression(
+        baseline_weekly_km=max(baseline_weekly, current_weekly),
+        risk_tolerance=risk,
+        short_break=bool(run_profile.get("short_break")),
+        explicit_weekly_km=declared_weekly if declared_weekly > 0 else None,
+        max_recent_week_km=float(vol_hist.get("max_recent_week_km", 0.0) or 0.0),
+    )
+
+    cycle_ctx = _get_run_cycle_context(user_id=user_id, today=today)
+    if goal_discipline == "run" and days_left > 14:
+        target_weekly = apply_deload_week(
+            target_weekly_km=progression_target,
+            is_deload_week=bool(cycle_ctx.get("is_deload_week")),
+            deload_reduction_pct=float(cycle_ctx.get("target_reduction_pct", 0.25) or 0.25),
+        )
+    else:
+        target_weekly = progression_target
+
+    if low_rec > 0 and high_rec > 0:
+        target_weekly = max(low_rec * 0.75, min(high_rec, target_weekly))
+    mrw = float(vol_hist.get("max_recent_week_km", 0.0) or 0.0)
+    if mrw > 0:
+        target_weekly = min(target_weekly, mrw * 1.15)
+    target_weekly = round(max(6.0, target_weekly), 1)
 
     growth_weeks = max(1, min(10, weeks_left))
-    safe_cap = current_weekly * (1.0 + ramp_pct * growth_weeks) if current_weekly > 0 else recommended_peak
-
-    target_weekly = min(recommended_peak, safe_cap) if recommended_peak > 0 else safe_cap
-    if current_weekly > 0:
-        target_weekly = max(target_weekly, current_weekly)
-
-    if current_weekly > 0:
-        projected_cap = current_weekly * (1.0 + ramp_pct * min(4, growth_weeks))
-        projected_4w = min(target_weekly, projected_cap)
-    else:
-        projected_4w = target_weekly
+    safe_cap = round(max(target_weekly, current_weekly * (1.0 + ramp_pct * growth_weeks)) if current_weekly > 0 else target_weekly, 1)
+    projected_4w = round(min(safe_cap, current_weekly * (1.0 + ramp_pct * min(4, growth_weeks))) if current_weekly > 0 else target_weekly, 1)
 
     weekly_targets = _get_weekly_session_targets(profile_obj)
     focus_sports = _get_focus_sports(profile_obj, weekly_targets)
@@ -2553,28 +2976,22 @@ def build_goal_progress(user_id: int, profile_obj: UserProfile | None, range_day
     if target_weekly > 0:
         readiness_pct = int(round(min(100.0, (current_weekly / target_weekly) * 100.0)))
 
-    weekly_labels = vol.get("weekly_labels", []) or []
-    weekly_series = [float(x or 0.0) for x in (vol.get("weekly_series", []) or [])]
+    weekly_labels = vol_hist.get("weekly_labels", []) or []
+    weekly_series = [float(x or 0.0) for x in (vol_hist.get("weekly_series", []) or [])]
 
     # Build a readable weekly target line that grows gradually (5-10% based on risk)
     # and remains anchored in user ability and event goal-derived volume caps.
     target_series = []
     if weekly_labels:
         hist_weeks = len(weekly_labels)
-        if current_weekly > 0:
-            base_target = max(6.0, current_weekly / ((1.0 + ramp_pct) ** max(0, hist_weeks - 1)))
-        elif weekly_series and any(v > 0 for v in weekly_series):
-            first_non_zero = next((v for v in weekly_series if v > 0), 6.0)
-            base_target = max(6.0, first_non_zero)
-        else:
-            base_target = 6.0
-
+        base_target = max(6.0, baseline_weekly or current_weekly or 6.0)
         t = float(base_target)
         for idx in range(hist_weeks):
             if idx > 0:
                 t = min(target_weekly, t * (1.0 + ramp_pct))
-            if target_series and t <= target_series[-1] and target_series[-1] < target_weekly:
-                t = min(target_weekly, target_series[-1] + 0.3)
+            # Keep line non-decreasing in build weeks.
+            if target_series and t < target_series[-1] and days_left > 21:
+                t = target_series[-1]
             target_series.append(round(t, 1))
 
     current_target = float(target_series[-1]) if target_series else round(target_weekly, 1)
@@ -4966,13 +5383,18 @@ def generate_forecast():
         include_types={"run", "trailrun", "virtualrun"},
     )
     cycle_ctx = _get_run_cycle_context(user_id=current_user.id, today=today_dt)
-    fatigue_ctx = _compute_run_fatigue_context(
+    fatigue_ctx = estimate_fatigue_score(
         user_id=current_user.id,
         today=today_dt,
         run_vol=run_vol,
         checkin_signals=checkin_signals,
         injury_severity=injury_severity,
         run_profile=run_profile,
+    )
+    monotony_ctx = calculate_monotony_score(
+        user_id=current_user.id,
+        today=today_dt,
+        window_days=7,
     )
 
     language_hint = tr(
@@ -4984,28 +5406,57 @@ def generate_forecast():
         """Rule layer for workload realism and safety."""
         pain_level = str(checkin_signals.get("pain") or "unknown").lower()
         fatigue_level = str(checkin_signals.get("fatigue") or "unknown").lower()
+        fatigue_model_level = str(fatigue_ctx.get("level") or "low").lower()
         readiness = str(checkin_signals.get("readiness") or "flat").lower()
+        monotony_score = float(monotony_ctx.get("monotony_score", 0.0) or 0.0)
+        monotony_high = monotony_score > 2.0
         high_caution = (injury_severity >= 4) or (pain_level == "high")
         medium_caution = high_caution or (injury_severity >= 3) or (pain_level == "medium") or (fatigue_level == "high") or (readiness == "down")
+        if fatigue_model_level in {"high", "very_high"}:
+            medium_caution = True
+        if fatigue_model_level == "very_high":
+            high_caution = True
         is_taper = str((goal_progress or {}).get("phase") or "").lower().startswith("taper")
 
-        prev_run_km = float(run_vol.get("prev_week_km", 0.0) or 0.0)
-        avg_run_km = float(run_vol.get("avg_week_km", 0.0) or 0.0)
-        if prev_run_km <= 0:
-            prev_run_km = max(avg_run_km, float(run_profile.get("easy_low_km", 6.0)) * 3.0)
-        if prev_run_km <= 0:
-            prev_run_km = 18.0
+        baseline_ctx = calculate_weekly_baseline(
+            user_id=current_user.id,
+            today=today_dt,
+            lookback_weeks=6,
+            include_types={"run", "trailrun", "virtualrun"},
+        )
+        baseline_weekly_km = float(baseline_ctx.get("baseline_weekly_km", 0.0) or 0.0)
+        prev_full_week_km = float(baseline_ctx.get("last_week_km", 0.0) or 0.0)
+        if prev_full_week_km <= 0:
+            prev_full_week_km = max(
+                baseline_weekly_km,
+                float(run_profile.get("easy_low_km", 6.0) or 6.0) * 3.0,
+            )
 
-        weekly_run_cap = round(prev_run_km * 1.10, 1)  # hard cap: +10% week-over-week
+        progression_target = apply_weekly_progression(
+            baseline_weekly_km=max(prev_full_week_km, baseline_weekly_km),
+            risk_tolerance=(profile_obj.risk_tolerance if profile_obj else "balanced"),
+            short_break=bool(run_profile.get("short_break")),
+            explicit_weekly_km=linked_weekly_target_km if linked_weekly_target_km > 0 else None,
+            max_recent_week_km=float(baseline_ctx.get("max_recent_week_km", 0.0) or 0.0),
+        )
+
+        weekly_run_cap = progression_target
         if linked_weekly_target_km > 0:
-            # Keep forecast aligned with "Goal preparation" weekly target.
+            # Keep forecast aligned with "Goal preparation" in metrics.
             weekly_run_cap = round(linked_weekly_target_km, 1)
         if cycle_ctx.get("is_deload_week") and not is_taper:
-            deload_cap = round(prev_run_km * (1.0 - float(cycle_ctx.get("target_reduction_pct", 0.25))), 1)
-            weekly_run_cap = min(weekly_run_cap, deload_cap)
+            weekly_run_cap = apply_deload_week(
+                target_weekly_km=weekly_run_cap,
+                is_deload_week=True,
+                deload_reduction_pct=float(cycle_ctx.get("target_reduction_pct", 0.25) or 0.25),
+            )
+        max_recent_week = float(baseline_ctx.get("max_recent_week_km", 0.0) or 0.0)
+        if max_recent_week > 0:
+            weekly_run_cap = min(weekly_run_cap, max_recent_week * 1.15)
+        weekly_run_cap = round(max(6.0, weekly_run_cap), 1)
 
         week_run_done_km = _get_current_week_run_km(user_id=current_user.id, today=today_dt)
-        allowed_window_km = round(max(4.0, weekly_run_cap - week_run_done_km), 1)
+        allowed_window_km = round(max(0.0, weekly_run_cap - week_run_done_km), 1)
 
         def parse_km(workout: str | None) -> float:
             txt = (workout or "").lower()
@@ -5049,26 +5500,6 @@ def generate_forecast():
             ]).lower()
             return any(k in txt for k in ("bieg", "run", "wybiegan"))
 
-        def has_cadence_focus(item: dict) -> bool:
-            txt = " ".join([
-                str(item.get("workout") or ""),
-                str(item.get("details") or ""),
-                str(item.get("main_set") or ""),
-                str(item.get("why") or ""),
-            ]).lower()
-            return any(k in txt for k in ("kadenc", "cadence", "spm"))
-
-        def strip_cadence_lines(text: str) -> str:
-            if not text:
-                return text
-            out_lines = []
-            for line in text.splitlines():
-                low = line.lower()
-                if any(k in low for k in ("kadenc", "cadence", "spm")):
-                    continue
-                out_lines.append(line)
-            return "\n".join(out_lines).strip()
-
         def ensure_effort_hint(item: dict) -> None:
             txt = " ".join([
                 str(item.get("workout") or ""),
@@ -5081,18 +5512,6 @@ def generate_forecast():
             hint = tr(
                 "Wysiłek: strefa tętna Z2 (swobodna rozmowa).",
                 "Effort: HR Zone 2 (conversational effort).",
-            )
-            if item.get("main_set"):
-                item["main_set"] = f"{item.get('main_set')} {hint}".strip()
-            elif item.get("details"):
-                item["details"] = f"{item.get('details')}\n{hint}".strip()
-            else:
-                item["why"] = ((item.get("why") or "").strip() + " " + hint).strip()
-
-        def ensure_cadence_hint(item: dict) -> None:
-            hint = tr(
-                "Akcent techniki: 6-8 min pracy nad kadencją 160-170 spm przy łatwym wysiłku.",
-                "Technique focus: 6-8 min cadence focus at 160-170 spm at easy effort.",
             )
             if item.get("main_set"):
                 item["main_set"] = f"{item.get('main_set')} {hint}".strip()
@@ -5172,7 +5591,10 @@ def generate_forecast():
             if km is None or km <= 0:
                 km = (target_min + target_max) / 2.0
             km = max(target_min, min(target_max, float(km)))
-            set_run_distance(item, km, "easy" if fatigue_ctx.get("level") == "high" and kind != "long" else kind)
+            if str(fatigue_ctx.get("level") or "").lower() in {"high", "very_high"} and kind != "long":
+                set_run_distance(item, km, "easy")
+            else:
+                set_run_distance(item, km, kind)
 
         def run_km_of(item: dict) -> float:
             if item.get("distance_km") not in (None, ""):
@@ -5239,6 +5661,23 @@ def generate_forecast():
 
         run_idx = sorted(set(run_idx))
         if not run_idx:
+            normalize_non_running_sessions(out)
+            for item in out:
+                item.pop("_km", None)
+            return out
+
+        if fatigue_model_level == "very_high":
+            for i in run_idx:
+                out[i]["activity_type"] = "walk"
+                out[i]["distance_km"] = None
+                out[i]["duration_min"] = max(20, int(out[i].get("duration_min") or 30))
+                out[i]["intensity"] = "easy"
+                out[i]["workout"] = tr("Regeneracja aktywna / spacer", "Active recovery / walk")
+                out[i]["why"] = ((out[i].get("why") or "").strip() + " " + tr(
+                    "Bardzo wysoki poziom zmęczenia (fatigue): tylko regeneracja i trening uzupełniający.",
+                    "Very high fatigue level: recovery and cross-training only.",
+                )).strip()
+            normalize_non_running_sessions(out)
             for item in out:
                 item.pop("_km", None)
             return out
@@ -5254,6 +5693,28 @@ def generate_forecast():
             long_idx = run_idx[-1]
             run_kind_by_idx[long_idx] = "long"
 
+        # Weekly run distribution guardrails:
+        # 2-3 easy, 0-1 moderate/workout, 1 long.
+        moderate_idx = [i for i in run_idx if run_kind_by_idx.get(i) == "moderate"]
+        if len(moderate_idx) > 1:
+            for i in moderate_idx[1:]:
+                run_kind_by_idx[i] = "easy"
+                out[i]["intensity"] = "easy"
+                out[i]["why"] = ((out[i].get("why") or "").strip() + " " + tr(
+                    "Rozkład tygodnia: zostawiamy maksymalnie jeden akcent umiarkowany.",
+                    "Weekly distribution: keep at most one moderate quality session.",
+                )).strip()
+
+        easy_needed = 2 if len(run_idx) >= 3 else 1
+        easy_now = sum(1 for i in run_idx if run_kind_by_idx.get(i) == "easy")
+        if easy_now < easy_needed:
+            candidates = [i for i in run_idx if i != long_idx and run_kind_by_idx.get(i) == "moderate"]
+            for i in candidates:
+                run_kind_by_idx[i] = "easy"
+                easy_now += 1
+                if easy_now >= easy_needed:
+                    break
+
         for i in run_idx:
             kind = run_kind_by_idx.get(i, "easy")
             if i == long_idx and run_target < 2:
@@ -5261,10 +5722,30 @@ def generate_forecast():
             apply_run_volume(out[i], kind)
             run_kind_by_idx[i] = kind
 
-        # Enforce week cap and progression cap for remaining days.
+        # Enforce week cap/progression cap for remaining days.
         total_plan_run_km = sum(run_km_of(out[i]) for i in run_idx)
         if total_plan_run_km > allowed_window_km and total_plan_run_km > 0:
-            scale_factor = max(0.72 if medium_caution else 0.80, allowed_window_km / total_plan_run_km)
+            if allowed_window_km <= 0:
+                for i in run_idx:
+                    out[i]["activity_type"] = "walk"
+                    out[i]["distance_km"] = None
+                    out[i]["duration_min"] = max(20, int(out[i].get("duration_min") or 30))
+                    out[i]["intensity"] = "easy"
+                    out[i]["workout"] = tr("Regeneracyjny spacer", "Recovery walk")
+                    out[i]["why"] = ((out[i].get("why") or "").strip() + " " + tr(
+                        "Tydzień jest już domknięty kilometrażowo — dziś tylko lekka regeneracja.",
+                        "Weekly running volume is already met — keep this day recovery-only.",
+                    )).strip()
+                normalize_non_running_sessions(out)
+                for item in out:
+                    item.pop("_km", None)
+                return out
+            else:
+                target_ratio = allowed_window_km / total_plan_run_km
+                if target_ratio < 0.65:
+                    scale_factor = target_ratio
+                else:
+                    scale_factor = max(0.72 if medium_caution else 0.80, target_ratio)
             for i in run_idx:
                 cur = run_km_of(out[i])
                 kind = run_kind_by_idx.get(i, "easy")
@@ -5274,19 +5755,16 @@ def generate_forecast():
                     f"Load adjusted: weekly cap {weekly_run_cap:.1f} km (+max 10% vs previous week).",
                 )).strip()
 
-        # Long run = longest run and 30-40% of planned run volume.
+        # Long run = longest run and 30-40% of projected weekly run volume.
         total_plan_run_km = sum(run_km_of(out[i]) for i in run_idx)
         if total_plan_run_km > 0 and long_idx in run_idx and len(run_idx) >= 2:
             long_km = run_km_of(out[long_idx])
-            min_share_km = total_plan_run_km * 0.30
-            max_share_km = total_plan_run_km * 0.40
-            target_long = long_km
-            if long_km < min_share_km:
-                target_long = min_share_km
-            elif long_km > max_share_km:
-                target_long = max_share_km
-            target_long = max(float(run_profile.get("long_low_km", 10.0)), target_long)
-            target_long = min(float(run_profile.get("long_high_km", 14.0)), target_long)
+            projected_week_km = max(0.0, week_run_done_km + total_plan_run_km)
+            target_long = enforce_long_run_ratio(
+                long_km=long_km,
+                projected_week_km=projected_week_km,
+                run_profile=run_profile,
+            )
 
             max_other = max((run_km_of(out[i]) for i in run_idx if i != long_idx), default=0.0)
             if target_long <= max_other:
@@ -5299,15 +5777,48 @@ def generate_forecast():
                 if run_km_of(out[i]) >= run_km_of(out[long_idx]):
                     set_run_distance(out[i], max(2.0, run_km_of(out[long_idx]) - 0.7), run_kind_by_idx.get(i, "easy"))
 
-        # Cadence technique run: at most once per week.
-        cadence_idx = [i for i in run_idx if has_cadence_focus(out[i])]
-        if len(cadence_idx) > 1:
-            for i in cadence_idx[1:]:
-                out[i]["main_set"] = strip_cadence_lines(out[i].get("main_set") or "")
-                out[i]["details"] = strip_cadence_lines(out[i].get("details") or "")
-        elif len(cadence_idx) == 0 and fatigue_ctx.get("level") != "high":
-            candidate = next((i for i in run_idx if i != long_idx), run_idx[0])
-            ensure_cadence_hint(out[candidate])
+        inject_cadence_run(
+            plan_days=out,
+            run_indexes=run_idx,
+            long_run_index=long_idx,
+            fatigue_level=str(fatigue_ctx.get("level") or "low"),
+        )
+
+        if monotony_high:
+            def _is_recovery_day(item: dict) -> bool:
+                t = str(item.get("activity_type") or "").lower()
+                txt = " ".join([
+                    str(item.get("workout") or ""),
+                    str(item.get("why") or ""),
+                ]).lower()
+                return t in {"walk", "yoga"} or any(k in txt for k in ("regener", "recovery", "mobility"))
+
+            if not any(_is_recovery_day(item) for item in out):
+                candidate = next((i for i in run_idx if i != long_idx), None)
+                if candidate is not None:
+                    out[candidate]["activity_type"] = "yoga"
+                    out[candidate]["distance_km"] = None
+                    out[candidate]["duration_min"] = max(25, int(out[candidate].get("duration_min") or 30))
+                    out[candidate]["intensity"] = "easy"
+                    out[candidate]["workout"] = tr("Mobilność + regeneracja", "Mobility + recovery")
+                    out[candidate]["why"] = ((out[candidate].get("why") or "").strip() + " " + tr(
+                        "Wysoka monotonia obciążenia (>2.0): dodany dzień regeneracyjny dla redukcji ryzyka urazu.",
+                        "High training monotony (>2.0): recovery day added to lower injury risk.",
+                    )).strip()
+
+            # Avoid stacking too many same-type non-running sessions in a row.
+            for i in range(1, len(out)):
+                prev_t = str(out[i - 1].get("activity_type") or "").lower()
+                cur_t = str(out[i].get("activity_type") or "").lower()
+                if prev_t == cur_t and prev_t in {"weighttraining", "workout", "ride", "swim"}:
+                    out[i]["activity_type"] = "yoga"
+                    out[i]["distance_km"] = None
+                    out[i]["intensity"] = "easy"
+                    out[i]["workout"] = tr("Mobilność i stabilizacja", "Mobility and stability")
+                    out[i]["why"] = ((out[i].get("why") or "").strip() + " " + tr(
+                        "Zmniejszenie monotonii: rozdzielono podobne jednostki.",
+                        "Monotony reduction: similar sessions were separated.",
+                    )).strip()
 
         if cycle_ctx.get("is_deload_week") and not is_taper:
             for i in run_idx:
@@ -5316,6 +5827,7 @@ def generate_forecast():
                     "Deload week: volume intentionally reduced by ~20-30%.",
                 )).strip()
 
+        normalize_non_running_sessions(out)
         for item in out:
             item.pop("_km", None)
         return out
@@ -5365,6 +5877,9 @@ SYGNAŁY RYZYKA:
 KONTEKST ZMĘCZENIA BIEGOWEGO:
 {json.dumps(fatigue_ctx, ensure_ascii=False)}
 
+KONTEKST MONOTONII OBCIĄŻENIA:
+{json.dumps(monotony_ctx, ensure_ascii=False)}
+
 KONTEKST CYKLU TYGODNIOWEGO:
 {json.dumps(cycle_ctx, ensure_ascii=False)}
 
@@ -5400,6 +5915,8 @@ FORMAT (BARDZO WAŻNE):
 - Easy run nie powinien spadać poniżej ~60-70% typowego dystansu easy z historii, chyba że uraz/pain są wysokie.
 - W tygodniu może pojawić się maksymalnie jeden akcent kadencji/techniki biegu.
 - Jeśli `is_deload_week = true`, obniż tygodniową objętość biegową o ok. 20-30%.
+- Jeśli `monotony_score > 2.0`, dodaj więcej regeneracji i unikaj układania kilku podobnych jednostek pod rząd.
+- Dystans (`distance_km`) podawaj tylko dla biegania; dla siły/mobility/pływania ustaw `distance_km = null` i podawaj tylko czas.
 - `source_facts` mają być krótkie i zrozumiałe dla użytkownika (bez nazw technicznych typu `remaining_to_fill`, `easy_floor_km`).
 """
 

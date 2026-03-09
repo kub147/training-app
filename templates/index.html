@@ -32,6 +32,7 @@
                     <span>{{ t('roadmap_title') }}</span>
                         <div class="card-actions">
                             <button id="refreshPlanBtn" class="refresh-btn" onclick="loadPlan()">{{ t('roadmap_refresh') }}</button>
+                            <button id="refreshWeatherBtn" class="btn btn-soft" type="button">{{ t('calendar_weather_refresh') }}</button>
                             <span id="forecastStatus" class="mini-status" aria-live="polite"></span>
                         </div>
                     </div>
@@ -112,8 +113,9 @@
                                                     <div class="week-item-text">
                                                         <div class="week-item-title">{{ day.plan.workout or t('label_training') }}</div>
                                                         <div class="week-item-sub">
-                                                            {% if day.plan.distance_km is not none %}{{ day.plan.distance_km }} km{% endif %}
-                                                            {% if day.plan.duration_min is not none %}{% if day.plan.distance_km is not none %} • {% endif %}{{ day.plan.duration_min }} min{% endif %}
+                                                            {% set show_km = day.sport in ['run', 'trailrun', 'virtualrun'] %}
+                                                            {% if show_km and day.plan.distance_km is not none %}{{ day.plan.distance_km }} km{% endif %}
+                                                            {% if day.plan.duration_min is not none %}{% if show_km and day.plan.distance_km is not none %} • {% endif %}{{ day.plan.duration_min }} min{% endif %}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -742,6 +744,53 @@
       return await res.json();
     }
 
+    const WEATHER_LOCATION_CACHE_KEY = 'jw_weather_location_v1';
+    const WEATHER_LOCATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+    function cache_weather_location(location) {
+      if (!location || Number.isNaN(Number(location.lat)) || Number.isNaN(Number(location.lon))) return;
+      const payload = {
+        lat: Number(location.lat),
+        lon: Number(location.lon),
+        city: location.city || '',
+        source: location.source || 'unknown',
+        cachedAt: Date.now(),
+      };
+      try {
+        localStorage.setItem(WEATHER_LOCATION_CACHE_KEY, JSON.stringify(payload));
+      } catch (_e) {
+        // Ignore storage failures (private mode/full quota).
+      }
+    }
+
+    function get_cached_weather_location() {
+      try {
+        const raw = localStorage.getItem(WEATHER_LOCATION_CACHE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return null;
+        if (Date.now() - Number(parsed.cachedAt || 0) > WEATHER_LOCATION_TTL_MS) return null;
+        if (!Number.isFinite(Number(parsed.lat)) || !Number.isFinite(Number(parsed.lon))) return null;
+        return {
+          lat: Number(parsed.lat),
+          lon: Number(parsed.lon),
+          city: parsed.city || '',
+          source: parsed.source || 'unknown',
+          cachedAt: Number(parsed.cachedAt || 0),
+        };
+      } catch (_e) {
+        return null;
+      }
+    }
+
+    function clear_cached_weather_location() {
+      try {
+        localStorage.removeItem(WEATHER_LOCATION_CACHE_KEY);
+      } catch (_e) {
+        // Ignore.
+      }
+    }
+
     function weatherIcon(code) {
       if (code === 0) return '☀️';
       if ([1, 2].includes(code)) return '🌤️';
@@ -753,7 +802,8 @@
       return '🌡️';
     }
 
-    async function initWeather() {
+    async function initWeather(options = {}) {
+      const forceRefresh = Boolean(options.forceRefresh);
       const weatherEls = Array.from(document.querySelectorAll('.day-weather[data-weather-date]'));
       if (!weatherEls.length) return;
       weatherEls.forEach((el) => { el.textContent = '…'; });
@@ -782,14 +832,25 @@
         const geo = await geoRes.json();
         if (!geo.results || !geo.results.length) throw new Error('city-not-found');
         const c = geo.results[0];
+        cache_weather_location({ lat: c.latitude, lon: c.longitude, city: c.name || city, source: 'city' });
         return await fetchWeatherByCoords(c.latitude, c.longitude);
       };
 
       try {
+        if (!forceRefresh) {
+          const cached = get_cached_weather_location();
+          if (cached) {
+            const data = await fetchWeatherByCoords(cached.lat, cached.lon);
+            applyForecast(data.daily);
+            return;
+          }
+        }
+
         if (!navigator.geolocation) throw new Error('geo-not-supported');
         const pos = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 7000, maximumAge: 1800000 });
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 7000, maximumAge: WEATHER_LOCATION_TTL_MS });
         });
+        cache_weather_location({ lat: pos.coords.latitude, lon: pos.coords.longitude, source: 'geo' });
         const data = await fetchWeatherByCoords(pos.coords.latitude, pos.coords.longitude);
         applyForecast(data.daily);
       } catch (_e) {
@@ -813,6 +874,13 @@
       initCalendarModal();
       initCalendarDnD();
       initWeather();
+      const weatherBtn = document.getElementById('refreshWeatherBtn');
+      if (weatherBtn) {
+        weatherBtn.addEventListener('click', async () => {
+          clear_cached_weather_location();
+          await initWeather({ forceRefresh: true });
+        });
+      }
     });
 
 // Auto-ukrywanie flash messages po 5 sekundach
