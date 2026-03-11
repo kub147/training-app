@@ -295,6 +295,15 @@ def tr(pl: str, en: str) -> str:
     return en if session.get("lang", "pl") == "en" else pl
 
 
+def tkey(key: str, **kwargs) -> str:
+    lang = session.get("lang", "pl")
+    text = I18N.get(lang, I18N["pl"]).get(key, I18N["pl"].get(key, key))
+    try:
+        return text.format(**kwargs)
+    except Exception:
+        return text
+
+
 def _clip(value: str | None, max_len: int) -> str:
     return (value or "").strip()[:max_len]
 
@@ -4718,13 +4727,13 @@ def onboarding():
         target_values=target_values,
         preferred_run_days=_parse_weekday_list(getattr(profile, "preferred_run_days", None)),
         weekday_labels=[
-            t("weekday_mon"),
-            t("weekday_tue"),
-            t("weekday_wed"),
-            t("weekday_thu"),
-            t("weekday_fri"),
-            t("weekday_sat"),
-            t("weekday_sun"),
+            tkey("weekday_mon"),
+            tkey("weekday_tue"),
+            tkey("weekday_wed"),
+            tkey("weekday_thu"),
+            tkey("weekday_fri"),
+            tkey("weekday_sat"),
+            tkey("weekday_sun"),
         ],
     )
 
@@ -4846,13 +4855,13 @@ def profile():
             calendar_feed_link=_build_calendar_feed_link(current_user),
             preferred_run_days=_parse_weekday_list(getattr(profile_obj, "preferred_run_days", None)),
             weekday_labels=[
-                t("weekday_mon"),
-                t("weekday_tue"),
-                t("weekday_wed"),
-                t("weekday_thu"),
-                t("weekday_fri"),
-                t("weekday_sat"),
-                t("weekday_sun"),
+                tkey("weekday_mon"),
+                tkey("weekday_tue"),
+                tkey("weekday_wed"),
+                tkey("weekday_thu"),
+                tkey("weekday_fri"),
+                tkey("weekday_sat"),
+                tkey("weekday_sun"),
             ],
         )
     except Exception as e:
