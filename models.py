@@ -53,6 +53,10 @@ class UserProfile(db.Model):
     weekly_swim_sessions = db.Column(db.Integer)      # preferred swim sessions/week
     weekly_mobility_sessions = db.Column(db.Integer)  # preferred mobility/yoga sessions/week
     weekly_ride_sessions = db.Column(db.Integer)      # preferred ride sessions/week
+
+    # Weekly scheduling preferences
+    preferred_run_days = db.Column(db.Text)           # comma-separated weekday ints 0=Mon..6=Sun
+    long_run_day = db.Column(db.Integer)              # preferred weekday for long run (0=Mon..6=Sun)
     gender = db.Column(db.String(20))
     birth_date = db.Column(db.Date)
     height_cm = db.Column(db.Float)                   # auto-filled from import when available

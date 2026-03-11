@@ -112,6 +112,30 @@
                 {% endfor %}
             </div>
 
+            <div class="form-row">
+                <div class="field">
+                    <label>{{ t('label_preferred_run_days') }}</label>
+                    <div class="check-grid">
+                        {% set prd = preferred_run_days or [] %}
+                        {% for idx in range(0, 7) %}
+                            <label class="check-pill">
+                                <input type="checkbox" name="preferred_run_days" value="{{ idx }}" {% if idx in prd %}checked{% endif %}>
+                                <span>{{ weekday_labels[idx] }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="field">
+                    <label>{{ t('label_long_run_day') }}</label>
+                    <select name="long_run_day">
+                        {% set lrd = profile.long_run_day if profile.long_run_day is not none else 5 %}
+                        {% for idx in range(0, 7) %}
+                            <option value="{{ idx }}" {% if idx == lrd %}selected{% endif %}>{{ weekday_labels[idx] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
             <div class="field">
                 <label>{{ tx('FAKTY: Doświadczenie','FACTS: Experience') }}</label>
                 <input type="text" name="experience_text" value="{{ profile.experience_text or '' }}" placeholder="{{ tx('np. 2 lata biegania, 1 rok siłowni','e.g. 2 years running, 1 year gym') }}">

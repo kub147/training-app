@@ -81,6 +81,15 @@ I18N = {
         "calendar_weather_refresh": "🌤️ Odśwież lokalizację pogody",
         "calendar_city_prompt": "Podaj miasto do prognozy pogody (np. Warszawa):",
         "calendar_city_not_found": "Nie znaleziono miasta",
+        "label_preferred_run_days": "Preferowane dni biegania",
+        "label_long_run_day": "Dzień długiego biegu",
+        "weekday_mon": "Poniedziałek",
+        "weekday_tue": "Wtorek",
+        "weekday_wed": "Środa",
+        "weekday_thu": "Czwartek",
+        "weekday_fri": "Piątek",
+        "weekday_sat": "Sobota",
+        "weekday_sun": "Niedziela",
         "calendar_progress": "Realizacja tygodnia",
         "calendar_goal_missing": "Ustaw cele tygodniowe w profilu, by lepiej śledzić postęp.",
         "calendar_copy_garmin": "Kopiuj pod Garmin",
@@ -182,6 +191,15 @@ I18N = {
         "calendar_weather_refresh": "🌤️ Refresh weather location",
         "calendar_city_prompt": "Provide city for weather forecast (e.g. London):",
         "calendar_city_not_found": "City not found",
+        "label_preferred_run_days": "Preferred run days",
+        "label_long_run_day": "Long run day",
+        "weekday_mon": "Monday",
+        "weekday_tue": "Tuesday",
+        "weekday_wed": "Wednesday",
+        "weekday_thu": "Thursday",
+        "weekday_fri": "Friday",
+        "weekday_sat": "Saturday",
+        "weekday_sun": "Sunday",
         "calendar_progress": "Weekly completion",
         "calendar_goal_missing": "Set weekly goals in profile to better track progress.",
         "calendar_copy_garmin": "Copy for Garmin",
@@ -759,6 +777,8 @@ def ensure_schema() -> None:
             'preferences_text': "preferences_text TEXT",
             'constraints_text': "constraints_text TEXT",
             'updated_at': "updated_at DATETIME",
+            'preferred_run_days': "preferred_run_days TEXT",
+            'long_run_day': "long_run_day INTEGER",
         }
         for name, coldef in wanted.items():
             if name not in cols:
@@ -2819,6 +2839,37 @@ def _normalize_focus_sports(raw_values: list[str] | tuple[str, ...] | None) -> l
     return out or ["run"]
 
 
+def _parse_weekday_list(raw: str | None) -> list[int]:
+    if not raw:
+        return []
+    out = []
+    for part in str(raw).split(","):
+        part = part.strip()
+        if part == "":
+            continue
+        try:
+            val = int(part)
+        except Exception:
+            continue
+        if 0 <= val <= 6 and val not in out:
+            out.append(val)
+    return out
+
+
+def _normalize_weekday_selection(values: list[str] | None) -> list[int]:
+    if not values:
+        return []
+    out = []
+    for v in values:
+        try:
+            n = int(str(v).strip())
+        except Exception:
+            continue
+        if 0 <= n <= 6 and n not in out:
+            out.append(n)
+    return sorted(out)
+
+
 def _get_focus_sports(profile_obj: UserProfile | None, weekly_targets: dict[str, int] | None = None) -> list[str]:
     if weekly_targets is None:
         weekly_targets = _get_weekly_session_targets(profile_obj)
@@ -4632,6 +4683,11 @@ def onboarding():
 
         profile.preferences_text = _clip(request.form.get("preferences_text"), 10000)
         profile.constraints_text = _clip(request.form.get("constraints_text"), 10000)
+        selected_run_days = _normalize_weekday_selection(request.form.getlist("preferred_run_days"))
+        profile.preferred_run_days = ",".join(str(x) for x in selected_run_days)
+        long_run_day_val = _to_int(request.form.get("long_run_day"))
+        if long_run_day_val is not None and 0 <= long_run_day_val <= 6:
+            profile.long_run_day = long_run_day_val
 
         # STATE (czasowo wrażliwe) — zapisujemy osobno z TTL
         injuries_text = (request.form.get("injuries_text") or "").strip()
@@ -4660,6 +4716,16 @@ def onboarding():
         target_sport_fields=TARGET_SPORT_FIELDS,
         focus_sports=focus_sports,
         target_values=target_values,
+        preferred_run_days=_parse_weekday_list(getattr(profile, "preferred_run_days", None)),
+        weekday_labels=[
+            t("weekday_mon"),
+            t("weekday_tue"),
+            t("weekday_wed"),
+            t("weekday_thu"),
+            t("weekday_fri"),
+            t("weekday_sat"),
+            t("weekday_sun"),
+        ],
     )
 
 
@@ -4744,6 +4810,11 @@ def profile():
 
             profile_obj.preferences_text = _clip(request.form.get("preferences_text"), 10000)
             profile_obj.constraints_text = _clip(request.form.get("constraints_text"), 10000)
+            selected_run_days = _normalize_weekday_selection(request.form.getlist("preferred_run_days"))
+            profile_obj.preferred_run_days = ",".join(str(x) for x in selected_run_days)
+            long_run_day_val = _to_int(request.form.get("long_run_day"))
+            if long_run_day_val is not None and 0 <= long_run_day_val <= 6:
+                profile_obj.long_run_day = long_run_day_val
 
             injuries_text = (request.form.get("injuries_text") or "").strip()
             if injuries_text:
@@ -4773,6 +4844,16 @@ def profile():
             focus_sports=focus_sports,
             target_values=target_values,
             calendar_feed_link=_build_calendar_feed_link(current_user),
+            preferred_run_days=_parse_weekday_list(getattr(profile_obj, "preferred_run_days", None)),
+            weekday_labels=[
+                t("weekday_mon"),
+                t("weekday_tue"),
+                t("weekday_wed"),
+                t("weekday_thu"),
+                t("weekday_fri"),
+                t("weekday_sat"),
+                t("weekday_sun"),
+            ],
         )
     except Exception as e:
         app.logger.exception("Profile render failed for user %s: %s", current_user.id, e)
@@ -5429,22 +5510,50 @@ def generate_forecast():
         or str(checkin_signals.get("fatigue") or "").lower() == "high"
     )
 
+    preferred_run_days = _parse_weekday_list(getattr(profile_obj, "preferred_run_days", None))
+
+    week_start_dt = datetime.combine(week_start, datetime.min.time())
+    today_end = datetime.combine(today_dt + timedelta(days=1), datetime.min.time())
+    week_runs = [
+        a for a in _load_user_activities_with_fallback(
+            user_id=current_user.id,
+            start=week_start_dt,
+            end=today_end,
+            order_asc=True,
+        )
+        if (a.activity_type or "").lower() in {"run", "trailrun", "virtualrun"}
+    ]
+    long_done_threshold = max(
+        8.0,
+        float(run_profile.get("long_low_km", 10.0) or 10.0),
+        float(run_profile.get("longest_recent_km", 0.0) or 0.0) * 0.80,
+    )
+    long_run_already_done = any(((a.distance or 0) / 1000.0) >= long_done_threshold for a in week_runs)
+    allow_long_run = False
+
     def _build_week_structure() -> list[dict]:
         """Plan week structure before session details."""
+        nonlocal allow_long_run
         remaining_dates = [today_dt + timedelta(days=i) for i in range(days_to_generate)]
         run_remaining = max(0, int(remaining_by_sport.get("run", 0) or 0))
         run_remaining = min(run_remaining, len(remaining_dates))
 
+        preferred_easy_order = preferred_run_days[:] if preferred_run_days else [0, 2, 3, 1, 4, 6, 5]
+        allow_long_run = run_remaining > 0 and not long_run_already_done
+
         preferred_long_wd = _get_preferred_long_run_weekday()
         long_run_date = None
-        if run_remaining > 0:
-            long_run_date = next((d for d in remaining_dates if d.weekday() == preferred_long_wd), None)
-            if long_run_date is None:
-                sat = next((d for d in remaining_dates if d.weekday() == 5), None)
-                sun = next((d for d in remaining_dates if d.weekday() == 6), None)
-                long_run_date = sat or sun or (remaining_dates[-1] if remaining_dates else None)
+        if allow_long_run:
+            candidate_dates = [d for d in remaining_dates if (not preferred_run_days or d.weekday() in preferred_run_days)]
+            if not candidate_dates:
+                candidate_dates = remaining_dates[:]
+            long_run_date = next((d for d in candidate_dates if d.weekday() == preferred_long_wd), None)
+            if long_run_date is None and candidate_dates:
+                def _wd_dist(d: datetime) -> int:
+                    wd = d.weekday()
+                    return min((wd - preferred_long_wd) % 7, (preferred_long_wd - wd) % 7)
+                long_run_date = sorted(candidate_dates, key=lambda d: (_wd_dist(d), d))[0]
 
-        preferred_easy_order = [0, 2, 3, 1, 4, 6, 5]
         run_days = []
         if long_run_date:
             run_days.append(long_run_date)
@@ -5455,6 +5564,8 @@ def generate_forecast():
                     return
                 for d in remaining_dates:
                     if d == long_run_date:
+                        continue
+                    if preferred_run_days and d.weekday() not in preferred_run_days:
                         continue
                     if d.weekday() == wd and d not in run_days:
                         run_days.append(d)
@@ -5512,7 +5623,7 @@ def generate_forecast():
                         s["slot"] = "run"
                         s["run_kind"] = "easy"
             # ensure long run present
-            if long_run_date:
+            if long_run_date and allow_long_run:
                 for s in structure:
                     if s["date"] == long_run_date:
                         s["slot"] = "run"
@@ -5916,7 +6027,7 @@ def generate_forecast():
             run_kind_by_idx[i] = kind
             if kind == "long":
                 long_idx = i
-        if long_idx is None:
+        if long_idx is None and allow_long_run:
             long_idx = run_idx[-1]
             run_kind_by_idx[long_idx] = "long"
 
@@ -5961,39 +6072,35 @@ def generate_forecast():
             if next_idx != long_idx:
                 run_kind_by_idx[next_idx] = "recovery"
 
-        preset_distances: dict[int, float] = {}
-        if len(run_idx) == 3 and week_run_done_km <= 1.0:
-            weekly_target = max(
-                weekly_run_cap,
-                sum(run_km_of(out[i]) for i in run_idx),
-                (easy_run_min_distance * 2.0) + float(run_profile.get("long_low_km", 10.0)),
-            )
-            long_id = long_idx if long_idx in run_idx else sorted_runs[-1]
-            long_target = enforce_long_run_ratio(
-                long_km=weekly_target * 0.38,
-                projected_week_km=weekly_target,
-                run_profile=run_profile,
-            )
-            easy_high = float(run_profile.get("easy_high_km", 8.0) or 8.0)
-            first_two = [i for i in sorted_runs if i != long_id]
-            if len(first_two) == 2:
-                d1 = min(easy_high, max(easy_run_min_distance, weekly_target * 0.22))
-                d2 = min(easy_high + 1.0, max(easy_run_min_distance, weekly_target * 0.27))
-                if d2 < d1:
-                    d2 = d1
-                preset_distances[first_two[0]] = round(d1, 1)
-                preset_distances[first_two[1]] = round(d2, 1)
-                preset_distances[long_id] = round(long_target, 1)
-                run_kind_by_idx[first_two[0]] = "easy"
-                run_kind_by_idx[first_two[1]] = "moderate" if not medium_caution else "easy"
-                run_kind_by_idx[long_id] = "long"
+        planned_km_by_idx: dict[int, float] = {}
+        remaining_window_km = max(0.0, allowed_window_km)
+        if run_idx and remaining_window_km > 0:
+            def _distribution_weights(count: int) -> tuple[float, float]:
+                if count <= 2:
+                    return (0.42, 0.58)
+                if count == 3:
+                    return (0.27, 0.46)
+                if count == 4:
+                    return (0.22, 0.34)
+                return (0.175, 0.30)
+
+            if allow_long_run and long_idx in run_idx:
+                easy_w, long_w = _distribution_weights(len(run_idx))
+                planned_km_by_idx[long_idx] = remaining_window_km * long_w
+                for i in run_idx:
+                    if i == long_idx:
+                        continue
+                    planned_km_by_idx[i] = remaining_window_km * easy_w
+            else:
+                per_km = remaining_window_km / len(run_idx)
+                for i in run_idx:
+                    planned_km_by_idx[i] = per_km
 
         for i in run_idx:
             kind = run_kind_by_idx.get(i, "easy")
-            if i in preset_distances:
-                set_run_distance(out[i], preset_distances[i], kind)
-            else:
-                apply_run_volume(out[i], kind)
+            if i in planned_km_by_idx and planned_km_by_idx[i] > 0:
+                out[i]["distance_km"] = round(planned_km_by_idx[i], 1)
+            apply_run_volume(out[i], kind)
             run_kind_by_idx[i] = kind
 
         # Enforce week cap/progression cap for remaining days.
@@ -6031,7 +6138,7 @@ def generate_forecast():
 
         # Long run = longest run and 30-40% of projected weekly run volume.
         total_plan_run_km = sum(run_km_of(out[i]) for i in run_idx)
-        if total_plan_run_km > 0 and long_idx in run_idx and len(run_idx) >= 2:
+        if allow_long_run and total_plan_run_km > 0 and long_idx in run_idx and len(run_idx) >= 2:
             long_km = run_km_of(out[long_idx])
             projected_week_km = max(0.0, week_run_done_km + total_plan_run_km)
             target_long = enforce_long_run_ratio(
