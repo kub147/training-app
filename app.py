@@ -5373,6 +5373,10 @@ def generate_forecast():
         k: max(0, int(weekly_targets.get(k, 0) or 0) - int(weekly_done.get(k, 0) or 0))
         for k in focus_sports
     }
+    remaining_by_sport = {
+        k: max(0, int(weekly_targets.get(k, 0) or 0) - int(weekly_done.get(k, 0) or 0))
+        for k in TARGET_SPORT_ORDER
+    }
     weekly_target_context = {
         "week_start": week_start.isoformat(),
         "today": today_dt.isoformat(),
@@ -5408,6 +5412,116 @@ def generate_forecast():
         "Write workout description and rationale in English.",
     )
 
+    def _get_preferred_long_run_weekday() -> int:
+        val = getattr(profile_obj, "long_run_day", None)
+        try:
+            if val is not None:
+                wd = int(val)
+                if 0 <= wd <= 6:
+                    return wd
+        except Exception:
+            pass
+        return 5  # Saturday
+
+    structure_allow_moderate = not (
+        injury_severity >= 3
+        or str(fatigue_ctx.get("level") or "").lower() in {"high", "very_high"}
+        or str(checkin_signals.get("fatigue") or "").lower() == "high"
+    )
+
+    def _build_week_structure() -> list[dict]:
+        """Plan week structure before session details."""
+        remaining_dates = [today_dt + timedelta(days=i) for i in range(days_to_generate)]
+        run_remaining = max(0, int(remaining_by_sport.get("run", 0) or 0))
+        run_remaining = min(run_remaining, len(remaining_dates))
+
+        preferred_long_wd = _get_preferred_long_run_weekday()
+        long_run_date = None
+        if run_remaining > 0:
+            long_run_date = next((d for d in remaining_dates if d.weekday() == preferred_long_wd), None)
+            if long_run_date is None:
+                sat = next((d for d in remaining_dates if d.weekday() == 5), None)
+                sun = next((d for d in remaining_dates if d.weekday() == 6), None)
+                long_run_date = sat or sun or (remaining_dates[-1] if remaining_dates else None)
+
+        preferred_easy_order = [0, 2, 3, 1, 4, 6, 5]
+        run_days = []
+        if long_run_date:
+            run_days.append(long_run_date)
+
+        def _pick_easy_days():
+            for wd in preferred_easy_order:
+                if len(run_days) >= run_remaining:
+                    return
+                for d in remaining_dates:
+                    if d == long_run_date:
+                        continue
+                    if d.weekday() == wd and d not in run_days:
+                        run_days.append(d)
+                        break
+
+        _pick_easy_days()
+        # fallback: fill any remaining days
+        for d in remaining_dates:
+            if len(run_days) >= run_remaining:
+                break
+            if d not in run_days:
+                run_days.append(d)
+
+        structure = []
+        run_days_set = set(run_days)
+        for d in remaining_dates:
+            slot = "rest"
+            run_kind = None
+            if d in run_days_set:
+                slot = "run"
+                if long_run_date and d == long_run_date:
+                    run_kind = "long"
+                else:
+                    run_kind = "easy"
+            structure.append({"date": d, "slot": slot, "run_kind": run_kind})
+
+        # assign other modalities to remaining slots
+        available = [s for s in structure if s["slot"] == "rest"]
+        for sport in ("gym", "swim", "mobility", "ride"):
+            count = max(0, int(remaining_by_sport.get(sport, 0) or 0))
+            for _ in range(count):
+                if not available:
+                    break
+                slot = available.pop(0)
+                slot["slot"] = sport
+
+        # upgrade one easy run to moderate if possible
+        if run_remaining >= 3 and structure_allow_moderate:
+            for s in structure:
+                if s["slot"] == "run" and s["run_kind"] == "easy" and s["date"] != long_run_date:
+                    s["run_kind"] = "moderate"
+                    break
+
+        # validate structure
+        run_slots = [s for s in structure if s["slot"] == "run"]
+        if len(run_slots) != run_remaining and run_remaining > 0:
+            # fallback: enforce exact count
+            for s in structure:
+                if s["slot"] == "run":
+                    s["slot"] = "rest"
+                    s["run_kind"] = None
+            for d in remaining_dates[:run_remaining]:
+                for s in structure:
+                    if s["date"] == d:
+                        s["slot"] = "run"
+                        s["run_kind"] = "easy"
+            # ensure long run present
+            if long_run_date:
+                for s in structure:
+                    if s["date"] == long_run_date:
+                        s["slot"] = "run"
+                        s["run_kind"] = "long"
+                        break
+        return structure
+
+    week_structure = _build_week_structure()
+
     def _apply_plan_rules(days: list[dict]) -> list[dict]:
         """Rule layer for workload realism and safety."""
         pain_level = str(checkin_signals.get("pain") or "unknown").lower()
@@ -5423,6 +5537,7 @@ def generate_forecast():
         if fatigue_model_level == "very_high":
             high_caution = True
         is_taper = str((goal_progress or {}).get("phase") or "").lower().startswith("taper")
+        structure_slots = week_structure[:]
 
         baseline_ctx = calculate_weekly_baseline(
             user_id=current_user.id,
@@ -5719,6 +5834,29 @@ def generate_forecast():
             km = parse_km(item.get("workout"))
             item["_km"] = km
 
+            if idx < len(structure_slots):
+                slot = structure_slots[idx].get("slot")
+                if slot == "run":
+                    item["activity_type"] = "run"
+                elif slot == "gym":
+                    item["activity_type"] = "weighttraining"
+                    item["workout"] = tr("Siłownia", "Strength training")
+                elif slot == "swim":
+                    item["activity_type"] = "swim"
+                    item["workout"] = tr("Pływanie", "Swim")
+                elif slot == "mobility":
+                    item["activity_type"] = "yoga"
+                    item["workout"] = tr("Mobilność i stabilizacja", "Mobility and stability")
+                elif slot == "ride":
+                    item["activity_type"] = "ride"
+                    item["workout"] = tr("Rower", "Cycling")
+                elif slot == "rest":
+                    item["activity_type"] = "other"
+                    item["distance_km"] = None
+                    item["duration_min"] = None
+                    item["intensity"] = "easy"
+                    item["workout"] = tr("Regeneracja", "Rest day")
+
             if idx > 0 and is_hard(out[-1]) and is_hard(item):
                 item["intensity"] = "easy"
                 why = (item.get("why") or "").strip()
@@ -5745,27 +5883,7 @@ def generate_forecast():
                                 "Taper: lowered intensity before race day.",
                             )).strip()
 
-        run_target = int(weekly_target_context.get("targets", {}).get("run", 0) or 0)
-        run_done = int(weekly_target_context.get("done_until_today", {}).get("run", 0) or 0)
-        run_remaining = max(0, int(weekly_target_context.get("remaining_to_fill", {}).get("run", 0) or 0))
-        desired_runs = run_remaining
-        if run_target >= 3:
-            desired_runs = max(desired_runs, max(0, 3 - run_done))
-        desired_runs = min(desired_runs, len(out))
-
-        run_idx = [i for i, item in enumerate(out) if is_run(item)]
-        if len(run_idx) < desired_runs:
-            candidates = [i for i, item in enumerate(out) if i not in run_idx and not is_hard(item)]
-            for idx in candidates:
-                if len(run_idx) >= desired_runs:
-                    break
-                out[idx]["activity_type"] = "run"
-                out[idx]["workout"] = out[idx].get("workout") or tr("Bieg spokojny", "Easy run")
-                out[idx]["why"] = ((out[idx].get("why") or "").strip() + " " + tr(
-                    "Uzupełnienie rytmu biegowego tygodnia.",
-                    "Added to preserve weekly running rhythm.",
-                )).strip()
-                run_idx.append(idx)
+        run_idx = [i for i, s in enumerate(structure_slots) if s.get("slot") == "run"]
 
         run_idx = sorted(set(run_idx))
         if not run_idx:
@@ -5793,7 +5911,8 @@ def generate_forecast():
         run_kind_by_idx = {}
         long_idx = None
         for i in run_idx:
-            kind = classify_run_kind(out[i], i, len(out))
+            pref_kind = structure_slots[i].get("run_kind") if i < len(structure_slots) else None
+            kind = pref_kind or classify_run_kind(out[i], i, len(out))
             run_kind_by_idx[i] = kind
             if kind == "long":
                 long_idx = i
@@ -5871,8 +5990,6 @@ def generate_forecast():
 
         for i in run_idx:
             kind = run_kind_by_idx.get(i, "easy")
-            if i == long_idx and run_target < 2:
-                kind = "easy"
             if i in preset_distances:
                 set_run_distance(out[i], preset_distances[i], kind)
             else:
@@ -6023,6 +6140,9 @@ KONTEKST CELU:
 
 CELE TYGODNIOWE UŻYTKOWNIKA (MUSISZ UWZGLĘDNIĆ):
 {json.dumps(weekly_target_context, ensure_ascii=False)}
+
+STRUKTURA TYGODNIA (MUSISZ ZACHOWAĆ):
+{json.dumps([{"date": s["date"].isoformat(), "slot": s["slot"], "run_kind": s.get("run_kind")} for s in week_structure], ensure_ascii=False)}
 
 POWIĄZANIE Z METRYKAMI (MUSISZ UWZGLĘDNIĆ):
 {json.dumps({"weekly_target_km": round(linked_weekly_target_km, 1)}, ensure_ascii=False)}
